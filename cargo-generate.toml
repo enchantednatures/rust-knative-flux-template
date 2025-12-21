@@ -1,0 +1,6 @@
+[template]
+cargo_generate_version = ">=0.18.0"
+
+[placeholders]
+project_name = { prompt = "Project name", type = "string" }
+include_s3 = { prompt = "Include S3-compatible storage (MinIO/S3)?", type = "bool", default = false }

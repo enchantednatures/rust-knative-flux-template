@@ -9,6 +9,13 @@ port = 8080
 url = "redis://localhost:6379"
 
 [telemetry]
-service_name = "rust-service"
+service_name = "{{ project_name | kebab_case }}"
 log_level = "info"
 # otlp_endpoint = "http://otel-collector:4317"  # Optional
+
+{% if include_s3 %}
+[s3]
+endpoint = "http://localhost:9000"  # MinIO endpoint
+bucket = "data"
+region = "us-east-1"
+{% endif %}

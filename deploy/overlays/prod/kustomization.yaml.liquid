@@ -29,6 +29,17 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
         value: "1000m"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "512Mi"
+       - op: replace
+         path: /spec/template/spec/containers/0/resources/limits/memory
+         value: "512Mi"
+
+{% if include_s3 %}
+# Production S3 configuration (typically AWS S3 or managed MinIO)
+configMapGenerator:
+  - name: s3-config
+    behavior: create
+    literals:
+      - S3_ENDPOINT=https://s3.amazonaws.com  # or your MinIO endpoint
+      - S3_BUCKET=data-prod
+      - S3_REGION=us-east-1
+{% endif %}

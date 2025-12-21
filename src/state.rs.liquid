@@ -1,4 +1,7 @@
 use redis::aio::MultiplexedConnection;
+{% if include_s3 %}
+use opendal::Operator;
+{% endif %}
 
 /// Application state shared across all handlers
 /// Uses dependency injection pattern - accepts pre-configured dependencies
@@ -7,6 +10,10 @@ pub struct AppState {
     /// Redis multiplexed connection - supports Clone and handles concurrency internally
     /// No need for Arc<RwLock<>> - MultiplexedConnection is already designed for this
     pub redis: MultiplexedConnection,
+    {% if include_s3 %}
+    /// S3-compatible storage operator (MinIO/S3 via OpenDAL)
+    pub storage: Operator,
+    {% endif %}
 }
 
 impl AppState {
@@ -15,17 +22,27 @@ impl AppState {
     /// # Example
     /// ```no_run
     /// use redis::Client;
-    /// use rust_knative_flux_template::state::AppState;
+    /// use {{ crate_name | replace(from="-", to="_") }}::state::AppState;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = Client::open("redis://localhost:6379")?;
     ///     let conn = client.get_multiplexed_async_connection().await?;
-    ///     let state = AppState::new(conn);
+    ///     let state = AppState::new(conn{% if include_s3 %}, storage{% endif %});
     ///     Ok(())
     /// }
     /// ```
-    pub fn new(redis: MultiplexedConnection) -> Self {
-        Self { redis }
+    pub fn new(
+        redis: MultiplexedConnection,
+        {% if include_s3 %}
+        storage: Operator,
+        {% endif %}
+    ) -> Self {
+        Self {
+            redis,
+            {% if include_s3 %}
+            storage,
+            {% endif %}
+        }
     }
 }

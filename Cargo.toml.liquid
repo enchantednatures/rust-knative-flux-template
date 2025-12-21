@@ -1,5 +1,5 @@
 [package]
-name = "rust-knative-flux-template"
+name = "{{ crate_name }}"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -52,6 +52,11 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
+{% if include_s3 %}
+# Object Storage (S3-compatible via OpenDAL)
+opendal = { version = "0.55", default-features = false, features = ["services-s3"] }
+{% endif %}
+
 # Utilities
 thiserror = "1.0"
 anyhow = "1.0"
@@ -59,6 +64,9 @@ anyhow = "1.0"
 [dev-dependencies]
 axum-test = "16"
 tokio-test = "0.4"
+{% if include_s3 %}
+uuid = { version = "1.0", features = ["v4"] }
+{% endif %}
 
 [profile.release]
 lto = true

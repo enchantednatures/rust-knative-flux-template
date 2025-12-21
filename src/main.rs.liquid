@@ -1,4 +1,4 @@
-use rust_knative_flux_template::{config::Config, observability, routes, state::AppState};
+use {{ crate_name | replace(from="-", to="_") }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
 
 #[tokio::main]
@@ -37,10 +37,35 @@ async fn main() -> anyhow::Result<()> {
         })?;
     tracing::info!("Redis connection established");
 
+    {% if include_s3 %}
+    // =========================================================================
+    // 3b. Initialize S3-compatible Storage (OpenDAL)
+    // =========================================================================
+    tracing::info!(
+        endpoint = %config.s3.endpoint,
+        bucket = %config.s3.bucket,
+        "Initializing S3-compatible storage"
+    );
+    let storage = {
+        let builder = opendal::services::S3::default()
+            .endpoint(&config.s3.endpoint)
+            .bucket(&config.s3.bucket)
+            .region(&config.s3.region);
+        
+        opendal::Operator::new(builder)?.finish()
+    };
+    tracing::info!("S3-compatible storage initialized");
+    {% endif %}
+
     // =========================================================================
     // 4. Build Application State
     // =========================================================================
-    let state = AppState::new(redis_conn);
+    let state = AppState::new(
+        redis_conn,
+        {% if include_s3 %}
+        storage,
+        {% endif %}
+    );
 
     // =========================================================================
     // 5. Create Router

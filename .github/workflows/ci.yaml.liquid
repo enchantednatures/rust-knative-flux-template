@@ -60,6 +60,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      {% if include_s3 %}
+      minio:
+        image: minio/minio:latest
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      {% endif %}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,10 +91,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      {% if include_s3 %}
+      - name: Initialize MinIO bucket
+        if: always()
+        run: |
+          apk add --no-cache curl
+          sleep 5  # Wait for MinIO to be ready
+          export MINIO_URL="http://localhost:9000"
+          export AWS_ACCESS_KEY_ID=minioadmin
+          export AWS_SECRET_ACCESS_KEY=minioadmin
+        continue-on-error: true
+
+      {% endif %}
       - name: Run tests
         run: cargo test --all-features
         env:
           APP__REDIS__URL: redis://localhost:6379
+          {% if include_s3 %}
+          APP__S3__ENDPOINT: http://localhost:9000
+          APP__S3__BUCKET: data
+          APP__S3__REGION: us-east-1
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+          {% endif %}
 
   # ==========================================================================
   # Build & Push Docker Image

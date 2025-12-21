@@ -26,3 +26,14 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
         value: "128Mi"
+
+{% if include_s3 %}
+# Staging-specific S3 configuration (may use MinIO or S3)
+configMapGenerator:
+  - name: s3-config
+    behavior: create
+    literals:
+      - S3_ENDPOINT=https://minio.staging.svc.cluster.local:9000  # Update as needed
+      - S3_BUCKET=data-staging
+      - S3_REGION=us-east-1
+{% endif %}
