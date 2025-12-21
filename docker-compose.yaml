@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  # ==========================================================================
+  # Application (for testing the container locally)
+  # ==========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: development
+      APP__SERVER__HOST: "0.0.0.0"
+      APP__SERVER__PORT: "8080"
+      APP__REDIS__URL: "redis://redis:6379"
+      APP__TELEMETRY__OTLP_ENDPOINT: "http://otel-collector:4317"
+      APP__TELEMETRY__SERVICE_NAME: "rust-service-local"
+      APP__TELEMETRY__LOG_LEVEL: "debug"
+      RUST_LOG: "debug,hyper=info,tower=info"
+    depends_on:
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Redis
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ==========================================================================
+  # OpenTelemetry Collector (Simulates Knative infrastructure)
+  # ==========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./docker/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC (app sends here)
+      - "4318:4318"   # OTLP HTTP
+      - "9411:9411"   # Zipkin receiver (simulates Knative infra)
+      - "8888:8888"   # Prometheus metrics from collector
+    depends_on:
+      - jaeger
+
+  # ==========================================================================
+  # Jaeger (Trace Visualization)
+  # ==========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.63
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC (for OTel collector)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  # ==========================================================================
+  # Prometheus (Optional - for local metrics testing)
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-lifecycle'
+
+volumes:
+  redis-data:

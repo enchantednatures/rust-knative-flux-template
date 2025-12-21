@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+bases:
+  - ../../base
+
+commonLabels:
+  environment: staging
+
+patches:
+  - target:
+      kind: Service
+      name: rust-service
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "1"
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "5"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"

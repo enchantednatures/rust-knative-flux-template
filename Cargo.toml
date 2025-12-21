@@ -1,0 +1,67 @@
+[package]
+name = "rust-knative-flux-template"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Your Name <you@example.com>"]
+description = "Rust microservice template for Knative + FluxCD"
+license = "MIT"
+
+[[bin]]
+name = "service"
+path = "src/main.rs"
+
+[dependencies]
+# Async Runtime
+tokio = { version = "1.41", features = ["full"] }
+
+# Web Framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.5", features = ["timeout"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "propagate-header"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Configuration
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+# Observability - Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.21"
+
+# Observability - OpenTelemetry
+opentelemetry = "0.20"
+opentelemetry_sdk = { version = "0.20", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.13", features = ["tonic"] }
+opentelemetry-semantic-conventions = "0.12"
+
+# B3 Propagation (Critical for Knative)
+opentelemetry-zipkin = { version = "0.18", default-features = false, features = ["reqwest-client"] }
+
+# Metrics
+metrics = "0.21"
+metrics-exporter-prometheus = "0.13"
+
+# Redis (no pool - multiplexed connection)
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+
+[dev-dependencies]
+axum-test = "16"
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

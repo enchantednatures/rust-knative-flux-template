@@ -1,0 +1,14 @@
+# Default configuration
+# Override via environment-specific files or environment variables
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[redis]
+url = "redis://localhost:6379"
+
+[telemetry]
+service_name = "rust-service"
+log_level = "info"
+# otlp_endpoint = "http://otel-collector:4317"  # Optional
