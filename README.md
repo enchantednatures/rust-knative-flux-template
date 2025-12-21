@@ -1,0 +1,1 @@
+# rust-knative-flux-template
