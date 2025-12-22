@@ -9,7 +9,7 @@ on:
 
 jobs:
   verify-and-test:
-    name: E2E (${{ matrix.scenario }})
+    name: E2E ({% raw %}{{ matrix.scenario }}{% endraw %})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -35,19 +35,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: {% raw %}{{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            {% raw %}{{ runner.os }}-cargo-{% endraw %}
       
       - name: Verify template generation
         run: |
           chmod +x tests/e2e/scripts/*.sh
           tests/e2e/scripts/04-verify-generation.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
+            "{% raw %}{{ matrix.scenario }}{% endraw %}" \
+            "{% raw %}{{ matrix.include_s3 }}{% endraw %}"
       
       - name: Setup Kind cluster
-        run: tests/e2e/scripts/00-setup-kind.sh "${{ matrix.scenario }}"
+        run: tests/e2e/scripts/00-setup-kind.sh "{% raw %}{{ matrix.scenario }}{% endraw %}"
       
       - name: Install Knative Serving
         run: tests/e2e/scripts/01-install-knative.sh
@@ -56,19 +56,19 @@ jobs:
         run: tests/e2e/scripts/02-install-flux.sh
       
       - name: Deploy infrastructure (Redis + MinIO)
-        run: tests/e2e/scripts/03-deploy-infrastructure.sh "${{ matrix.include_s3 }}"
+        run: tests/e2e/scripts/03-deploy-infrastructure.sh "{% raw %}{{ matrix.include_s3 }}{% endraw %}"
       
       - name: Build and deploy reference implementation
         run: |
           tests/e2e/scripts/05-deploy-reference.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
+            "{% raw %}{{ matrix.scenario }}{% endraw %}" \
+            "{% raw %}{{ matrix.include_s3 }}{% endraw %}"
       
       - name: Run E2E tests
         run: |
           tests/e2e/scripts/06-run-tests.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
+            "{% raw %}{{ matrix.scenario }}{% endraw %}" \
+            "{% raw %}{{ matrix.include_s3 }}{% endraw %}"
       
       - name: Collect diagnostics on failure
         if: failure()
@@ -90,4 +90,4 @@ jobs:
       
       - name: Cleanup
         if: always()
-        run: tests/e2e/scripts/99-cleanup.sh "${{ matrix.scenario }}"
+        run: tests/e2e/scripts/99-cleanup.sh "{% raw %}{{ matrix.scenario }}{% endraw %}"

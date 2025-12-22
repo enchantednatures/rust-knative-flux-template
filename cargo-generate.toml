@@ -2,7 +2,9 @@
 cargo_generate_version = ">=0.18.0"
 ignore = [
   "examples",
-  "tests/e2e"
+  "tests/e2e",
+  "target",
+  "Cargo.lock"
 ]
 
 [placeholders]

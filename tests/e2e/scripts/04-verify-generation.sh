@@ -13,11 +13,11 @@ cd "$TEMP_DIR"
 echo "Generating template: ${SCENARIO}..."
 cargo generate \
   --path "$OLDPWD" \
-  --name "generated-${SCENARIO}" \
+  --name "example-app-${SCENARIO}" \
   --define "include_s3=${INCLUDE_S3}" \
   --silent
 
-GENERATED_DIR="${TEMP_DIR}/generated-${SCENARIO}"
+GENERATED_DIR="${TEMP_DIR}/example-app-${SCENARIO}"
 REFERENCE_DIR="${OLDPWD}/examples/${SCENARIO}"
 
 if [ ! -d "$GENERATED_DIR" ]; then

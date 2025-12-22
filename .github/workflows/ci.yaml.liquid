@@ -151,12 +151,12 @@ jobs:
             # Git SHA short (for Flux ImagePolicy)
             type=sha,prefix=sha-,format=short
             # Timestamp (for ordering)
-            type=raw,value=ts-{{date 'YYYYMMDDHHmmss'}}
+            type=raw,value=ts-{% raw %}{{date 'YYYYMMDDHHmmss'}}{% endraw %}
             # Branch name
             type=ref,event=branch
             # SemVer tags (v1.0.0 -> 1.0.0, latest)
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={% raw %}{{version}}{% endraw %}
+            type=semver,pattern={% raw %}{{major}}.{{minor}}{% endraw %}
             # Latest for main branch
             type=raw,value=latest,enable={% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
 

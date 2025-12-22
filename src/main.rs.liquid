@@ -1,4 +1,4 @@
-use {{ crate_name | replace(from="-", to="_") }}::{config::Config, observability, routes, state::AppState};
+use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
 
 #[tokio::main]
