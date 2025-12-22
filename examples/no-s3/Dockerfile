@@ -1,48 +1,47 @@
 # ==============================================================================
-# Stage 1: Build
+# Stage 1: Chef - Prepare dependency recipe
+# ==============================================================================
+FROM rust:1.92-alpine AS chef
+RUN apk add --no-cache musl-dev openssl-dev pkgconfig curl
+
+# Install cargo-chef
+RUN cargo install cargo-chef
+
+WORKDIR /app
+
+# Prepare the recipe (analyzes dependencies without building)
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ==============================================================================
+# Stage 2: Build dependencies using chef recipe
 # ==============================================================================
 FROM rust:1.92-alpine AS builder
-
-# Install build dependencies for musl static compilation
 RUN apk add --no-cache \
     musl-dev \
     openssl-dev \
     openssl-libs-static \
-    pkgconfig
+    pkgconfig \
+    curl
+
+# Install cargo-chef and musl target
+RUN cargo install cargo-chef && \
+    rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /app
 
-# Install the musl target for static linking
-RUN rustup target add x86_64-unknown-linux-musl
+# Copy the recipe from chef stage
+COPY --from=chef /app/recipe.json recipe.json
 
-# Copy manifests first for dependency caching
-COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+# Build dependencies using the recipe (cached layer)
+RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 
-# Create dummy main.rs to build dependencies (cache layer optimization)
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release --target x86_64-unknown-linux-musl && \
-    rm -rf src
-
-# Copy actual source code
-COPY src ./src
-COPY config ./config
-
-# Touch main.rs to invalidate the dummy build cache
-RUN touch src/main.rs
-
-# Build the release binary with static linking
-# RUSTFLAGS="-C target-feature=+crt-static" ensures fully static binary
-ENV RUSTFLAGS="-C target-feature=+crt-static"
+# Copy source code and build the application
+COPY . .
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
-# Verify it's statically linked
-RUN file target/x86_64-unknown-linux-musl/release/service && \
-    ldd target/x86_64-unknown-linux-musl/release/service 2>&1 | grep -q "not a dynamic executable" || \
-    (echo "ERROR: Binary is not statically linked!" && exit 1)
-
 # ==============================================================================
-# Stage 2: Runtime (Minimal Alpine)
+# Stage 3: Runtime (Minimal Alpine)
 # ==============================================================================
 FROM alpine:3.23 AS runtime
 
@@ -53,7 +52,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 # Copy the statically-linked binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/service ./service
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/example_app_no_s3 ./example_app_no_s3
 
 # Copy default config (can be overridden via env vars in K8s)
 COPY --from=builder /app/config ./config
@@ -74,4 +73,4 @@ ENV APP_ENV=production
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health/live || exit 1
 
-ENTRYPOINT ["/app/service"]
+ENTRYPOINT ["./example_app_no_s3"]
