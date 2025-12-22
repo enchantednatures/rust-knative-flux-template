@@ -4,6 +4,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3Config {
     /// S3-compatible endpoint (required for MinIO)
@@ -15,12 +16,15 @@ pub struct S3Config {
     // Credentials via AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
 }
 
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
+    
     pub s3: S3Config,
+    
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -61,11 +65,13 @@ impl Default for Config {
                 service_name: "rust-service".into(),
                 log_level: "info".into(),
             },
+            
             s3: S3Config {
                 endpoint: "http://localhost:9000".into(),
                 bucket: "data".into(),
                 region: "us-east-1".into(),
             },
+            
         }
     }
 }
@@ -112,6 +118,7 @@ impl Config {
             return Err(figment::Error::from("server.port must be non-zero"));
         }
 
+        
         if self.s3.endpoint.is_empty() {
             return Err(figment::Error::from(
                 "s3.endpoint must be set (via config file or APP__S3__ENDPOINT)",
@@ -123,6 +130,7 @@ impl Config {
                 "s3.bucket must be set (via config file or APP__S3__BUCKET)",
             ));
         }
+        
 
         Ok(())
     }

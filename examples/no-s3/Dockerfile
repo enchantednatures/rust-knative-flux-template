@@ -1,7 +1,7 @@
 # ==============================================================================
 # Stage 1: Build
 # ==============================================================================
-FROM rust:1.83-alpine AS builder
+FROM rust:1.92-alpine AS builder
 
 # Install build dependencies for musl static compilation
 RUN apk add --no-cache \
@@ -44,7 +44,7 @@ RUN file target/x86_64-unknown-linux-musl/release/service && \
 # ==============================================================================
 # Stage 2: Runtime (Minimal Alpine)
 # ==============================================================================
-FROM alpine:3.21 AS runtime
+FROM alpine:3.23 AS runtime
 
 # Install CA certificates for TLS connections (Redis TLS, OTLP, etc.)
 RUN apk add --no-cache ca-certificates tzdata && \

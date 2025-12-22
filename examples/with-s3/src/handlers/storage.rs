@@ -1,3 +1,4 @@
+
 //! S3 storage example endpoint
 //!
 //! Demonstrates OpenDAL usage for S3 operations
@@ -64,7 +65,7 @@ pub async fn storage_example(
     // Write to S3
     state
         .storage
-        .write(&key, json_bytes.clone())
+        .write(&key, json_bytes.clone().into())
         .await
         .map_err(|e| AppError::Internal(format!("S3 write failed: {}", e)))?;
 
@@ -107,3 +108,4 @@ pub async fn storage_example(
         }),
     ))
 }
+

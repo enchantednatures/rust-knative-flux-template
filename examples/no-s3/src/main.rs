@@ -1,4 +1,4 @@
-use example_app_no_s3::{config::Config, observability, routes, state::AppState};
+use no_s3::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
 
 #[tokio::main]
@@ -37,58 +37,55 @@ async fn main() -> anyhow::Result<()> {
         })?;
     tracing::info!("Redis connection established");
 
-    // =========================================================================
-    // 4. Create Application State (Dependency Injection)
-    // =========================================================================
-    let state = AppState::new(redis_conn);
+    
 
     // =========================================================================
-    // 5. Setup HTTP Server with Axum
+    // 4. Build Application State
+    // =========================================================================
+    let state = AppState::new(
+        redis_conn,
+        
+    );
+
+    // =========================================================================
+    // 5. Create Router
     // =========================================================================
     let app = routes::create_router(state);
 
     // =========================================================================
-    // 6. Start Server with Graceful Shutdown
+    // 6. Start HTTP Server
     // =========================================================================
-    let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.server.host, config.server.port))
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to bind to address");
-            e
-        })?;
+    let addr = format!("{}:{}", config.server.host, config.server.port);
+    tracing::info!(address = %addr, "Starting server");
 
-    tracing::info!(
-        address = %listener.local_addr()?,
-        "Server starting"
-    );
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("Server listening on {}", addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Server error");
-            e
-        })?;
+        .await?;
 
-    tracing::info!("Server shutdown complete");
+    // =========================================================================
+    // 7. Graceful Shutdown
+    // =========================================================================
+    tracing::info!("Server shutting down");
+    observability::shutdown_telemetry();
+
     Ok(())
 }
 
-/// Graceful shutdown signal handler
-///
-/// Listens for Ctrl+C (SIGINT) and SIGTERM signals
-/// and returns when either is received.
+/// Wait for shutdown signal (SIGTERM or SIGINT)
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .expect("Failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]
     let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
+            .expect("Failed to install SIGTERM handler")
             .recv()
             .await;
     };
@@ -98,12 +95,10 @@ async fn shutdown_signal() {
 
     tokio::select! {
         _ = ctrl_c => {
-            tracing::info!("shutdown signal received: Ctrl+C");
+            tracing::info!("Received Ctrl+C signal");
         },
         _ = terminate => {
-            tracing::info!("shutdown signal received: SIGTERM");
+            tracing::info!("Received SIGTERM signal");
         },
     }
-
-    tracing::info!("shutdown signal received, starting graceful shutdown");
 }

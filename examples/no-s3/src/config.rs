@@ -4,11 +4,14 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
+
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
+    
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,6 +52,7 @@ impl Default for Config {
                 service_name: "rust-service".into(),
                 log_level: "info".into(),
             },
+            
         }
     }
 }
@@ -94,6 +98,8 @@ impl Config {
         if self.server.port == 0 {
             return Err(figment::Error::from("server.port must be non-zero"));
         }
+
+        
 
         Ok(())
     }

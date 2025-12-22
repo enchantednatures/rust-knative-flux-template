@@ -9,11 +9,13 @@ port = 8080
 url = "redis://localhost:6379"
 
 [telemetry]
-service_name = "example-app-with-s3"
+service_name = "example-app"
 log_level = "info"
 # otlp_endpoint = "http://otel-collector:4317"  # Optional
+
 
 [s3]
 endpoint = "http://localhost:9000"  # MinIO endpoint
 bucket = "data"
 region = "us-east-1"
+

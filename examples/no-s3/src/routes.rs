@@ -1,4 +1,4 @@
-use axum::{routing::{get}, Router};
+use axum::{routing::{get, post}, Router};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -12,17 +12,20 @@ use crate::state::AppState;
         health::liveness,
         health::readiness,
         api::hello,
+        
     ),
     components(
         schemas(
             health::HealthResponse,
             api::HelloResponse,
             api::HelloQuery,
+            
         )
     ),
     tags(
         (name = "Health", description = "Health check endpoints"),
         (name = "API", description = "Application endpoints"),
+        
     ),
     info(
         title = "Rust Knative Service",
@@ -49,4 +52,5 @@ pub fn create_router(state: AppState) -> Router {
 fn api_v1_routes() -> Router<AppState> {
     Router::new()
         .route("/hello", get(api::hello))
+        
 }

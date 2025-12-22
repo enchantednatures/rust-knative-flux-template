@@ -9,7 +9,8 @@ port = 8080
 url = "redis://localhost:6379"
 
 [telemetry]
-service_name = "example-app-no-s3"
+service_name = "no-s3"
 log_level = "info"
 # otlp_endpoint = "http://otel-collector:4317"  # Optional
+
 

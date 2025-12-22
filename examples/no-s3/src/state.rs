@@ -1,5 +1,6 @@
 use redis::aio::MultiplexedConnection;
 
+
 /// Application state shared across all handlers
 /// Uses dependency injection pattern - accepts pre-configured dependencies
 #[derive(Clone)]
@@ -7,6 +8,7 @@ pub struct AppState {
     /// Redis multiplexed connection - supports Clone and handles concurrency internally
     /// No need for Arc<RwLock<>> - MultiplexedConnection is already designed for this
     pub redis: MultiplexedConnection,
+    
 }
 
 impl AppState {
@@ -15,7 +17,7 @@ impl AppState {
     /// # Example
     /// ```no_run
     /// use redis::Client;
-    /// use example_app_no_s3::state::AppState;
+    /// use no_s3::state::AppState;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,9 +29,11 @@ impl AppState {
     /// ```
     pub fn new(
         redis: MultiplexedConnection,
+        
     ) -> Self {
         Self {
             redis,
+            
         }
     }
 }

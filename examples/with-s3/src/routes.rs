@@ -3,7 +3,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{api, health, storage};
+use crate::handlers::{api, health};
 use crate::state::AppState;
 
 #[derive(OpenApi)]
@@ -12,21 +12,27 @@ use crate::state::AppState;
         health::liveness,
         health::readiness,
         api::hello,
-        storage::storage_example,
+        
+        crate::handlers::storage::storage_example,
+        
     ),
     components(
         schemas(
             health::HealthResponse,
             api::HelloResponse,
             api::HelloQuery,
-            storage::StorageTestData,
-            storage::StorageExampleResponse,
+            
+            crate::handlers::storage::StorageTestData,
+            crate::handlers::storage::StorageExampleResponse,
+            
         )
     ),
     tags(
         (name = "Health", description = "Health check endpoints"),
         (name = "API", description = "Application endpoints"),
+        
         (name = "Storage", description = "S3 storage examples"),
+        
     ),
     info(
         title = "Rust Knative Service",
@@ -53,5 +59,7 @@ pub fn create_router(state: AppState) -> Router {
 fn api_v1_routes() -> Router<AppState> {
     Router::new()
         .route("/hello", get(api::hello))
-        .route("/storage/example", post(storage::storage_example))
+        
+        .route("/storage/example", post(crate::handlers::storage::storage_example))
+        
 }

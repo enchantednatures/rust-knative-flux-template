@@ -1,5 +1,5 @@
 [package]
-name = "example-app-no-s3"
+name = "no_s3"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -52,6 +52,8 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
+
+
 # Utilities
 thiserror = "1.0"
 anyhow = "1.0"
@@ -59,6 +61,7 @@ anyhow = "1.0"
 [dev-dependencies]
 axum-test = "16"
 tokio-test = "0.4"
+
 
 [profile.release]
 lto = true

@@ -1,5 +1,5 @@
 [package]
-name = "example-app-with-s3"
+name = "with_s3"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -52,14 +52,10 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
+
 # Object Storage (S3-compatible via OpenDAL)
 opendal = { version = "0.55", default-features = false, features = ["services-s3"] }
 
-# Time handling
-chrono = { version = "0.4", features = ["serde"] }
-
-# UUID generation
-uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Utilities
 thiserror = "1.0"
@@ -68,7 +64,9 @@ anyhow = "1.0"
 [dev-dependencies]
 axum-test = "16"
 tokio-test = "0.4"
+
 uuid = { version = "1.0", features = ["v4"] }
+
 
 [profile.release]
 lto = true

@@ -1,7 +1,8 @@
 # Development environment configuration
 
 [telemetry]
-service_name = "example-app-no-s3-dev"
+service_name = "no-s3-dev"
 log_level = "debug"
 otlp_endpoint = "http://localhost:4317"
+
 
