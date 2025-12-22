@@ -8,7 +8,7 @@ description = "Rust microservice template for Knative + FluxCD"
 license = "MIT"
 
 [[bin]]
-name = "service"
+name = "{{ crate_name }}"
 path = "src/main.rs"
 
 [dependencies]
@@ -64,6 +64,10 @@ anyhow = "1.0"
 [dev-dependencies]
 axum-test = "16"
 tokio-test = "0.4"
+
+# Build dependencies
+[build-dependencies]
+cargo-chef = "0.1"
 {% if include_s3 %}
 uuid = { version = "1.0", features = ["v4"] }
 {% endif %}
