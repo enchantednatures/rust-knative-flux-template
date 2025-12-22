@@ -4,7 +4,9 @@ ignore = [
   "examples",
   "tests/e2e",
   "target",
-  "Cargo.lock"
+  "Cargo.lock",
+  ".github/workflows/template-e2e-test.yaml",
+  "deploy/flux/image-update-automation.yaml"
 ]
 
 [placeholders]

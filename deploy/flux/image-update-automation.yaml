@@ -30,10 +30,10 @@ spec:
         name: FluxCD
         email: flux@users.noreply.github.com
       messageTemplate: |
-        chore: update image to {% raw %}{{.NewImage}}{% endraw %}
+        chore: update image to {{.NewImage}}
         
-        Image: {% raw %}{{.ImageRepository}}{% endraw %}
-        Tag: {% raw %}{{.NewTag}}{% endraw %}
+        Image: {{.ImageRepository}}
+        Tag: {{.NewTag}}
     push:
       branch: main
   update:
