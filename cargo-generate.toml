@@ -6,5 +6,5 @@ ignore = [
 ]
 
 [placeholders]
-project_name = { prompt = "Project name", type = "string" }
+project_name = { prompt = "Project name", type = "string", default = "example-app" }
 include_s3 = { prompt = "Include S3-compatible storage (MinIO/S3)?", type = "bool", default = false }

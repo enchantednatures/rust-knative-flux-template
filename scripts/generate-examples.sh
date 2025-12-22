@@ -12,15 +12,15 @@ cd /tmp
 
 # Generate with-s3 scenario
 echo "Generating with-s3..."
-cargo-generate --path "$REPO_DIR" \
-  --name with-s3 \
+cargo generate --path "$REPO_DIR" \
+  --name example-app-with-s3 \
   --define include_s3=true \
   --silent
 
 # Generate no-s3 scenario
 echo "Generating no-s3..."
-cargo-generate --path "$REPO_DIR" \
-  --name no-s3 \
+cargo generate --path "$REPO_DIR" \
+  --name example-app-no-s3 \
   --define include_s3=false \
   --silent
 
@@ -28,8 +28,8 @@ cargo-generate --path "$REPO_DIR" \
 echo "Moving generated projects to examples/"
 rm -rf "$REPO_DIR/examples"
 mkdir -p "$REPO_DIR/examples"
-mv /tmp/with-s3 "$REPO_DIR/examples/"
-mv /tmp/no-s3 "$REPO_DIR/examples/"
+mv /tmp/example-app-with-s3 "$REPO_DIR/examples/with-s3"
+mv /tmp/example-app-no-s3 "$REPO_DIR/examples/no-s3"
 
 # Remove Cargo.lock from examples (reproducibility)
 rm -f "$REPO_DIR/examples/with-s3/Cargo.lock"

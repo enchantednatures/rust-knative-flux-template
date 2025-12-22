@@ -17,18 +17,18 @@ scripts/generate-examples.sh
 
 # Option 2: Manual generation
 cd /tmp
-cargo generate --path /path/to/rust-knative-flux-template --name with-s3 --define include_s3=true
-cargo generate --path /path/to/rust-knative-flux-template --name no-s3 --define include_s3=false
+cargo generate --path /path/to/rust-knative-flux-template --name example-app-with-s3 --define include_s3=true --silent
+cargo generate --path /path/to/rust-knative-flux-template --name example-app-no-s3 --define include_s3=false --silent
 
 # Move to examples
 rm -rf /path/to/rust-knative-flux-template/examples
-mkdir /path/to/rust-knative-flux-template/examples
-mv with-s3 /path/to/rust-knative-flux-template/examples/
-mv no-s3 /path/to/rust-knative-flux-template/examples/
+mkdir -p /path/to/rust-knative-flux-template/examples
+mv example-app-with-s3 /path/to/rust-knative-flux-template/examples/with-s3
+mv example-app-no-s3 /path/to/rust-knative-flux-template/examples/no-s3
 
 # Cleanup and verify
 cd /path/to/rust-knative-flux-template/examples
-rm with-s3/Cargo.lock no-s3/Cargo.lock
+rm -f with-s3/Cargo.lock no-s3/Cargo.lock
 cd with-s3 && cargo check && cd ../no-s3 && cargo check
 
 # Commit

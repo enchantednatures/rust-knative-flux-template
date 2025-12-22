@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -34,9 +34,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: {% raw %}${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            {% raw %}${{ runner.os }}-cargo-{% endraw %}
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -87,9 +87,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          key: {% raw %}${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            {% raw %}${{ runner.os }}-cargo-{% endraw %}
 
       {% if include_s3 %}
       - name: Initialize MinIO bucket
@@ -127,8 +127,8 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build-push.outputs.digest }}
+      image-tag: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+      image-digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}
     steps:
       - uses: actions/checkout@v4
 
@@ -138,15 +138,15 @@ jobs:
       - name: Login to Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
 
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}
           tags: |
             # Git SHA short (for Flux ImagePolicy)
             type=sha,prefix=sha-,format=short
@@ -158,7 +158,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             # Latest for main branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable={% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
 
       - name: Build and push
         id: build-push
@@ -166,8 +166,8 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+          labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -175,8 +175,8 @@ jobs:
       - name: Image digest
         run: |
           echo "Image built and pushed:"
-          echo "Digest: ${{ steps.build-push.outputs.digest }}"
-          echo "Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}"
+          echo "Tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}"
 
   # ==========================================================================
   # Security Scan (Optional)
@@ -190,7 +190,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
+          image-ref: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}{% endraw %}
           format: 'sarif'
           output: 'trivy-results.sarif'
 

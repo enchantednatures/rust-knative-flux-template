@@ -1,0 +1,109 @@
+//! S3 storage example endpoint
+//!
+//! Demonstrates OpenDAL usage for S3 operations
+
+use axum::{extract::State, http::StatusCode, Json};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+use crate::{error::AppError, state::AppState};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct StorageTestData {
+    pub message: String,
+    pub timestamp: String,
+    pub test_id: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct StorageExampleResponse {
+    pub success: bool,
+    pub write_key: String,
+    pub write_size: usize,
+    pub read_verified: bool,
+    pub data: StorageTestData,
+}
+
+/// Example S3 storage operation
+///
+/// Demonstrates a complete write/read cycle:
+/// 1. Generates test data
+/// 2. Writes JSON to S3
+/// 3. Reads it back
+/// 4. Verifies integrity
+/// 5. Cleans up test file
+#[utoipa::path(
+    post,
+    path = "/api/v1/storage/example",
+    tag = "Storage",
+    responses(
+        (status = 200, description = "Storage operation successful", body = StorageExampleResponse),
+        (status = 500, description = "Storage operation failed")
+    )
+)]
+pub async fn storage_example(
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<StorageExampleResponse>), AppError> {
+    // Generate test data
+    let test_data = StorageTestData {
+        message: "Hello from S3 storage!".to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        test_id: uuid::Uuid::new_v4().to_string(),
+    };
+
+    let key = format!("test/{}.json", test_data.test_id);
+    let json_bytes = serde_json::to_vec(&test_data)
+        .map_err(|e| AppError::Internal(format!("Serialization failed: {}", e)))?;
+
+    tracing::info!(
+        key = %key,
+        size = json_bytes.len(),
+        "Writing test data to S3"
+    );
+
+    // Write to S3
+    state
+        .storage
+        .write(&key, json_bytes.clone())
+        .await
+        .map_err(|e| AppError::Internal(format!("S3 write failed: {}", e)))?;
+
+    // Read back from S3
+    let retrieved = state
+        .storage
+        .read(&key)
+        .await
+        .map_err(|e| AppError::Internal(format!("S3 read failed: {}", e)))?;
+
+    let retrieved_data: StorageTestData = serde_json::from_slice(&retrieved.to_vec())
+        .map_err(|e| AppError::Internal(format!("Deserialization failed: {}", e)))?;
+
+    // Verify data integrity
+    let verified = retrieved_data == test_data;
+
+    tracing::info!(
+        key = %key,
+        verified = verified,
+        "Read test data from S3"
+    );
+
+    // Cleanup: delete test file
+    state
+        .storage
+        .delete(&key)
+        .await
+        .map_err(|e| AppError::Internal(format!("S3 delete failed: {}", e)))?;
+
+    tracing::info!(key = %key, "Cleaned up test file");
+
+    Ok((
+        StatusCode::OK,
+        Json(StorageExampleResponse {
+            success: true,
+            write_key: key,
+            write_size: json_bytes.len(),
+            read_verified: verified,
+            data: retrieved_data,
+        }),
+    ))
+}
