@@ -53,19 +53,13 @@ pub async fn storage_example(
     };
 
     let key = format!("test/{}.json", test_data.test_id);
-    let json_bytes = serde_json::to_vec(&test_data)
+let json_bytes = serde_json::to_vec(&test_data)
         .map_err(|e| AppError::Internal(format!("Serialization failed: {}", e)))?;
-
-    tracing::info!(
-        key = %key,
-        size = json_bytes.len(),
-        "Writing test data to S3"
-    );
 
     // Write to S3
     state
         .storage
-        .write(&key, json_bytes.clone().into_bytes())
+        .write(&key, json_bytes.unwrap().into_bytes())
         .await
         .map_err(|e| AppError::Internal(format!("S3 write failed: {}", e)))?;
 
