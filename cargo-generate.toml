@@ -1,5 +1,9 @@
 [template]
 cargo_generate_version = ">=0.18.0"
+ignore = [
+  "examples",
+  "tests/e2e"
+]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string" }

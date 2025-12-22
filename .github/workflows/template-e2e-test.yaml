@@ -1,0 +1,93 @@
+name: Template E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-and-test:
+    name: E2E (${{ matrix.scenario }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: no-s3
+            include_s3: "false"
+          - scenario: with-s3
+            include_s3: "true"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Verify template generation
+        run: |
+          chmod +x tests/e2e/scripts/*.sh
+          tests/e2e/scripts/04-verify-generation.sh \
+            "${{ matrix.scenario }}" \
+            "${{ matrix.include_s3 }}"
+      
+      - name: Setup Kind cluster
+        run: tests/e2e/scripts/00-setup-kind.sh "${{ matrix.scenario }}"
+      
+      - name: Install Knative Serving
+        run: tests/e2e/scripts/01-install-knative.sh
+      
+      - name: Install Flux CD
+        run: tests/e2e/scripts/02-install-flux.sh
+      
+      - name: Deploy infrastructure (Redis + MinIO)
+        run: tests/e2e/scripts/03-deploy-infrastructure.sh "${{ matrix.include_s3 }}"
+      
+      - name: Build and deploy reference implementation
+        run: |
+          tests/e2e/scripts/05-deploy-reference.sh \
+            "${{ matrix.scenario }}" \
+            "${{ matrix.include_s3 }}"
+      
+      - name: Run E2E tests
+        run: |
+          tests/e2e/scripts/06-run-tests.sh \
+            "${{ matrix.scenario }}" \
+            "${{ matrix.include_s3 }}"
+      
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Cluster Info ==="
+          kubectl cluster-info
+          echo ""
+          echo "=== All Resources ==="
+          kubectl get all -A
+          echo ""
+          echo "=== Knative Service ==="
+          kubectl describe ksvc rust-service -n test-app || true
+          echo ""
+          echo "=== Pod Logs ==="
+          kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=200 || true
+          echo ""
+          echo "=== Flux Status ==="
+          flux get all -A || true
+      
+      - name: Cleanup
+        if: always()
+        run: tests/e2e/scripts/99-cleanup.sh "${{ matrix.scenario }}"
