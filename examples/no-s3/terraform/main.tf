@@ -5,7 +5,7 @@ terraform {
   # cloud {
   #   organization = "your-org"
   #   workspaces {
-  #     name = "rust-knative-no-s3"
+  #     name = "rust-knative-example-app"
   #   }
   # }
 }

@@ -1,4 +1,4 @@
-# no-s3
+# example-app
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3).
 
@@ -65,7 +65,7 @@ kubectl apply -k deploy/overlays/prod
 ## Project Structure
 
 ```
-no-s3/
+example-app/
 ├── src/
 │   ├── main.rs           # Application entry point
 │   ├── lib.rs            # Module exports

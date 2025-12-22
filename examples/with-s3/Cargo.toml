@@ -1,5 +1,5 @@
 [package]
-name = "with_s3"
+name = "example_app_with_s3"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
