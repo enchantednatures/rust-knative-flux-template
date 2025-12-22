@@ -65,7 +65,7 @@ pub async fn storage_example(
     // Write to S3
     state
         .storage
-        .write(&key, json_bytes.clone().into())
+        .write(&key, json_bytes.clone().into_bytes())
         .await
         .map_err(|e| AppError::Internal(format!("S3 write failed: {}", e)))?;
 
