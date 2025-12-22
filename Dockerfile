@@ -44,7 +44,7 @@ RUN file target/x86_64-unknown-linux-musl/release/service && \
 # ==============================================================================
 # Stage 2: Runtime (Minimal Alpine)
 # ==============================================================================
-FROM alpine:3.21 AS runtime
+FROM alpine:3.23 AS runtime
 
 # Install CA certificates for TLS connections (Redis TLS, OTLP, etc.)
 RUN apk add --no-cache ca-certificates tzdata && \
