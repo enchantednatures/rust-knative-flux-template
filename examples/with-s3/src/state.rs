@@ -22,7 +22,7 @@ impl AppState {
     /// # Example
     /// ```no_run
     /// use redis::Client;
-    /// use example_app_with_s3::state::AppState;
+    /// use with_s3::state::AppState;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {

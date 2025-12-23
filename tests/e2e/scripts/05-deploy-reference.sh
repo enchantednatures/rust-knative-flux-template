@@ -4,7 +4,9 @@ set -euo pipefail
 SCENARIO="${1}"
 INCLUDE_S3="${2}"
 CLUSTER_NAME="e2e-${SCENARIO}"
-REFERENCE_DIR="examples/${SCENARIO}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+REFERENCE_DIR="${PROJECT_ROOT}/examples/${SCENARIO}"
 
 echo "Creating test-app namespace..."
 kubectl create namespace test-app 2>/dev/null || true
@@ -31,8 +33,6 @@ docker build -t "rust-service-${SCENARIO}:e2e" .
 echo "Loading image into Kind cluster..."
 kind load docker-image "rust-service-${SCENARIO}:e2e" --name "${CLUSTER_NAME}"
 
-cd ../..
-
 echo "Deploying via kubectl (simulating Flux)..."
 # Create a temporary kustomization to patch the image
 TEMP_KUSTOMIZATION=$(mktemp -d)
@@ -50,6 +50,8 @@ EOF
 
 kubectl apply -k "${TEMP_KUSTOMIZATION}"
 rm -rf "${TEMP_KUSTOMIZATION}"
+
+cd "${PROJECT_ROOT}"
 
 echo "Waiting for Knative Service to be ready..."
 kubectl wait --for=condition=Ready ksvc/rust-service \

@@ -1,5 +1,5 @@
 [package]
-name = "example_app_no_s3"
+name = "no_s3"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -8,7 +8,7 @@ description = "Rust microservice template for Knative + FluxCD"
 license = "MIT"
 
 [[bin]]
-name = "example_app_no_s3"
+name = "no_s3"
 path = "src/main.rs"
 
 [dependencies]

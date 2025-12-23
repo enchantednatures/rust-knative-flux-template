@@ -1,4 +1,4 @@
-use example_app_no_s3::{config::Config, observability, routes, state::AppState};
+use no_s3::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
 
 #[tokio::main]

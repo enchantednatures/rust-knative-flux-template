@@ -52,7 +52,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 # Copy the statically-linked binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/example_app_no_s3 ./example_app_no_s3
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/no_s3 ./no_s3
 
 # Copy default config (can be overridden via env vars in K8s)
 COPY --from=builder /app/config ./config
@@ -73,4 +73,4 @@ ENV APP_ENV=production
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health/live || exit 1
 
-ENTRYPOINT ["./example_app_no_s3"]
+ENTRYPOINT ["./no_s3"]

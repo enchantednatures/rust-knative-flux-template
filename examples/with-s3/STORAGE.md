@@ -86,7 +86,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use example_app_with_s3::state::AppState;
+use with_s3::state::AppState;
 
 async fn upload_handler(
     State(state): State<AppState>,
