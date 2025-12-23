@@ -10,7 +10,7 @@ on:
 jobs:
   verify-and-test:
     name: E2E (${{ matrix.scenario }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     
     strategy:
