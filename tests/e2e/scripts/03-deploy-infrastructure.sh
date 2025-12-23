@@ -36,6 +36,13 @@ spec:
         ports:
         - containerPort: 6379
         args: ["redis-server", "--appendonly", "yes"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
@@ -85,6 +92,13 @@ spec:
           name: api
         - containerPort: 9001
           name: console
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -107,8 +121,8 @@ EOF
   kubectl wait --for=condition=Ready pod -l app=minio -n ${NAMESPACE} --timeout=3m
   
   echo "Creating MinIO bucket..."
-  kubectl run minio-init --rm -i --restart=Never -n ${NAMESPACE} --image=minio/mc:latest -- \
-    sh -c "mc alias set local http://minio.${NAMESPACE}.svc.cluster.local:9000 minioadmin minioadmin && mc mb local/data --ignore-existing" || true
+  kubectl run minio-init --rm -i --restart=Never -n ${NAMESPACE} --image=minio/mc:latest \
+    --overrides='{"spec":{"containers":[{"name":"minio-init","image":"minio/mc:latest","command":["sh","-c","mc alias set local http://minio.'${NAMESPACE}'.svc.cluster.local:9000 minioadmin minioadmin && mc mb local/data --ignore-existing"],"resources":{"requests":{"cpu":"50m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"128Mi"}}}]}}' || true
 
   echo "✓ MinIO deployed and initialized"
 else
