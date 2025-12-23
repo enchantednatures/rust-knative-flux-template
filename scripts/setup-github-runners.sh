@@ -150,22 +150,15 @@ download_runner() {
 
 # Generate registration token using gh CLI
 get_registration_token() {
-    local runner_name=$1
-    
-    log_info "Generating registration token for ${runner_name}..."
-    
     local token
     token=$(sudo -u "$RUNNER_USER" gh api \
         repos/enchantednatures/rust-knative-flux-template/actions/runners/registration-token \
         -X POST | jq -r '.token')
     
     if [[ -z "$token" || "$token" == "null" ]]; then
-        log_error "Failed to generate registration token"
-        log_info "Ensure gh CLI is authenticated: gh auth login"
-        exit 1
+        return 1
     fi
     
-    log_success "Registration token generated for ${runner_name}"
     echo "$token"
 }
 
@@ -327,8 +320,17 @@ setup_single_runner() {
     fi
     
     # Get registration token
+    log_info "Generating registration token for ${runner_name}..."
     local token
-    token=$(get_registration_token "$runner_name")
+    token=$(get_registration_token)
+    
+    if [[ -z "$token" ]]; then
+        log_error "Failed to generate registration token"
+        log_info "Ensure gh CLI is authenticated: gh auth login"
+        exit 1
+    fi
+    
+    log_success "Registration token generated for ${runner_name}"
     
     # Download runner
     log_info "Fetching latest GitHub Actions runner version..."
