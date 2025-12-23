@@ -8,10 +8,20 @@ if [[ -z "$SCENARIO" ]]; then
   exit 1
 fi
 
-INCLUDE_S3="${1:-false}"
-NAMESPACE="e2e-test-${SCENARIO}"
+# Use scenario-specific kubeconfig
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
 
-echo "Deploying infrastructure in namespace: ${NAMESPACE}..."
+if [[ ! -f "$KUBECONFIG" ]]; then
+  echo "Error: Kubeconfig not found: $KUBECONFIG"
+  echo "Did you run 00-setup-kind.sh first?"
+  exit 1
+fi
+
+INCLUDE_S3="${1:-false}"
+
+echo "Creating services namespace..."
+kubectl create namespace services 2>/dev/null || true
 
 echo "Deploying Redis..."
 cat <<EOF | kubectl apply -f -
@@ -19,7 +29,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: ${NAMESPACE}
+  namespace: services
 spec:
   replicas: 1
   selector:
@@ -36,19 +46,12 @@ spec:
         ports:
         - containerPort: 6379
         args: ["redis-server", "--appendonly", "yes"]
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: ${NAMESPACE}
+  namespace: services
 spec:
   selector:
     app: redis
@@ -58,7 +61,7 @@ spec:
 EOF
 
 echo "Waiting for Redis..."
-kubectl wait --for=condition=Ready pod -l app=redis -n ${NAMESPACE} --timeout=3m
+kubectl wait --for=condition=Ready pod -l app=redis -n services --timeout=3m
 
 if [ "$INCLUDE_S3" = "true" ]; then
   echo "Deploying MinIO..."
@@ -67,7 +70,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: minio
-  namespace: ${NAMESPACE}
+  namespace: services
 spec:
   replicas: 1
   selector:
@@ -92,19 +95,12 @@ spec:
           name: api
         - containerPort: 9001
           name: console
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: minio
-  namespace: ${NAMESPACE}
+  namespace: services
 spec:
   selector:
     app: minio
@@ -118,11 +114,11 @@ spec:
 EOF
 
   echo "Waiting for MinIO..."
-  kubectl wait --for=condition=Ready pod -l app=minio -n ${NAMESPACE} --timeout=3m
+  kubectl wait --for=condition=Ready pod -l app=minio -n services --timeout=3m
   
   echo "Creating MinIO bucket..."
-  kubectl run minio-init --rm -i --restart=Never -n ${NAMESPACE} --image=minio/mc:latest \
-    --overrides='{"spec":{"containers":[{"name":"minio-init","image":"minio/mc:latest","command":["sh","-c","mc alias set local http://minio.'${NAMESPACE}'.svc.cluster.local:9000 minioadmin minioadmin && mc mb local/data --ignore-existing"],"resources":{"requests":{"cpu":"50m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"128Mi"}}}]}}' || true
+  kubectl run minio-init --rm -i --restart=Never --image=minio/mc:latest -- \
+    sh -c "mc alias set local http://minio.services.svc.cluster.local:9000 minioadmin minioadmin && mc mb local/data --ignore-existing" || true
 
   echo "✓ MinIO deployed and initialized"
 else
