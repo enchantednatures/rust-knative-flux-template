@@ -32,7 +32,7 @@ spec:
           ports:
             - containerPort: 8080
               protocol: TCP
-           env:
+          env:
              - name: APP_ENV
                value: "production"
              - name: APP__SERVER__PORT
