@@ -221,13 +221,14 @@ install_service() {
     fi
 }
 
-# Setup Docker cleanup cron job
+# Setup Docker cleanup systemd timer
 setup_docker_cleanup() {
-    log_info "Setting up daily Docker cleanup cron job..."
+    log_info "Setting up daily Docker cleanup systemd timer..."
     
-    local cron_file="/etc/cron.daily/docker-cleanup"
+    # Create cleanup script
+    local cleanup_script="/usr/local/bin/github-runner-docker-cleanup.sh"
     
-    cat > "$cron_file" << 'EOF'
+    cat > "$cleanup_script" << 'EOF'
 #!/bin/bash
 #
 # Daily Docker cleanup for GitHub Actions runners
@@ -247,10 +248,42 @@ docker volume prune -f --filter "until=24h" 2>&1
 echo "[$(date)] Docker cleanup completed"
 EOF
     
-    chmod +x "$cron_file"
+    chmod +x "$cleanup_script"
     
-    log_success "Docker cleanup cron job installed: ${cron_file}"
+    # Create systemd service
+    cat > /etc/systemd/system/github-runner-docker-cleanup.service << EOF
+[Unit]
+Description=GitHub Actions Runner Docker Cleanup
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=${cleanup_script}
+StandardOutput=journal
+StandardError=journal
+EOF
+    
+    # Create systemd timer
+    cat > /etc/systemd/system/github-runner-docker-cleanup.timer << 'EOF'
+[Unit]
+Description=Daily Docker cleanup for GitHub Actions runners
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    
+    # Reload systemd, enable and start timer
+    systemctl daemon-reload
+    systemctl enable github-runner-docker-cleanup.timer
+    systemctl start github-runner-docker-cleanup.timer
+    
+    log_success "Docker cleanup timer installed and started"
     log_info "Cleanup runs daily and removes Docker resources older than 24 hours"
+    log_info "Check timer status: systemctl status github-runner-docker-cleanup.timer"
 }
 
 # Verify runner status
@@ -373,8 +406,9 @@ display_summary() {
     echo "  • Auto-update: Enabled (default)"
     echo ""
     echo "Docker cleanup:"
-    echo "  • Cron job: /etc/cron.daily/docker-cleanup"
+    echo "  • Timer: github-runner-docker-cleanup.timer"
     echo "  • Schedule: Daily (removes resources >24h old)"
+    echo "  • Check status: systemctl status github-runner-docker-cleanup.timer"
     echo ""
     echo "Verify runners are registered:"
     echo "  ${REPO_URL}/settings/actions/runners"
@@ -406,7 +440,7 @@ main() {
     echo "  • Install 2 GitHub Actions runners to /opt/actions-runner-{1,2}"
     echo "  • Configure them as systemd services (auto-start on boot)"
     echo "  • Enable auto-update (runners update themselves)"
-    echo "  • Setup daily Docker cleanup cron job"
+    echo "  • Setup daily Docker cleanup systemd timer"
     echo ""
     echo "Configuration:"
     echo "  Repository: ${REPO_URL}"

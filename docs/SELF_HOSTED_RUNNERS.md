@@ -21,7 +21,9 @@ This document describes the self-hosted GitHub Actions runners setup for this re
 
 ### Docker Cleanup
 
-- **Cron job**: `/etc/cron.daily/docker-cleanup`
+- **Service**: `github-runner-docker-cleanup.service`
+- **Timer**: `github-runner-docker-cleanup.timer`
+- **Script**: `/usr/local/bin/github-runner-docker-cleanup.sh`
 - **Schedule**: Daily
 - **Action**: Removes Docker resources older than 24 hours
 - **Removes**: Unused containers, images, networks, volumes, build cache
@@ -57,7 +59,7 @@ The script will:
 4. **Automatically generate registration tokens** (via gh CLI)
 5. Configure both runners
 6. Install as systemd services
-7. Setup daily Docker cleanup cron job
+7. Setup daily Docker cleanup systemd timer
 8. Verify installation
 
 **Note**: The script automatically generates registration tokens using the GitHub CLI API, so no manual token copy/paste is required.
@@ -268,9 +270,14 @@ sudo rm -rf /opt/actions-runner-1
 # Repeat for runner-2 if needed
 ```
 
-To remove Docker cleanup cron job:
+To remove Docker cleanup timer:
 ```bash
-sudo rm /etc/cron.daily/docker-cleanup
+sudo systemctl stop github-runner-docker-cleanup.timer
+sudo systemctl disable github-runner-docker-cleanup.timer
+sudo rm /etc/systemd/system/github-runner-docker-cleanup.timer
+sudo rm /etc/systemd/system/github-runner-docker-cleanup.service
+sudo rm /usr/local/bin/github-runner-docker-cleanup.sh
+sudo systemctl daemon-reload
 ```
 
 ## Security Considerations
@@ -348,8 +355,12 @@ sudo journalctl -u 'actions.runner.*' --since "7 days ago" | grep -i error
 ```bash
 # Verify runners are registered in GitHub UI
 # Check for runner updates (auto-update should handle this)
-# Review Docker cleanup cron job logs
-sudo grep docker-cleanup /var/log/syslog
+
+# Review Docker cleanup timer logs
+sudo journalctl -u github-runner-docker-cleanup.service --since "30 days ago"
+
+# Check Docker cleanup timer status
+sudo systemctl status github-runner-docker-cleanup.timer
 
 # Check for orphaned Kind clusters
 kind get clusters
