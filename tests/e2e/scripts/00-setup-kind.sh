@@ -25,6 +25,8 @@ TEMP_CONFIG=$(mktemp)
 cat > "${TEMP_CONFIG}" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  KubeletInUserNamespace: true
 nodes:
   - role: control-plane
     kubeadmConfigPatches:
@@ -33,10 +35,11 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
-            cgroup-driver: "cgroupfs"
+            feature-gates: "KubeletInUserNamespace=true"
       - |
         kind: KubeletConfiguration
-        cgroupDriver: cgroupfs
+        featureGates:
+          KubeletInUserNamespace: true
     extraPortMappings:
       # Map Kourier to host for external access
       - containerPort: 31080
