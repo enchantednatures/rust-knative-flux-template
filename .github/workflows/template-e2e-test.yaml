@@ -49,14 +49,14 @@ jobs:
             "${{ matrix.scenario }}" \
             "${{ matrix.include_s3 }}"
       
-      - name: Setup Kind cluster
-        run: tests/e2e/scripts/00-setup-kind.sh "${{ matrix.scenario }}"
+      - name: Setup test namespace
+        run: tests/e2e/scripts/00-setup-namespace.sh "${{ matrix.scenario }}"
       
-      - name: Install Knative Serving
-        run: tests/e2e/scripts/01-install-knative.sh "${{ matrix.scenario }}"
+      - name: Verify Knative Serving
+        run: tests/e2e/scripts/01-install-knative.sh
       
-      - name: Install Flux CD
-        run: tests/e2e/scripts/02-install-flux.sh "${{ matrix.scenario }}"
+      - name: Verify Flux CD
+        run: tests/e2e/scripts/02-install-flux.sh
       
       - name: Deploy infrastructure (Redis + MinIO)
         run: tests/e2e/scripts/03-deploy-infrastructure.sh "${{ matrix.include_s3 }}"
@@ -76,20 +76,21 @@ jobs:
       - name: Collect diagnostics on failure
         if: failure()
         run: |
+          NAMESPACE="e2e-test-${{ matrix.scenario }}"
           echo "=== Cluster Info ==="
           kubectl cluster-info
           echo ""
-          echo "=== All Resources ==="
-          kubectl get all -A
+          echo "=== Namespace Resources ==="
+          kubectl get all -n ${NAMESPACE}
           echo ""
           echo "=== Knative Service ==="
-          kubectl describe ksvc rust-service -n test-app || true
+          kubectl describe ksvc rust-service -n ${NAMESPACE} || true
           echo ""
           echo "=== Pod Logs ==="
-          kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=200 || true
+          kubectl logs -n ${NAMESPACE} -l serving.knative.dev/service=rust-service --tail=200 || true
           echo ""
-          echo "=== Flux Status ==="
-          flux get all -A || true
+          echo "=== Events ==="
+          kubectl get events -n ${NAMESPACE} --sort-by='.lastTimestamp' || true
       
       - name: Cleanup
         if: always()

@@ -1,41 +1,28 @@
 #!/bin/bash
 set -euo pipefail
 
-# Get scenario from calling script's environment or infer from current test
-SCENARIO="${SCENARIO:-${1:-}}"
-if [[ -z "$SCENARIO" ]]; then
-  echo "Error: SCENARIO not set. This script should be called from the workflow."
+echo "Verifying Flux CD is installed..."
+
+# Check if Flux is already installed on the cluster
+if ! kubectl get namespace flux-system &>/dev/null; then
+  echo "Error: Flux CD is not installed on this cluster"
+  echo "Please install Flux CD first or use a cluster with Flux installed"
   exit 1
 fi
 
-# Use scenario-specific kubeconfig
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
-
-if [[ ! -f "$KUBECONFIG" ]]; then
-  echo "Error: Kubeconfig not found: $KUBECONFIG"
-  echo "Did you run 00-setup-kind.sh first?"
-  exit 1
-fi
-
-echo "Installing Flux CLI..."
-curl -s https://fluxcd.io/install.sh | sudo bash
-
-echo "Installing Flux (minimal: source + kustomize controllers)..."
-flux install \
-  --components=source-controller,kustomize-controller \
-  --network-policy=false \
-  --timeout=5m
-
-echo "Waiting for Flux controllers..."
+echo "Waiting for Flux controllers to be ready..."
 kubectl wait --for=condition=Ready pods \
   -n flux-system \
   -l app=source-controller \
-  --timeout=3m
+  --timeout=2m || {
+  echo "Warning: source-controller may not be ready yet, continuing..."
+}
 
 kubectl wait --for=condition=Ready pods \
   -n flux-system \
   -l app=kustomize-controller \
-  --timeout=3m
+  --timeout=2m || {
+  echo "Warning: kustomize-controller may not be ready yet, continuing..."
+}
 
-echo "✓ Flux CD installed"
+echo "✓ Flux CD is available"

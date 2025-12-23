@@ -3,19 +3,10 @@ set -euo pipefail
 
 SCENARIO="${1}"
 INCLUDE_S3="${2}"
-
-# Use scenario-specific kubeconfig
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
-
-if [[ ! -f "$KUBECONFIG" ]]; then
-  echo "Error: Kubeconfig not found: $KUBECONFIG"
-  echo "Did you run 00-setup-kind.sh first?"
-  exit 1
-fi
+NAMESPACE="e2e-test-${SCENARIO}"
 
 echo "Getting Knative Service URL..."
-SERVICE_URL=$(kubectl get ksvc rust-service -n test-app -o jsonpath='{.status.url}')
+SERVICE_URL=$(kubectl get ksvc rust-service -n ${NAMESPACE} -o jsonpath='{.status.url}')
 echo "Service URL: ${SERVICE_URL}"
 
 # Helper function for tests
@@ -113,7 +104,7 @@ fi
 # Test 9: Check pod logs for errors
 echo ""
 echo "Test: Checking pod logs for errors..."
-LOGS=$(kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=100 2>/dev/null || echo "")
+LOGS=$(kubectl logs -n ${NAMESPACE} -l serving.knative.dev/service=rust-service --tail=100 2>/dev/null || echo "")
 if echo "$LOGS" | grep -qi "panic"; then
   echo "✗ Found PANIC in logs"
   echo "$LOGS" | grep -i "panic"
@@ -136,10 +127,10 @@ else
   echo ""
   echo "Debug information:"
   echo "Pod status:"
-  kubectl get pods -n test-app
+  kubectl get pods -n ${NAMESPACE}
   echo ""
   echo "Recent logs:"
-  kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=50 || true
+  kubectl logs -n ${NAMESPACE} -l serving.knative.dev/service=rust-service --tail=50 || true
   
   exit 1
 fi

@@ -2,14 +2,9 @@
 set -euo pipefail
 
 SCENARIO="${1}"
-CLUSTER_NAME="e2e-${SCENARIO}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KUBECONFIG_FILE="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
+NAMESPACE="e2e-test-${SCENARIO}"
 
-echo "Cleaning up Kind cluster: ${CLUSTER_NAME}..."
-kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+echo "Cleaning up test namespace: ${NAMESPACE}..."
+kubectl delete namespace "${NAMESPACE}" --ignore-not-found=true --wait=false || true
 
-# Remove kubeconfig file
-rm -f "$KUBECONFIG_FILE"
-
-echo "✓ Cleanup complete"
+echo "✓ Cleanup initiated (namespace will be deleted asynchronously)"
