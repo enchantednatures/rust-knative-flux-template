@@ -18,8 +18,15 @@ if [[ ! -f "$KUBECONFIG" ]]; then
   exit 1
 fi
 
-echo "Installing Flux CLI..."
-curl -s https://fluxcd.io/install.sh | sudo bash
+echo "Checking Flux CLI..."
+if ! command -v flux &> /dev/null; then
+  echo "Installing Flux CLI..."
+  # Install to user local bin without sudo
+  curl -s https://fluxcd.io/install.sh | bash -s -- --bindir=$HOME/.local/bin
+  export PATH="$HOME/.local/bin:$PATH"
+else
+  echo "Flux CLI already installed: $(flux --version)"
+fi
 
 echo "Installing Flux (minimal: source + kustomize controllers)..."
 flux install \
