@@ -1,6 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
+# Get scenario from environment (set by workflow)
+SCENARIO="${SCENARIO:-}"
+if [[ -z "$SCENARIO" ]]; then
+  echo "Error: SCENARIO environment variable not set"
+  exit 1
+fi
+
+# Use scenario-specific kubeconfig
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
+
+if [[ ! -f "$KUBECONFIG" ]]; then
+  echo "Error: Kubeconfig not found: $KUBECONFIG"
+  echo "Did you run 00-setup-kind.sh first?"
+  exit 1
+fi
+
 INCLUDE_S3="${1:-false}"
 
 echo "Creating services namespace..."

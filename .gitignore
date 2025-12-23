@@ -38,3 +38,6 @@ deploy/base/secret.yaml
 
 # Local testing
 docker-compose.override.yaml
+
+# E2E test kubeconfigs
+tests/e2e/scripts/.kubeconfig-*

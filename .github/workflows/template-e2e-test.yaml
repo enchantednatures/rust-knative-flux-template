@@ -22,6 +22,9 @@ jobs:
           - scenario: with-s3
             include_s3: "true"
     
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -50,10 +53,10 @@ jobs:
         run: tests/e2e/scripts/00-setup-kind.sh "${{ matrix.scenario }}"
       
       - name: Install Knative Serving
-        run: tests/e2e/scripts/01-install-knative.sh
+        run: tests/e2e/scripts/01-install-knative.sh "${{ matrix.scenario }}"
       
       - name: Install Flux CD
-        run: tests/e2e/scripts/02-install-flux.sh
+        run: tests/e2e/scripts/02-install-flux.sh "${{ matrix.scenario }}"
       
       - name: Deploy infrastructure (Redis + MinIO)
         run: tests/e2e/scripts/03-deploy-infrastructure.sh "${{ matrix.include_s3 }}"

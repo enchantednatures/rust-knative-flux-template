@@ -4,6 +4,16 @@ set -euo pipefail
 SCENARIO="${1}"
 INCLUDE_S3="${2}"
 
+# Use scenario-specific kubeconfig
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
+
+if [[ ! -f "$KUBECONFIG" ]]; then
+  echo "Error: Kubeconfig not found: $KUBECONFIG"
+  echo "Did you run 00-setup-kind.sh first?"
+  exit 1
+fi
+
 echo "Getting Knative Service URL..."
 SERVICE_URL=$(kubectl get ksvc rust-service -n test-app -o jsonpath='{.status.url}')
 echo "Service URL: ${SERVICE_URL}"

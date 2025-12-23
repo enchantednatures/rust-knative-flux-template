@@ -8,6 +8,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 REFERENCE_DIR="${PROJECT_ROOT}/examples/${SCENARIO}"
 
+# Use scenario-specific kubeconfig
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
+
+if [[ ! -f "$KUBECONFIG" ]]; then
+  echo "Error: Kubeconfig not found: $KUBECONFIG"
+  echo "Did you run 00-setup-kind.sh first?"
+  exit 1
+fi
+
 echo "Creating test-app namespace..."
 kubectl create namespace test-app 2>/dev/null || true
 

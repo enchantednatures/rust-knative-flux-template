@@ -1,6 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
+# Get scenario from calling script's environment or infer from current test
+SCENARIO="${SCENARIO:-${1:-}}"
+if [[ -z "$SCENARIO" ]]; then
+  echo "Error: SCENARIO not set. This script should be called from the workflow."
+  exit 1
+fi
+
+# Use scenario-specific kubeconfig
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
+
+if [[ ! -f "$KUBECONFIG" ]]; then
+  echo "Error: Kubeconfig not found: $KUBECONFIG"
+  echo "Did you run 00-setup-kind.sh first?"
+  exit 1
+fi
+
 KNATIVE_VERSION="1.16.0"
 
 echo "Installing Knative Serving CRDs..."
