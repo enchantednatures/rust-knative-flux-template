@@ -97,19 +97,15 @@ check_prerequisites() {
 
 # Get latest GitHub Actions runner version
 get_latest_runner_version() {
-    log_info "Fetching latest GitHub Actions runner version..."
-    
     local api_url="https://api.github.com/repos/actions/runner/releases/latest"
     local version
     
     version=$(curl -s "$api_url" | jq -r '.tag_name' | sed 's/^v//')
     
     if [[ -z "$version" || "$version" == "null" ]]; then
-        log_error "Failed to fetch runner version from GitHub API"
-        exit 1
+        return 1
     fi
     
-    log_success "Latest runner version: $version"
     echo "$version"
 }
 
@@ -334,17 +330,18 @@ setup_single_runner() {
     local token
     token=$(get_registration_token "$runner_name")
     
-    # Download runner (use shared version)
-    if [[ ! -f "${RUNNER_BASE_DIR}-1/config.sh" ]] && [[ ! -f "${RUNNER_BASE_DIR}-2/config.sh" ]]; then
-        local version
-        version=$(get_latest_runner_version)
-        download_runner "$version" "$runner_dir"
-    else
-        log_info "Reusing runner version from first installation..."
-        local version
-        version=$(get_latest_runner_version)
-        download_runner "$version" "$runner_dir"
+    # Download runner
+    log_info "Fetching latest GitHub Actions runner version..."
+    local version
+    version=$(get_latest_runner_version)
+    
+    if [[ -z "$version" ]]; then
+        log_error "Failed to fetch runner version from GitHub API"
+        exit 1
     fi
+    
+    log_success "Latest runner version: $version"
+    download_runner "$version" "$runner_dir"
     
     # Configure runner
     configure_runner "$runner_dir" "$runner_name" "$token"
