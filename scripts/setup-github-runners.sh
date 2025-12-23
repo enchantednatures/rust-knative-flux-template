@@ -68,7 +68,7 @@ check_prerequisites() {
     local missing_deps=()
     
     # Check required commands
-    for cmd in docker kubectl flux cargo rustc kind jq curl; do
+    for cmd in docker kubectl flux cargo rustc kind jq curl gh; do
         if ! command -v "$cmd" &> /dev/null; then
             missing_deps+=("$cmd")
         fi
@@ -82,6 +82,13 @@ check_prerequisites() {
     # Check systemd
     if ! systemctl --version &> /dev/null; then
         log_error "systemd is required but not found"
+        exit 1
+    fi
+    
+    # Check gh CLI authentication
+    if ! sudo -u "$RUNNER_USER" gh auth status &> /dev/null; then
+        log_error "GitHub CLI (gh) is not authenticated"
+        log_info "Please run: gh auth login"
         exit 1
     fi
     
@@ -145,29 +152,24 @@ download_runner() {
     log_success "Runner extracted to ${runner_dir}"
 }
 
-# Prompt for registration token
+# Generate registration token using gh CLI
 get_registration_token() {
     local runner_name=$1
     
-    echo ""
-    log_info "==================================================================="
-    log_info "Registration token needed for: ${runner_name}"
-    log_info "==================================================================="
-    echo ""
-    echo "To get the registration token:"
-    echo "1. Open: ${REPO_URL}/settings/actions/runners/new"
-    echo "2. Copy the token from the './config.sh' command shown"
-    echo "3. Paste it below"
-    echo ""
+    log_info "Generating registration token for ${runner_name}..."
     
     local token
-    read -r -p "Enter registration token for ${runner_name}: " token
+    token=$(sudo -u "$RUNNER_USER" gh api \
+        repos/enchantednatures/rust-knative-flux-template/actions/runners/registration-token \
+        -X POST | jq -r '.token')
     
-    if [[ -z "$token" ]]; then
-        log_error "Token cannot be empty"
+    if [[ -z "$token" || "$token" == "null" ]]; then
+        log_error "Failed to generate registration token"
+        log_info "Ensure gh CLI is authenticated: gh auth login"
         exit 1
     fi
     
+    log_success "Registration token generated for ${runner_name}"
     echo "$token"
 }
 

@@ -28,6 +28,22 @@ This document describes the self-hosted GitHub Actions runners setup for this re
 
 ## Installation
 
+### Prerequisites
+
+Ensure GitHub CLI is authenticated:
+
+```bash
+gh auth status
+```
+
+If not authenticated, run:
+
+```bash
+gh auth login
+```
+
+### Run Setup Script
+
 Run the setup script as root:
 
 ```bash
@@ -35,23 +51,16 @@ sudo ./scripts/setup-github-runners.sh
 ```
 
 The script will:
-1. Check prerequisites (Docker, kubectl, flux, cargo, etc.)
-2. Download latest GitHub Actions runner
-3. Prompt for registration tokens (from GitHub UI)
-4. Configure both runners
-5. Install as systemd services
-6. Setup daily Docker cleanup cron job
-7. Verify installation
+1. Check prerequisites (Docker, kubectl, flux, cargo, gh, etc.)
+2. Verify gh CLI authentication
+3. Download latest GitHub Actions runner
+4. **Automatically generate registration tokens** (via gh CLI)
+5. Configure both runners
+6. Install as systemd services
+7. Setup daily Docker cleanup cron job
+8. Verify installation
 
-### Getting Registration Tokens
-
-For each runner, you'll need a registration token from GitHub:
-
-1. Navigate to: https://github.com/enchantednatures/rust-knative-flux-template/settings/actions/runners/new
-2. Copy the token from the `./config.sh` command shown
-3. Paste when prompted by the setup script
-
-**Note**: Tokens expire after 1 hour. The script will prompt for each runner sequentially.
+**Note**: The script automatically generates registration tokens using the GitHub CLI API, so no manual token copy/paste is required.
 
 ## Management
 
