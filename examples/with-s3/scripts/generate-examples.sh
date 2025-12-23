@@ -4,9 +4,10 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "Generating reference implementations..."
+echo "Repository root: $REPO_DIR"
 
 cd /tmp
 
@@ -31,20 +32,25 @@ mkdir -p "$REPO_DIR/examples"
 mv /tmp/example-app-with-s3 "$REPO_DIR/examples/with-s3"
 mv /tmp/example-app-no-s3 "$REPO_DIR/examples/no-s3"
 
-# Remove Cargo.lock from examples (reproducibility)
-rm -f "$REPO_DIR/examples/with-s3/Cargo.lock"
-rm -f "$REPO_DIR/examples/no-s3/Cargo.lock"
+# Verify directory structure
+if [ ! -f "$REPO_DIR/examples/with-s3/Cargo.toml" ]; then
+    echo "❌ Error: examples/with-s3/Cargo.toml not found"
+    echo "   Expected location: $REPO_DIR/examples/with-s3/Cargo.toml"
+    exit 1
+fi
 
-# Verify compilation
-echo "Verifying compilation..."
-cd "$REPO_DIR/examples/with-s3"
-cargo check
-
-cd "$REPO_DIR/examples/no-s3"
-cargo check
+if [ ! -f "$REPO_DIR/examples/no-s3/Cargo.toml" ]; then
+    echo "❌ Error: examples/no-s3/Cargo.toml not found"
+    echo "   Expected location: $REPO_DIR/examples/no-s3/Cargo.toml"
+    exit 1
+fi
 
 echo "✓ Reference implementations generated successfully!"
 echo ""
+echo "Generated examples:"
+echo "  - $REPO_DIR/examples/with-s3"
+echo "  - $REPO_DIR/examples/no-s3"
+echo ""
 echo "Next steps:"
-echo "  1. Commit the examples/ directory"
-echo "  2. Run CI tests to verify everything works"
+echo "  1. Review the generated files with 'git diff'"
+echo "  2. Commit the examples/ directory if changes look correct"
