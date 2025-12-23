@@ -34,22 +34,12 @@ echo "Loading image into Kind cluster..."
 kind load docker-image "rust-service-${SCENARIO}:e2e" --name "${CLUSTER_NAME}"
 
 echo "Deploying via kubectl (simulating Flux)..."
-# Create a temporary kustomization to patch the image
-TEMP_KUSTOMIZATION=$(mktemp -d)
-cat > "${TEMP_KUSTOMIZATION}/kustomization.yaml" <<EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- ${REFERENCE_DIR}/deploy/overlays/dev
-namespace: test-app
-images:
-- name: ghcr.io/your-org/rust-service
-  newName: rust-service-${SCENARIO}
-  newTag: e2e
-EOF
+# Apply the overlay directly with image override
+kubectl apply -k "${REFERENCE_DIR}/deploy/overlays/dev" -n test-app
 
-kubectl apply -k "${TEMP_KUSTOMIZATION}"
-rm -rf "${TEMP_KUSTOMIZATION}"
+# Patch the image to use our e2e built image
+kubectl patch ksvc rust-service -n test-app --type='json' \
+  -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"rust-service-${SCENARIO}:e2e\"}]"
 
 cd "${PROJECT_ROOT}"
 
