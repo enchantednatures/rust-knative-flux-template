@@ -33,6 +33,10 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
+            cgroup-driver: "cgroupfs"
+      - |
+        kind: KubeletConfiguration
+        cgroupDriver: cgroupfs
     extraPortMappings:
       # Map Kourier to host for external access
       - containerPort: 31080
