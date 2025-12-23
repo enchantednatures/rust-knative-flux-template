@@ -40,7 +40,7 @@ cat > "${TEMP_KUSTOMIZATION}/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- ../../${REFERENCE_DIR}/deploy/overlays/dev
+- ${REFERENCE_DIR}/deploy/overlays/dev
 namespace: test-app
 images:
 - name: ghcr.io/your-org/rust-service
