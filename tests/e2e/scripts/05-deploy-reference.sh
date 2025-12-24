@@ -84,14 +84,27 @@ echo "Loading image into Kind cluster..."
 kind load docker-image "rust-service-${SCENARIO}:e2e" --name "${CLUSTER_NAME}"
 
 echo "Deploying via kubectl (simulating Flux)..."
-# Apply the overlay directly with image override
-kubectl apply -k "${REFERENCE_DIR}/deploy/overlays/dev" -n test-app
+# Save original kustomization.yaml
+KUSTOMIZATION_FILE="${REFERENCE_DIR}/deploy/overlays/dev/kustomization.yaml"
+cp "$KUSTOMIZATION_FILE" "${KUSTOMIZATION_FILE}.backup"
+
+# Override namespace in kustomization to use test-app instead of example-app
+cd "${REFERENCE_DIR}/deploy/overlays/dev"
+kustomize edit set namespace test-app
+
+# Build the kustomization, override service endpoints for E2E environment, and apply
+kubectl kustomize "${REFERENCE_DIR}/deploy/overlays/dev" | \
+  sed 's|http://minio:9000|http://minio.services.svc.cluster.local:9000|g' | \
+  kubectl apply -f -
+
+# Restore original kustomization.yaml
+mv "${KUSTOMIZATION_FILE}.backup" "$KUSTOMIZATION_FILE"
+
+cd "${PROJECT_ROOT}"
 
 # Patch the image to use our e2e built image
 kubectl patch ksvc rust-service -n test-app --type='json' \
   -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"rust-service-${SCENARIO}:e2e\"}]"
-
-cd "${PROJECT_ROOT}"
 
 echo "Waiting for Knative Service to be ready..."
 if ! kubectl wait --for=condition=Ready ksvc/rust-service \
