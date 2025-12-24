@@ -102,9 +102,12 @@ mv "${KUSTOMIZATION_FILE}.backup" "$KUSTOMIZATION_FILE"
 
 cd "${PROJECT_ROOT}"
 
-# Patch the image to use our e2e built image
+# Patch the image to use our e2e built image and set imagePullPolicy to Never
 kubectl patch ksvc rust-service -n test-app --type='json' \
-  -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"rust-service-${SCENARIO}:e2e\"}]"
+  -p="[
+    {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"rust-service-${SCENARIO}:e2e\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Never\"}
+  ]"
 
 echo "Waiting for Knative Service to be ready..."
 if ! kubectl wait --for=condition=Ready ksvc/rust-service \

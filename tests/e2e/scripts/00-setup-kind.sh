@@ -16,6 +16,12 @@ fi
 
 echo "Creating Kind cluster: ${CLUSTER_NAME} (using host port ${HOST_PORT})..."
 
+# Delete existing cluster if it exists
+if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
+  echo "Deleting existing cluster: ${CLUSTER_NAME}"
+  kind delete cluster --name "${CLUSTER_NAME}" || true
+fi
+
 # Create dedicated kubeconfig for this scenario
 export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
 rm -f "$KUBECONFIG"
