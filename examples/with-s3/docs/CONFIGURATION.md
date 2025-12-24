@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Complete reference for configuring {{ project_name }}, including environment variables, configuration files, and secrets management.
+Complete reference for configuring example-app, including environment variables, configuration files, and secrets management.
 
 ## Configuration Hierarchy
 
@@ -58,7 +58,7 @@ export APP__REDIS__TIMEOUT_SECS=5
 export APP__REDIS__POOL_SIZE=10
 ```
 
-{% if include_s3 %}
+
 
 ### S3/MinIO Configuration
 
@@ -90,7 +90,7 @@ export APP__S3__TIMEOUT_SECS=30
 export APP__S3__PATH_STYLE=true
 ```
 
-{% endif %}
+
 
 ### Telemetry Configuration
 
@@ -101,7 +101,7 @@ export APP__S3__PATH_STYLE=true
 export APP__TELEMETRY__OTLP_ENDPOINT=http://localhost:4317
 
 # Service name for traces and metrics
-export APP__TELEMETRY__SERVICE_NAME={{ project_name }}
+export APP__TELEMETRY__SERVICE_NAME=example-app
 
 # Log level (trace, debug, info, warn, error)
 export APP__TELEMETRY__LOG_LEVEL=info
@@ -116,7 +116,7 @@ export APP__TELEMETRY__SAMPLER=always
 export APP__TELEMETRY__LOG_FORMAT=json
 
 # Rust logging filter (overrides APP__TELEMETRY__LOG_LEVEL)
-export RUST_LOG=info,{{ crate_name }}=debug
+export RUST_LOG=info,example_app_with_s3=debug
 ```
 
 ### Application Configuration
@@ -150,16 +150,16 @@ url = "redis://localhost:6379"
 timeout_secs = 5
 pool_size = 10
 
-{% if include_s3 %}[s3]
+[s3]
 endpoint = "http://minio:9000"
 bucket = "data"
 region = "us-east-1"
 path_style = true
 timeout_secs = 30
 
-{% endif %}[telemetry]
+[telemetry]
 otlp_endpoint = "http://localhost:4317"
-service_name = "{{ project_name }}"
+service_name = "example-app"
 log_level = "info"
 sampler = "always"
 log_format = "json"
@@ -198,14 +198,14 @@ port = 8080
 # Use managed Redis in staging
 url = "redis://redis-staging.example.com:6379"
 
-{% if include_s3 %}[s3]
+[s3]
 # Use S3 staging bucket
 endpoint = "https://s3.us-east-1.amazonaws.com"
 bucket = "my-app-staging"
 region = "us-east-1"
 path_style = false
 
-{% endif %}[telemetry]
+[telemetry]
 log_level = "info"
 
 # Use staging collector
@@ -224,7 +224,7 @@ port = 8080
 url = "redis://redis-prod-cluster.example.com:6379"
 pool_size = 50  # Higher concurrency in production
 
-{% if include_s3 %}[s3]
+[s3]
 # Production S3 bucket with versioning enabled
 endpoint = "https://s3.amazonaws.com"
 bucket = "my-app-production"
@@ -232,7 +232,7 @@ region = "us-east-1"
 path_style = false
 timeout_secs = 60  # Longer timeout for reliability
 
-{% endif %}[telemetry]
+[telemetry]
 log_level = "warn"  # Only warnings and errors in production
 otlp_endpoint = "http://opentelemetry-collector:4317"
 
@@ -264,15 +264,15 @@ Configuration is managed via ConfigMaps and Secrets:
 
 ```bash
 # Create ConfigMap from config file
-kubectl create configmap {{ project_name }}-config \
+kubectl create configmap example-app-config \
   --from-file=config/production.toml
 
 # Create Secret for sensitive values
-kubectl create secret generic {{ project_name }}-secrets \
+kubectl create secret generic example-app-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+  --from-literal=aws-access-key-id='...' \
   --from-literal=aws-secret-access-key='...' \
-  {% endif %}
+  
 ```
 
 Then inject into Pod via environment variables:
@@ -281,32 +281,32 @@ Then inject into Pod via environment variables:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: {{ project_name }}
+  name: example-app
 spec:
   template:
     spec:
       containers:
-      - image: my-registry/{{ project_name }}:latest
+      - image: my-registry/example-app:latest
         env:
         - name: APP__SERVER__PORT
           value: "8080"
         - name: APP__REDIS__URL
           valueFrom:
             secretKeyRef:
-              name: {{ project_name }}-secrets
+              name: example-app-secrets
               key: redis-url
-        {% if include_s3 %}
+        
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: {{ project_name }}-secrets
+              name: example-app-secrets
               key: aws-access-key-id
         - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ project_name }}-secrets
+              name: example-app-secrets
               key: aws-secret-access-key
-        {% endif %}
+        
 ```
 
 ---
@@ -333,11 +333,11 @@ env:
 Create Secrets and mount as environment variables:
 
 ```bash
-kubectl create secret generic {{ project_name }}-secrets \
+kubectl create secret generic example-app-secrets \
   --from-literal=redis-url='redis://...' \
-  {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+  --from-literal=aws-access-key-id='...' \
   --from-literal=aws-secret-access-key='...' \
-  {% endif %}
+  
 ```
 
 ### Option 3: External Secrets Operator (Recommended)
@@ -348,7 +348,7 @@ Sync secrets from external secret management (AWS Secrets Manager, HashiCorp Vau
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: {{ project_name }}-secrets
+  name: example-app-secrets
 spec:
   # Sync every hour
   refreshInterval: 1h
@@ -360,22 +360,22 @@ spec:
   
   # Target Kubernetes Secret
   target:
-    name: {{ project_name }}-secrets
+    name: example-app-secrets
     creationPolicy: Owner
   
   # Secrets to sync from AWS
   data:
   - secretKey: redis-url
     remoteRef:
-      key: /{{ project_name }}/production/redis-url
-  {% if include_s3 %}
+      key: /example-app/production/redis-url
+  
   - secretKey: aws-access-key-id
     remoteRef:
-      key: /{{ project_name }}/production/aws-access-key-id
+      key: /example-app/production/aws-access-key-id
   - secretKey: aws-secret-access-key
     remoteRef:
-      key: /{{ project_name }}/production/aws-secret-access-key
-  {% endif %}
+      key: /example-app/production/aws-secret-access-key
+  
 ```
 
 ### Option 4: Sealed Secrets (GitOps)
@@ -418,8 +418,8 @@ kubectl apply -f my-secret.sealed.yaml
 
 1. **Build and push image**:
    ```bash
-   docker build -t my-registry/{{ project_name }}:v1.0 .
-   docker push my-registry/{{ project_name }}:v1.0
+   docker build -t my-registry/example-app:v1.0 .
+   docker push my-registry/example-app:v1.0
    ```
 
 2. **Deploy with Kustomize** (uses `config/staging.toml`):
@@ -429,9 +429,11 @@ kubectl apply -f my-secret.sealed.yaml
 
 3. **Create secrets** before deployment:
    ```bash
-   kubectl create secret generic {{ project_name }}-secrets \
+   kubectl create secret generic example-app-secrets \
      --from-literal=redis-url='redis://redis-staging:6379' \
-     {% if include_s3 %}-n staging
+     --from-literal=aws-access-key-id='...' \
+     --from-literal=aws-secret-access-key='...' \
+     -n staging
    ```
 
 ### Production
@@ -440,12 +442,12 @@ kubectl apply -f my-secret.sealed.yaml
 
 2. **Deploy via FluxCD** (GitOps):
    ```bash
-   flux create source git {{ project_name }} \
-     --url=https://github.com/your-org/{{ project_name }} \
+   flux create source git example-app \
+     --url=https://github.com/your-org/example-app \
      --branch=main
    
-   flux create kustomization {{ project_name }} \
-     --source=GitRepository/{{ project_name }} \
+   flux create kustomization example-app \
+     --source=GitRepository/example-app \
      --path=deploy/overlays/prod \
      --prune=true \
      --interval=30s
@@ -465,11 +467,11 @@ The application validates configuration on startup:
 ```bash
 # Valid configuration
 $ cargo run
-2024-01-15T10:30:45.123Z  INFO {{ crate_name }}: Loading configuration
-2024-01-15T10:30:45.124Z  INFO {{ crate_name }}: Config loaded: server.host=0.0.0.0, server.port=8080
-2024-01-15T10:30:45.125Z  INFO {{ crate_name }}: Connecting to Redis...
-2024-01-15T10:30:45.200Z  INFO {{ crate_name }}: Connected to Redis
-2024-01-15T10:30:45.201Z  INFO {{ crate_name }}: Server listening on 0.0.0.0:8080
+2024-01-15T10:30:45.123Z  INFO example_app_with_s3: Loading configuration
+2024-01-15T10:30:45.124Z  INFO example_app_with_s3: Config loaded: server.host=0.0.0.0, server.port=8080
+2024-01-15T10:30:45.125Z  INFO example_app_with_s3: Connecting to Redis...
+2024-01-15T10:30:45.200Z  INFO example_app_with_s3: Connected to Redis
+2024-01-15T10:30:45.201Z  INFO example_app_with_s3: Server listening on 0.0.0.0:8080
 
 # Invalid configuration
 $ APP__SERVER__PORT=invalid cargo run
@@ -537,7 +539,7 @@ echo $AWS_ACCESS_KEY_ID
 [ -z "$AWS_ACCESS_KEY_ID" ] && echo "Not set" || echo "Set"
 
 # In Kubernetes
-kubectl exec -it deployment/{{ project_name }} -- printenv | grep AWS
+kubectl exec -it deployment/example-app -- printenv | grep AWS
 ```
 
 ---
