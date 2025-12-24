@@ -7,9 +7,5 @@ resources:
   # Users must create it from secret.yaml.example
   # This prevents accidental commits of secrets to git
 
-commonLabels:
-  app.kubernetes.io/name: rust-service
-  app.kubernetes.io/managed-by: flux
-
 commonAnnotations:
   kustomize.config.k8s.io/version: "5.0"

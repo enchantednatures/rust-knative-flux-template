@@ -3,11 +3,8 @@ kind: Kustomization
 
 namespace: staging
 
-bases:
+resources:
   - ../../base
-
-commonLabels:
-  environment: staging
 
 patches:
   - target:

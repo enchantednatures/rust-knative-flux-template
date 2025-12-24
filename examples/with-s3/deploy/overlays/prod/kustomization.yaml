@@ -3,11 +3,8 @@ kind: Kustomization
 
 namespace: production
 
-bases:
+resources:
   - ../../base
-
-commonLabels:
-  environment: production
 
 patches:
   - target:
