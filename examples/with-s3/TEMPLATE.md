@@ -15,6 +15,7 @@ The template supports these variables:
 | project_name | User prompt | my-awesome-service |
 | crate_name | Auto-derived | my_awesome_service |
 | include_s3 | User prompt | true or false |
+| enable_image_updates | User prompt | true or false |
 | target_namespace | User prompt | default |
 | github_org | User prompt | enchantednatures |
 | github_repo | User prompt | rust-knative-flux-template |
@@ -33,6 +34,7 @@ Cargo-generate:
 1. **Prompts for values**:
    - `project_name`: Your project name
    - `include_s3`: Whether to include S3 support
+   - `enable_image_updates`: Enable automated image updates with FluxCD
    - `target_namespace`: Kubernetes namespace for deployment
    - `github_org`: GitHub organization or username
    - `github_repo`: GitHub repository name

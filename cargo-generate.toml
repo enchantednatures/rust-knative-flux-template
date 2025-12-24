@@ -6,12 +6,12 @@ cargo_generate_version = ">=0.18.0"
    "target",
    "Cargo.lock",
    ".github/workflows/template-e2e-test.yaml",
-   "deploy/flux/image-update-automation.yaml",
  ]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 include_s3 = { prompt = "Include S3-compatible storage (MinIO/S3)?", type = "bool", default = false }
+enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
 github_org = { prompt = "GitHub organization or username", type = "string", default = "your-org" }
 github_repo = { prompt = "GitHub repository name", type = "string", default = "your-repo" }

@@ -11,22 +11,24 @@ echo "Repository root: $REPO_DIR"
 
 cd /tmp
 
-# Generate with-s3 scenario
+# Generate with-s3 scenario (with image updates enabled)
 echo "Generating with-s3..."
 cargo generate --path "$REPO_DIR" \
   --name example-app-with-s3 \
   --define include_s3=true \
+  --define enable_image_updates=false \
   --define target_namespace=default \
   --define github_org=enchantednatures \
   --define github_repo=rust-knative-flux-template \
   --define default_branch=main \
   --silent
 
-# Generate no-s3 scenario
+# Generate no-s3 scenario (without image updates)
 echo "Generating no-s3..."
 cargo generate --path "$REPO_DIR" \
   --name example-app-no-s3 \
   --define include_s3=false \
+  --define enable_image_updates=false \
   --define target_namespace=default \
   --define github_org=enchantednatures \
   --define github_repo=rust-knative-flux-template \
