@@ -391,6 +391,43 @@ open tarpaulin-report.html
 
 ---
 
+## CI/CD Testing
+
+### Workflows
+
+This project uses GitHub Actions for automated testing and deployment.
+
+**E2E Tests** (`.github/workflows/e2e.yml`)
+- Runs on: Push to main, pull requests
+- Validates: Template generation, Docker builds, Flux deployment
+- Matrix: Tests both `no-s3` and `with-s3` scenarios
+- Infrastructure: Kind cluster + Knative v1.20 + Flux + Redis + MinIO
+
+**CI Pipeline** (`.github/workflows/ci.yaml.liquid`)
+- Runs on: Generated projects
+- Stages: Lint → Test → Build → Security Scan
+
+### Testing Strategy
+
+We use OCI artifacts for E2E testing instead of Git-based sources:
+1. Template is generated fresh on every CI run
+2. Application image pushed to GHCR with descriptive tags
+3. Kubernetes manifests packaged as OCI artifact
+4. Flux reconciles from OCI artifact (not Git)
+5. Tests validate deployed application
+
+This eliminates fork/branch URL issues and ensures every commit is validated.
+
+### Required Checks
+
+All PRs must pass:
+- Format check (`cargo fmt --all -- --check`)
+- Linting (`cargo clippy --all-targets --all-features -- -D warnings`)
+- Unit tests (`cargo test --all-features`)
+- E2E tests (both scenarios - no-s3 and with-s3)
+
+---
+
 ## Documentation
 
 ### Code Documentation

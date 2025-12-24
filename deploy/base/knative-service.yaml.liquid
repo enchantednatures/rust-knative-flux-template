@@ -28,8 +28,8 @@ spec:
       timeoutSeconds: 300
       containers:
         - name: service
-          # Image will be updated by Flux ImageUpdateAutomation
-          image: ghcr.io/your-org/rust-service:latest # {"$imagepolicy": "flux-system:rust-service"}
+          # Image will be updated by Flux ImageUpdateAutomation or Kustomize
+          image: rust-service:latest # {"$imagepolicy": "flux-system:rust-service"}
           ports:
             - containerPort: 8080
               protocol: TCP
