@@ -4,7 +4,8 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-{% if include_s3 %}
+{%- if include_s3 %}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3Config {
     /// S3-compatible endpoint (required for MinIO)
@@ -15,16 +16,16 @@ pub struct S3Config {
     pub region: String,
     // Credentials via AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
 }
-{% endif %}
+{%- endif %}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
-    {% if include_s3 %}
+    {%- if include_s3 %}
     pub s3: S3Config,
-    {% endif %}
+    {%- endif %}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -65,13 +66,13 @@ impl Default for Config {
                 service_name: "rust-service".into(),
                 log_level: "info".into(),
             },
-            {% if include_s3 %}
+            {%- if include_s3 %}
             s3: S3Config {
                 endpoint: "http://localhost:9000".into(),
                 bucket: "data".into(),
                 region: "us-east-1".into(),
             },
-            {% endif %}
+            {%- endif %}
         }
     }
 }
@@ -118,7 +119,8 @@ impl Config {
             return Err(figment::Error::from("server.port must be non-zero"));
         }
 
-        {% if include_s3 %}
+        {%- if include_s3 %}
+
         if self.s3.endpoint.is_empty() {
             return Err(figment::Error::from(
                 "s3.endpoint must be set (via config file or APP__S3__ENDPOINT)",
@@ -130,7 +132,7 @@ impl Config {
                 "s3.bucket must be set (via config file or APP__S3__BUCKET)",
             ));
         }
-        {% endif %}
+        {%- endif %}
 
         Ok(())
     }

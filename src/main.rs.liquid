@@ -36,8 +36,7 @@ async fn main() -> anyhow::Result<()> {
             e
         })?;
     tracing::info!("Redis connection established");
-
-    {% if include_s3 %}
+    {%- if include_s3 %}
     // =========================================================================
     // 3b. Initialize S3-compatible Storage (OpenDAL)
     // =========================================================================
@@ -51,21 +50,20 @@ async fn main() -> anyhow::Result<()> {
             .endpoint(&config.s3.endpoint)
             .bucket(&config.s3.bucket)
             .region(&config.s3.region);
-        
+
         opendal::Operator::new(builder)?.finish()
     };
     tracing::info!("S3-compatible storage initialized");
-    {% endif %}
+    {%- endif %}
 
     // =========================================================================
     // 4. Build Application State
     // =========================================================================
-    let state = AppState::new(
-        redis_conn,
-        {% if include_s3 %}
-        storage,
-        {% endif %}
-    );
+    {%- if include_s3 %}
+    let state = AppState::new(redis_conn, storage);
+    {%- else %}
+    let state = AppState::new(redis_conn);
+    {%- endif %}
 
     // =========================================================================
     // 5. Create Router
