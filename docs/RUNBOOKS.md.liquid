@@ -111,11 +111,11 @@ kubectl logs -f deployment/{{ project_name }} -n {{ project_name }}
 cargo test
 
 # Build and push image
-docker build -t your-registry/{{ project_name }}:fix-v1 .
-docker push your-registry/{{ project_name }}:fix-v1
+docker build -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1 .
+docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1
 
 # Deploy (via GitOps or manual)
-kubectl set image deployment/{{ project_name }} user-container=your-registry/{{ project_name }}:fix-v1 -n {{ project_name }}
+kubectl set image deployment/{{ project_name }} user-container={{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1 -n {{ project_name }}
 
 # Verify deployment
 kubectl rollout status deployment/{{ project_name }} -n {{ project_name }}
@@ -347,7 +347,7 @@ aws s3 sync s3://{{ project_name }}-data/ s3://{{ project_name }}-data-backup/
 **Step 2: Deploy New Version**:
 ```bash
 # Deploy with new schema/migration
-kubectl set image deployment/{{ project_name }} user-container=your-registry/{{ project_name }}:v2.0 -n {{ project_name }}
+kubectl set image deployment/{{ project_name }} user-container={{ image_registry }}/{{ github_org }}/{{ project_name }}:v2.0 -n {{ project_name }}
 
 # Verify deployment
 kubectl rollout status deployment/{{ project_name }} -n {{ project_name }}

@@ -8,7 +8,7 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: ghcr.io
+  REGISTRY: {{ image_registry }}
   IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
   CARGO_TERM_COLOR: always
 

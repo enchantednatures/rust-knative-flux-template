@@ -4,7 +4,7 @@ metadata:
   name: rust-service
   namespace: flux-system
 spec:
-  image: ghcr.io/{{ github_org }}/{{ github_repo }}
+  image: {{ image_registry }}/{{ github_org }}/{{ github_repo }}
   interval: 1m
   # Optional: For private container registries
   # secretRef:

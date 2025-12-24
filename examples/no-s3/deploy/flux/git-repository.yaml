@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m
-  url: https://github.com/your-org/your-repo
+  url: https://github.com/enchantednatures/rust-knative-flux-template
   ref:
     branch: main
   # Optional: For private repositories

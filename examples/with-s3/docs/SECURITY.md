@@ -155,10 +155,10 @@ brew install trivy  # macOS
 apt install trivy   # Ubuntu
 
 # Scan image
-trivy image your-registry/example-app:latest
+trivy image ghcr.io/enchantednatures/example-app:latest
 
 # Scan with severity filter
-trivy image --severity HIGH,CRITICAL your-registry/example-app:latest
+trivy image --severity HIGH,CRITICAL ghcr.io/enchantednatures/example-app:latest
 ```
 
 **Grype**:
@@ -167,7 +167,7 @@ trivy image --severity HIGH,CRITICAL your-registry/example-app:latest
 brew install grype  # macOS
 
 # Scan image
-grype your-registry/example-app:latest
+grype ghcr.io/enchantednatures/example-app:latest
 ```
 
 **CI Integration** (`.github/workflows/security-scan.yaml`):
@@ -207,10 +207,10 @@ jobs:
 go install github.com/sigstore/cosign/cmd/cosign@latest
 
 # Sign image
-cosign sign --key cosign.key your-registry/example-app:v1.0.0
+cosign sign --key cosign.key ghcr.io/enchantednatures/example-app:v1.0.0
 
 # Verify signature
-cosign verify --key cosign.pub your-registry/example-app:v1.0.0
+cosign verify --key cosign.pub ghcr.io/enchantednatures/example-app:v1.0.0
 
 # Verify in Kubernetes (Admission Controller)
 # Kyverno Policy to enforce signature verification

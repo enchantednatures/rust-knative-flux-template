@@ -29,7 +29,7 @@ spec:
       containers:
         - name: service
           # Image will be updated by Flux ImageUpdateAutomation
-          image: ghcr.io/your-org/rust-service:latest # {"$imagepolicy": "flux-system:rust-service"}
+           image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest # {"$imagepolicy": "flux-system:rust-service"}
           ports:
             - containerPort: 8080
               protocol: TCP

@@ -230,7 +230,7 @@ spec:
   template:
     spec:
       containers:
-      - image: my-registry/example-app:latest
+       - image: ghcr.io/enchantednatures/example-app:latest
         env:
         - name: APP__SERVER__PORT
           value: "8080"
@@ -342,8 +342,8 @@ kubectl apply -f my-secret.sealed.yaml
 
 1. **Build and push image**:
    ```bash
-   docker build -t my-registry/example-app:v1.0 .
-   docker push my-registry/example-app:v1.0
+    docker build -t ghcr.io/enchantednatures/example-app:v1.0 .
+    docker push ghcr.io/enchantednatures/example-app:v1.0
    ```
 
 2. **Deploy with Kustomize** (uses `config/staging.toml`):

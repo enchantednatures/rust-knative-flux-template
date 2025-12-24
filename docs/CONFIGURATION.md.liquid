@@ -286,7 +286,7 @@ spec:
   template:
     spec:
       containers:
-      - image: my-registry/{{ project_name }}:latest
+       - image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
         env:
         - name: APP__SERVER__PORT
           value: "8080"
@@ -418,8 +418,8 @@ kubectl apply -f my-secret.sealed.yaml
 
 1. **Build and push image**:
    ```bash
-   docker build -t my-registry/{{ project_name }}:v1.0 .
-   docker push my-registry/{{ project_name }}:v1.0
+    docker build -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0 .
+    docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0
    ```
 
 2. **Deploy with Kustomize** (uses `config/staging.toml`):

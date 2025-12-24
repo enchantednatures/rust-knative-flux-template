@@ -21,6 +21,7 @@ cargo generate --path "$REPO_DIR" \
   --define github_org=enchantednatures \
   --define github_repo=rust-knative-flux-template \
   --define default_branch=main \
+  --define image_registry=ghcr.io \
   --silent
 
 # Generate no-s3 scenario (without image updates)
@@ -33,6 +34,7 @@ cargo generate --path "$REPO_DIR" \
   --define github_org=enchantednatures \
   --define github_repo=rust-knative-flux-template \
   --define default_branch=main \
+  --define image_registry=ghcr.io \
   --silent
 
 # Move to examples directory

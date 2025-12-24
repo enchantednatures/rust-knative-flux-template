@@ -111,11 +111,11 @@ kubectl logs -f deployment/example-app -n example-app
 cargo test
 
 # Build and push image
-docker build -t your-registry/example-app:fix-v1 .
-docker push your-registry/example-app:fix-v1
+docker build -t ghcr.io/enchantednatures/example-app:fix-v1 .
+docker push ghcr.io/enchantednatures/example-app:fix-v1
 
 # Deploy (via GitOps or manual)
-kubectl set image deployment/example-app user-container=your-registry/example-app:fix-v1 -n example-app
+kubectl set image deployment/example-app user-container=ghcr.io/enchantednatures/example-app:fix-v1 -n example-app
 
 # Verify deployment
 kubectl rollout status deployment/example-app -n example-app
@@ -347,7 +347,7 @@ aws s3 sync s3://example-app-data/ s3://example-app-data-backup/
 **Step 2: Deploy New Version**:
 ```bash
 # Deploy with new schema/migration
-kubectl set image deployment/example-app user-container=your-registry/example-app:v2.0 -n example-app
+kubectl set image deployment/example-app user-container=ghcr.io/enchantednatures/example-app:v2.0 -n example-app
 
 # Verify deployment
 kubectl rollout status deployment/example-app -n example-app

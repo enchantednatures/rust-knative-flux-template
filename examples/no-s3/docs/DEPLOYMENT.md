@@ -88,10 +88,10 @@ Before deploying to Kubernetes, test locally:
 docker build -t {{ project_name }}:latest .
 
 # Tag for registry
-docker tag {{ project_name }}:latest your-registry/{{ project_name }}:v1.0.0
+docker tag {{ project_name }}:latest {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0.0
 
 # Push to registry
-docker push your-registry/{{ project_name }}:v1.0.0
+docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0.0
 ```
 
 ### 2. Test with Docker Compose
@@ -254,7 +254,7 @@ metadata:
   name: {{ project_name }}
   namespace: {{ project_name }}
 spec:
-  image: your-registry/{{ project_name }}
+   image: {{ image_registry }}/{{ github_org }}/{{ project_name }}
   interval: 5m
   secretRef:
     name: registry-credentials
@@ -494,7 +494,7 @@ Knative supports traffic splitting between revisions for canary deployments.
 ```bash
 # Deploy new version
 kubectl set image service/{{ project_name }} \
-  user-container=your-registry/{{ project_name }}:v2.0.0 \
+  user-container={{ image_registry }}/{{ github_org }}/{{ project_name }}:v2.0.0 \
   -n {{ project_name }}
 
 # Split traffic: 90% v1, 10% v2

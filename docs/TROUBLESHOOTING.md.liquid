@@ -255,7 +255,7 @@ kubectl describe pod <pod-name> -n {{ project_name }}
 
 2. Check error message:
 ```
-Failed to pull image "your-registry/{{ project_name }}:latest":
+Failed to pull image "{{ image_registry }}/{{ github_org }}/{{ project_name }}:latest":
 rpc error: code = Unknown desc = Error pulling image: unauthorized
 ```
 
@@ -267,7 +267,7 @@ kubectl get secret registry-credentials -n {{ project_name }} -o yaml
 4. Create registry secret:
 ```bash
 kubectl create secret docker-registry registry-credentials \
-  --docker-server=your-registry.com \
+  --docker-server={{ image_registry }} \
   --docker-username=USERNAME \
   --docker-password=PASSWORD \
   -n {{ project_name }}
@@ -275,7 +275,7 @@ kubectl create secret docker-registry registry-credentials \
 
 5. Update image reference:
 ```bash
-kubectl set image deployment/{{ project_name }} user-container=your-registry/{{ project_name }}:latest
+kubectl set image deployment/{{ project_name }} user-container={{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
 ```
 
 ### CrashLoopBackOff

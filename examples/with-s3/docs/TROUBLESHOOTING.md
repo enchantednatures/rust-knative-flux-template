@@ -255,7 +255,7 @@ kubectl describe pod <pod-name> -n example-app
 
 2. Check error message:
 ```
-Failed to pull image "your-registry/example-app:latest":
+Failed to pull image "ghcr.io/enchantednatures/example-app:latest":
 rpc error: code = Unknown desc = Error pulling image: unauthorized
 ```
 
@@ -267,7 +267,7 @@ kubectl get secret registry-credentials -n example-app -o yaml
 4. Create registry secret:
 ```bash
 kubectl create secret docker-registry registry-credentials \
-  --docker-server=your-registry.com \
+  --docker-server=ghcr.io \
   --docker-username=USERNAME \
   --docker-password=PASSWORD \
   -n example-app
@@ -275,7 +275,7 @@ kubectl create secret docker-registry registry-credentials \
 
 5. Update image reference:
 ```bash
-kubectl set image deployment/example-app user-container=your-registry/example-app:latest
+kubectl set image deployment/example-app user-container=ghcr.io/enchantednatures/example-app:latest
 ```
 
 ### CrashLoopBackOff
