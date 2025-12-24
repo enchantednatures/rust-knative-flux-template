@@ -1,12 +1,13 @@
 [template]
 cargo_generate_version = ">=0.18.0"
  ignore = [
-   "examples",
-   "tests/e2e",
-   "target",
-   "Cargo.lock",
-   ".github/workflows/template-e2e-test.yaml",
- ]
+    "examples",
+    "tests/e2e",
+    "target",
+    "Cargo.lock",
+    ".github/workflows/template-e2e-test.yaml",
+    ".github/workflows/template-generate-and-validate.yaml",
+  ]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
