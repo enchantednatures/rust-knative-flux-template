@@ -4,7 +4,7 @@ metadata:
   name: rust-service
   namespace: flux-system
 spec:
-  image: ghcr.io/enchantednatures/rust-knative-flux-template
+  image: ghcr.io/your-org/your-repo
   interval: 1m
   # Optional: For private container registries
   # secretRef:
