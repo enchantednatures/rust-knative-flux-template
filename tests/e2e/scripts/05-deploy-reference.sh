@@ -20,6 +20,17 @@ fi
 echo "Creating test-app namespace..."
 kubectl create namespace test-app 2>/dev/null || true
 
+echo "Verifying infrastructure is ready..."
+# Check Redis is accessible
+if ! kubectl run redis-test --rm -i --restart=Never --image=redis:7-alpine -n test-app -- \
+  redis-cli -h redis.services.svc.cluster.local ping 2>/dev/null | grep -q PONG; then
+  echo "❌ Redis is not accessible from test-app namespace"
+  echo "Checking Redis status:"
+  kubectl get pods -n services -l app=redis
+  exit 1
+fi
+echo "✓ Redis is accessible"
+
 echo "Creating secrets..."
 if [ "$INCLUDE_S3" = "true" ]; then
   kubectl create secret generic rust-service-secrets \
@@ -53,8 +64,26 @@ kubectl patch ksvc rust-service -n test-app --type='json' \
 cd "${PROJECT_ROOT}"
 
 echo "Waiting for Knative Service to be ready..."
-kubectl wait --for=condition=Ready ksvc/rust-service \
+if ! kubectl wait --for=condition=Ready ksvc/rust-service \
   -n test-app \
-  --timeout=5m
+  --timeout=5m; then
+  
+  echo ""
+  echo "❌ Knative Service failed to become ready. Diagnostic information:"
+  echo ""
+  echo "=== Service Status ==="
+  kubectl get ksvc rust-service -n test-app -o yaml
+  echo ""
+  echo "=== Pods ==="
+  kubectl get pods -n test-app
+  echo ""
+  echo "=== Pod Logs ==="
+  kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=100 || echo "No logs available yet"
+  echo ""
+  echo "=== Events ==="
+  kubectl get events -n test-app --sort-by='.lastTimestamp' | tail -20
+  
+  exit 1
+fi
 
 echo "✓ Reference implementation deployed"
