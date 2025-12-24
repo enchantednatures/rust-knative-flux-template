@@ -211,9 +211,9 @@ metadata:
   namespace: {{ project_name }}
 spec:
   interval: 1m
-  url: https://github.com/your-org/{{ project_name }}
+  url: https://github.com/{{ github_org }}/{{ github_repo }}
   ref:
-    branch: main
+    branch: {{ default_branch }}
   secretRef:
     name: github-token
 ```

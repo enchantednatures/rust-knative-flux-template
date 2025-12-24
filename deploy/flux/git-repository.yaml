@@ -5,9 +5,9 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m
-  url: https://github.com/{{ github_org }}/{{ github_repo}}
+  url: https://github.com/{{ github_org }}/{{ github_repo }}
   ref:
-    branch: main
+    branch: {{ default_branch }}
   # Optional: For private repositories
   # secretRef:
   #   name: github-deploy-key

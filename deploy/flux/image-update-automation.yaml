@@ -24,7 +24,7 @@ spec:
   git:
     checkout:
       ref:
-        branch: main
+        branch: {{ default_branch }}
     commit:
       author:
         name: FluxCD
@@ -35,7 +35,7 @@ spec:
         Image: {{.ImageRepository}}
         Tag: {{.NewTag}}
     push:
-      branch: main
+      branch: {{ default_branch }}
   update:
     path: ./deploy
     strategy: Setters
