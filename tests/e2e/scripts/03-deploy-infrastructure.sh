@@ -128,8 +128,36 @@ EOF
   kubectl wait --for=condition=Ready pod -l app=minio -n services --timeout=3m
   
   echo "Creating MinIO bucket..."
-  kubectl run minio-init --rm -i --restart=Never --image=minio/mc:latest -- \
-    sh -c "mc alias set local http://minio.services.svc.cluster.local:9000 minioadmin minioadmin && mc mb local/data --ignore-existing" || true
+  # Give MinIO a moment to fully start
+  sleep 5
+  
+  # Create bucket using a Job instead of run --rm to avoid TTY issues
+  cat <<'EOFMINIO' | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: services
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: mc
+        image: minio/mc:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          mc alias set local http://minio.services.svc.cluster.local:9000 minioadmin minioadmin
+          mc mb local/data --ignore-existing || true
+          echo "Bucket creation completed"
+EOFMINIO
+
+  echo "Waiting for MinIO bucket creation..."
+  kubectl wait --for=condition=complete job/minio-init -n services --timeout=2m || echo "Warning: Bucket creation may have failed"
+  kubectl logs -n services job/minio-init || true
 
   echo "✓ MinIO deployed and initialized"
 else
