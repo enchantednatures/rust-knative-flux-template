@@ -505,7 +505,7 @@ spec:
       for: 5m
       annotations:
         summary: "High error rate on {{ project_name }}"
-        description: "Error rate is {{ $value }} errors/sec for the last 5 minutes"
+        description: "Error rate is {% raw %}{{ $value }}{% endraw %} errors/sec for the last 5 minutes"
       labels:
         severity: warning
 ```
@@ -517,7 +517,7 @@ spec:
       for: 5m
       annotations:
         summary: "High latency on {{ project_name }}"
-        description: "95th percentile latency is {{ $value }}s"
+        description: "95th percentile latency is {% raw %}{{ $value }}{% endraw %}s"
       labels:
         severity: warning
 ```
@@ -529,7 +529,7 @@ spec:
       for: 2m
       annotations:
         summary: "Pod not ready"
-        description: "{{ $value }} pods not ready"
+        description: "{% raw %}{{ $value }}{% endraw %} pods not ready"
       labels:
         severity: critical
 ```

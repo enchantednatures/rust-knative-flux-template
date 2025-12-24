@@ -1,6 +1,6 @@
 # Testing Guide
 
-Complete testing strategy and best practices for {{ project_name }}.
+Complete testing strategy and best practices for example-app.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ Complete testing strategy and best practices for {{ project_name }}.
 | Type | Speed | Dependencies | Coverage |
 |------|--------|--------------|-----------|
 | Unit | <1s | None | Business logic, pure functions |
-| Integration | 1-10s | Docker services | Handlers, database{% if include_s3 %}, storage{% endif %} |
+| Integration | 1-10s | Docker services | Handlers, database, storage |
 | E2E | 30s-5m | Kind cluster | Full deployment |
 
 ---
@@ -84,10 +84,10 @@ src/
 │   │       └── #[cfg(test)] tests { ... }
 │   ├── health.rs
 │   │   └── #[cfg(test)] tests { ... }
-{% if include_s3 %}
+
 │   └── storage.rs
 │       └── #[cfg(test)] tests { ... }
-{% endif %}
+
 ```
 
 ### Running Unit Tests
@@ -150,7 +150,7 @@ async fn test_health_endpoints() {
 }
 ```
 
-{% if include_s3 %}
+
 
 ### S3 Integration Tests
 
@@ -218,7 +218,7 @@ async fn test_list_objects() {
     assert!(body["objects"].is_array());
 }
 
-{% endif %}
+
 ```
 
 ### Test Fixtures and Utilities
@@ -346,8 +346,8 @@ kind create cluster --config tests/e2e/kind-config.yaml
 #!/bin/bash
 set -e
 
-NAMESPACE="{{ project_name }}"
-SERVICE="{{ project_name }}"
+NAMESPACE="example-app"
+SERVICE="example-app"
 
 echo "Creating namespace..."
 kubectl create namespace $NAMESPACE || true
@@ -368,7 +368,7 @@ curl -f $URL/health/live || exit 1
 echo "Testing readiness endpoint..."
 curl -f $URL/health/ready || exit 1
 
-{% if include_s3 %}
+
 echo "Testing S3 upload..."
 curl -f -X POST $URL/api/upload \
   -H "Content-Type: application/json" \
@@ -379,7 +379,7 @@ curl -f $URL/api/download/test.txt || exit 1
 
 echo "Testing S3 delete..."
 curl -f -X DELETE $URL/api/delete/test.txt || exit 1
-{% endif %}
+
 
 echo "All E2E tests passed!"
 ```
@@ -429,7 +429,7 @@ harness = false
 **Create benchmark** (`benches/my_benchmark.rs`):
 ```rust
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use {{ crate_name }}::handlers;
+use example_app_with_s3::handlers;
 
 fn benchmark_liveness(c: &mut Criterion) {
     c.bench_function("liveness", |b| {
@@ -538,7 +538,7 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
-{% if include_s3 %}
+
       minio:
         image: minio/minio:latest
         ports:
@@ -548,7 +548,7 @@ jobs:
           MINIO_ROOT_USER: minioadmin
           MINIO_ROOT_PASSWORD: minioadmin
         command: server /data --console-address ":9001"
-{% endif %}
+
     
     steps:
     - uses: actions/checkout@v4
@@ -583,12 +583,12 @@ jobs:
       run: cargo test --test '*' --ignored --nocapture
       env:
         APP__REDIS__URL: redis://localhost:6379
-        {% if include_s3 %}
+        
         APP__S3__ENDPOINT: http://localhost:9000
         APP__S3__BUCKET: data
         AWS_ACCESS_KEY_ID: minioadmin
         AWS_SECRET_ACCESS_KEY: minioadmin
-        {% endif %}
+        
     
     - name: Run linting
       run: cargo clippy --all-targets -- -D warnings

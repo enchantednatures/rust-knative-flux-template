@@ -1,6 +1,6 @@
 # Monitoring Guide
 
-Complete observability guide for {{ project_name }}, including distributed tracing, metrics, and logs.
+Complete observability guide for example-app, including distributed tracing, metrics, and logs.
 
 ## Table of Contents
 
@@ -88,10 +88,10 @@ Request enters → Trace ID generated
 HTTP Handler → Parent span created
     ↓
 Redis Call → Child span created
-{% if include_s3 %}
+
     ↓
 S3 Call → Child span created
-{% endif %}
+
     ↓
 Response → Parent span closed
 ```
@@ -111,8 +111,8 @@ curl -I http://localhost:8080/health/live
 #### By Service/Operation
 
 1. Open Jaeger UI: http://localhost:16686
-2. Select Service: `{{ project_name }}`
-3. Select Operation: `/api/upload`{% if include_s3 %}, `/api/download`, etc.{% endif %}
+2. Select Service: `example-app`
+3. Select Operation: `/api/upload`, `/api/download`, etc.
 4. Click "Find Traces"
 5. Click on a trace to view details
 
@@ -186,7 +186,7 @@ Metrics track numerical values over time for:
 
 - **Performance**: Request latency, throughput
 - **Resources**: CPU, memory, disk
-- **Business**: Requests served, errors{% if include_s3 %}, objects uploaded{% endif %}
+- **Business**: Requests served, errors, objects uploaded
 
 ### Built-in Metrics
 
@@ -234,7 +234,7 @@ sum(rate(http_request_total{status=~"5.."}[5m])) by (path)
 sum(rate(http_request_total{status=~"5.."}[5m])) / sum(rate(http_request_total[5m])) * 100
 ```
 
-{% if include_s3 %}
+
 
 **S3 Metrics** (if custom metrics added):
 ```promql
@@ -248,7 +248,7 @@ histogram_quantile(0.99, s3_download_duration_seconds_bucket)
 rate(s3_operation_total{status="error"}[5m])
 ```
 
-{% endif %}
+
 
 **Resource Metrics**:
 ```promql
@@ -277,7 +277,7 @@ pub struct MyMetrics {
 
 impl MyMetrics {
     pub fn new() -> Self {
-        let meter = global::meter("{{ crate_name }}");
+        let meter = global::meter("example_app_with_s3");
         
         Self {
             upload_counter: meter
@@ -338,7 +338,7 @@ http_request_duration_seconds_count{method="GET",path="/health/live"} 45
 **Prometheus Configuration** (`docker/prometheus.yaml`):
 ```yaml
 scrape_configs:
-  - job_name: '{{ project_name }}'
+  - job_name: 'example-app'
     static_configs:
       - targets: ['host.docker.internal:8080']
     scrape_interval: 15s
@@ -349,12 +349,12 @@ scrape_configs:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ project_name }}
-  namespace: {{ project_name }}
+  name: example-app
+  namespace: example-app
 spec:
   selector:
     matchLabels:
-      serving.knative.dev/service: {{ project_name }}
+      serving.knative.dev/service: example-app
   endpoints:
   - port: http
     path: /metrics
@@ -381,7 +381,7 @@ Structured logs with context:
 {
   "timestamp": "2024-01-15T10:30:45.123Z",
   "level": "INFO",
-  "target": "{{ crate_name }}::handlers::api",
+  "target": "example_app_with_s3::handlers::api",
   "message": "Request received",
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
   "span_id": "4d33b4a7f3ba4b6c",
@@ -403,7 +403,7 @@ cargo run
 RUST_LOG=debug cargo run
 
 # Filter by module
-RUST_LOG={{ crate_name }}=debug,redis=info cargo run
+RUST_LOG=example_app_with_s3=debug,redis=info cargo run
 
 # JSON logs with jq
 RUST_LOG=info cargo run 2>&1 | jq '.'
@@ -412,31 +412,31 @@ RUST_LOG=info cargo run 2>&1 | jq '.'
 **Kubernetes**:
 ```bash
 # Pod logs
-kubectl logs -f deployment/{{ project_name }} -n {{ project_name }}
+kubectl logs -f deployment/example-app -n example-app
 
 # Multiple pods
-kubectl logs -f -n {{ project_name }} -l serving.knative.dev/service={{ project_name }}
+kubectl logs -f -n example-app -l serving.knative.dev/service=example-app
 
 # Previous revision
-kubectl logs -f deployment/{{ project_name }} --previous -n {{ project_name }}
+kubectl logs -f deployment/example-app --previous -n example-app
 
 # Last 100 lines
-kubectl logs --tail=100 deployment/{{ project_name }} -n {{ project_name }}
+kubectl logs --tail=100 deployment/example-app -n example-app
 
 # Filter by trace ID
-kubectl logs deployment/{{ project_name }} -n {{ project_name }} | grep trace-abc123
+kubectl logs deployment/example-app -n example-app | grep trace-abc123
 ```
 
 **Structured Log Query (jq)**:
 ```bash
 # Find errors
-kubectl logs deployment/{{ project_name }} -n {{ project_name }} | jq 'select(.level == "ERROR")'
+kubectl logs deployment/example-app -n example-app | jq 'select(.level == "ERROR")'
 
 # Find slow requests (> 1s)
-kubectl logs deployment/{{ project_name }} -n {{ project_name }} | jq 'select(.http.duration_ms > 1000)'
+kubectl logs deployment/example-app -n example-app | jq 'select(.http.duration_ms > 1000)'
 
 # Group by path
-kubectl logs deployment/{{ project_name }} -n {{ project_name }} | jq -r '.http.path' | sort | uniq -c
+kubectl logs deployment/example-app -n example-app | jq -r '.http.path' | sort | uniq -c
 ```
 
 ### Logging in Code
@@ -495,7 +495,7 @@ export RUST_LOG=info
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ project_name }}-alerts
+  name: example-app-alerts
 spec:
   groups:
   - name: errors
@@ -504,7 +504,7 @@ spec:
       expr: rate(http_request_total{status=~"5.."}[5m]) > 0.05
       for: 5m
       annotations:
-        summary: "High error rate on {{ project_name }}"
+        summary: "High error rate on example-app"
         description: "Error rate is {{ $value }} errors/sec for the last 5 minutes"
       labels:
         severity: warning
@@ -516,7 +516,7 @@ spec:
       expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
       for: 5m
       annotations:
-        summary: "High latency on {{ project_name }}"
+        summary: "High latency on example-app"
         description: "95th percentile latency is {{ $value }}s"
       labels:
         severity: warning
@@ -590,8 +590,8 @@ spec:
 5. **CPU Usage**: `rate(process_cpu_seconds_total[1m]) * 100`
 6. **Memory Usage**: `process_resident_memory_bytes`
 7. **Error Log Count**: `count_over_time({level="error"}[5m])`
-{% if include_s3 %}8. **S3 Upload Rate**: `rate(s3_upload_total[5m])`
-9. **S3 Operation Latency**: `histogram_quantile(0.99, s3_operation_duration_seconds_bucket)`{% endif %}
+8. **S3 Upload Rate**: `rate(s3_upload_total[5m])`
+9. **S3 Operation Latency**: `histogram_quantile(0.99, s3_operation_duration_seconds_bucket)`
 
 ### Dashboard JSON Template
 
@@ -600,14 +600,14 @@ Import into Grafana:
 ```json
 {
   "dashboard": {
-    "title": "{{ project_name }} Dashboard",
+    "title": "example-app Dashboard",
     "panels": [
       {
         "title": "Request Rate",
         "targets": [
           {
             "expr": "sum(rate(http_request_total[5m])) by (path)",
-            "legendFormat": "{{ path }}"
+            "legendFormat": ""
           }
         ],
         "type": "graph"
@@ -655,7 +655,7 @@ Import into Grafana:
 
 **Dependencies**:
 - Redis connection success rate
-{% if include_s3 %}- S3 operation success rate{% endif %}
+- S3 operation success rate
 - OpenTelemetry exporter health
 
 ### SLIs and SLOs
@@ -679,7 +679,7 @@ Import into Grafana:
 **High Error Rate**:
 1. Check recent deployments
 2. Review error logs
-3. Check dependencies (Redis{% if include_s3 %}, S3{% endif %})
+3. Check dependencies (Redis, S3)
 4. Scale up if resource constrained
 5. Rollback if needed
 
