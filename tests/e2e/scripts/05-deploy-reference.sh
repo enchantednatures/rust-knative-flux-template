@@ -4,9 +4,19 @@ set -euo pipefail
 SCENARIO="${1}"
 INCLUDE_S3="${2}"
 CLUSTER_NAME="e2e-${SCENARIO}"
+REGISTRY_NAME="kind-registry-${SCENARIO}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 REFERENCE_DIR="${PROJECT_ROOT}/examples/${SCENARIO}"
+
+# Set registry port based on scenario
+if [[ "$SCENARIO" == "no-s3" ]]; then
+  REGISTRY_PORT=5000
+elif [[ "$SCENARIO" == "with-s3" ]]; then
+  REGISTRY_PORT=5001
+else
+  REGISTRY_PORT=5000
+fi
 
 # Use scenario-specific kubeconfig
 export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig-${SCENARIO}"
@@ -78,10 +88,13 @@ fi
 
 echo "Building Docker image from reference implementation..."
 cd "$REFERENCE_DIR"
-docker build -t "rust-service-${SCENARIO}:e2e" .
+LOCAL_IMAGE="rust-service-${SCENARIO}:e2e"
+REGISTRY_IMAGE="localhost:${REGISTRY_PORT}/rust-service-${SCENARIO}:e2e"
+docker build -t "${LOCAL_IMAGE}" .
 
-echo "Loading image into Kind cluster..."
-kind load docker-image "rust-service-${SCENARIO}:e2e" --name "${CLUSTER_NAME}"
+echo "Tagging and pushing image to local registry..."
+docker tag "${LOCAL_IMAGE}" "${REGISTRY_IMAGE}"
+docker push "${REGISTRY_IMAGE}"
 
 echo "Deploying via kubectl (simulating Flux)..."
 # Save original kustomization.yaml
@@ -102,11 +115,10 @@ mv "${KUSTOMIZATION_FILE}.backup" "$KUSTOMIZATION_FILE"
 
 cd "${PROJECT_ROOT}"
 
-# Patch the image to use our e2e built image and set imagePullPolicy to Never
+# Patch the image to use our e2e built image from local registry
 kubectl patch ksvc rust-service -n test-app --type='json' \
   -p="[
-    {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"rust-service-${SCENARIO}:e2e\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Never\"}
+    {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${REGISTRY_NAME}:5000/rust-service-${SCENARIO}:e2e\"}
   ]"
 
 echo "Waiting for Knative Service to be ready..."

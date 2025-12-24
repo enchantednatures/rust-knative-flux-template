@@ -41,6 +41,12 @@ kubectl patch configmap/config-domain \
   --type merge \
   -p '{"data":{"127.0.0.1.sslip.io":""}}'
 
+echo "Configuring Knative to skip digest resolution for local registry..."
+kubectl patch configmap/config-deployment \
+  -n knative-serving \
+  --type merge \
+  -p '{"data":{"registries-skipping-tag-resolving":"kind-registry-no-s3:5000,kind-registry-with-s3:5000"}}'
+
 echo "Waiting for Knative to be ready..."
 kubectl wait --for=condition=Ready pods --all -n knative-serving --timeout=5m
 
