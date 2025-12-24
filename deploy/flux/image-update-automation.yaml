@@ -31,7 +31,7 @@ spec:
         email: flux@users.noreply.github.com
       messageTemplate: |
         chore: update image to {{.NewImage}}
-        
+
         Image: {{.ImageRepository}}
         Tag: {{.NewTag}}
     push:
