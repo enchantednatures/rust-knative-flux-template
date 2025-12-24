@@ -281,16 +281,10 @@ main() {
   fi
   
   # Find all kustomization overlays
-  local overlays=(
+  local   overlays=(
     "deploy/overlays/dev"
     "deploy/overlays/staging"
     "deploy/overlays/prod"
-    "examples/no-s3/deploy/overlays/dev"
-    "examples/no-s3/deploy/overlays/staging"
-    "examples/no-s3/deploy/overlays/prod"
-    "examples/with-s3/deploy/overlays/dev"
-    "examples/with-s3/deploy/overlays/staging"
-    "examples/with-s3/deploy/overlays/prod"
   )
   
   echo ""

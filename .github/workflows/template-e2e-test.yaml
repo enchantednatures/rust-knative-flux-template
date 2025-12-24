@@ -1,4 +1,4 @@
-name: Template E2E Tests
+name: E2E Tests (OCI)
 
 on:
   push:
@@ -7,90 +7,551 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+
 jobs:
-  verify-and-test:
+  e2e:
     name: E2E (${{ matrix.scenario }})
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
-    
+
+    permissions:
+      contents: read
+      packages: write
+
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - scenario: no-s3
             include_s3: "false"
           - scenario: with-s3
             include_s3: "true"
-    
+
     env:
       SCENARIO: ${{ matrix.scenario }}
-    
+
     steps:
+      - name: Install dependencies (for robustness)
+        run: |
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker not found. Please install Docker on self-hosted runner."
+            exit 1
+          fi
+
+          if ! command -v kind &> /dev/null; then
+            echo "Installing kind..."
+            curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/v0.22.0/kind-linux-amd64"
+            chmod +x ./kind
+            sudo mv ./kind /usr/local/bin/
+          fi
+
+          if ! command -v kubectl &> /dev/null; then
+            echo "Installing kubectl..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
+          fi
+
+          if ! command -v helm &> /dev/null; then
+            echo "Installing helm..."
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+
+          if ! command -v kustomize &> /dev/null; then
+            echo "Installing kustomize..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          fi
+
       - name: Checkout repository
-        uses: actions/checkout@v6
-      
+        uses: actions/checkout@v4
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Cargo registry
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      
-      - name: Verify template generation
-        run: |
-          chmod +x tests/e2e/scripts/*.sh
-          tests/e2e/scripts/04-verify-generation.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
-      
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Install Flux CLI
+        uses: fluxcd/flux2/action@main
+
       - name: Setup Kind cluster
-        run: tests/e2e/scripts/00-setup-kind.sh "${{ matrix.scenario }}"
-      
+        run: |
+          kind version
+          kind delete cluster --name e2e-${{ matrix.scenario }} || true
+          kind create cluster --name e2e-${{ matrix.scenario }} --wait 5m
+
+      - name: Generate project from template
+        run: |
+          cargo generate --path . \
+            --name "test-app-${{ matrix.scenario }}" \
+            --define "include_s3=${{ matrix.include_s3 }}" \
+            --define "project_name=test-app" \
+            --define "target_namespace=default" \
+            --define "github_org=test-org" \
+            --define "github_repo=test-repo" \
+            --define "default_branch=main" \
+            --define "enable_image_updates=false" \
+            -o ./generated
+
+      - name: Validate generated project structure
+        run: |
+          echo "✓ Checkpoint 1: Validating template generation"
+
+          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+
+          required_files=(
+            "${GENERATED_DIR}/Cargo.toml"
+            "${GENERATED_DIR}/src/main.rs"
+            "${GENERATED_DIR}/Dockerfile"
+            "${GENERATED_DIR}/deploy/base/knative-service.yaml"
+            "${GENERATED_DIR}/deploy/base/kustomization.yaml"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            fi
+            echo "  ✓ Found: $file"
+          done
+
+          echo ""
+          echo "Validating Kubernetes manifests..."
+          kubectl apply --dry-run=client -k "${GENERATED_DIR}/deploy/base/" 2>&1 || {
+            echo "❌ Kubernetes manifest validation failed"
+            exit 1
+          }
+
+          echo "✅ Checkpoint 1 passed: Template generation valid"
+
+      - name: Set image tags
+        id: image-meta
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          else
+            PR_NUMBER="main"
+          fi
+
+          RUN_NUMBER="${{ github.run_number }}"
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+
+          IMAGE_TAG="pr-${PR_NUMBER}-run-${RUN_NUMBER}-${SHORT_SHA}"
+
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "app_image=${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "manifest_image=${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "📦 Using image tag: ${IMAGE_TAG}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build application image
+        run: |
+          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+
+          docker build \
+            -t ${{ steps.image-meta.outputs.app_image }} \
+            "${GENERATED_DIR}"
+
+      - name: Push application image to GHCR
+        run: |
+          docker push ${{ steps.image-meta.outputs.app_image }}
+
+      - name: Load image into Kind
+        run: |
+          kind load docker-image \
+            ${{ steps.image-meta.outputs.app_image }} \
+            --name e2e-${{ matrix.scenario }}
+
+      - name: Validate application image in GHCR
+        run: |
+          echo "✓ Checkpoint 2: Validating application image"
+
+          docker manifest inspect ${{ steps.image-meta.outputs.app_image }} > /dev/null 2>&1 || {
+            echo "❌ Image not found in GHCR"
+            exit 1
+          }
+
+          echo "✅ Checkpoint 2 passed: Application image verified in GHCR"
+
+      - name: Prepare manifests for OCI push
+        run: |
+          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+
+          cd "${GENERATED_DIR}/deploy/base"
+
+          cat > kustomization-patch.yaml <<EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+
+          resources:
+            - knative-service.yaml
+
+          images:
+            - name: rust-service
+              newName: ${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}
+              newTag: ${{ steps.image-meta.outputs.image_tag }}
+
+          namespace: default
+          EOF
+
+          mkdir -p ../../manifests-built
+          kustomize build . --load-restrictor LoadRestrictionsNone > ../../manifests-built/all.yaml
+
+          echo "::group::Built manifests"
+          cat ../../manifests-built/all.yaml
+          echo "::endgroup::"
+
+      - name: Push manifests as OCI artifact
+        run: |
+          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+
+          flux push artifact \
+            oci://${{ steps.image-meta.outputs.manifest_image }} \
+            --path "${GENERATED_DIR}/manifests-built" \
+            --source="${{ github.server_url }}/${{ github.repository }}" \
+            --revision="${{ github.sha }}"
+
+      - name: Validate OCI artifact in GHCR
+        run: |
+          echo "✓ Checkpoint 3: Validating OCI artifact"
+
+          mkdir -p ./oci-verify
+          flux pull artifact \
+            oci://${{ steps.image-meta.outputs.manifest_image }} \
+            --output ./oci-verify
+
+          if [[ ! -f "./oci-verify/all.yaml" ]]; then
+            echo "❌ OCI artifact missing all.yaml"
+            exit 1
+          fi
+
+          echo "✅ Checkpoint 3 passed: OCI artifact verified"
+
+          echo "::group::Artifact contents"
+          ls -la ./oci-verify/
+          echo "::endgroup::"
+
+      - name: Install Flux controllers
+        run: |
+          flux install
+
+          kubectl wait --for=condition=available \
+            --timeout=180s \
+            -n flux-system \
+            deployment/source-controller \
+            deployment/kustomize-controller
+
       - name: Install Knative Serving
-        run: tests/e2e/scripts/01-install-knative.sh "${{ matrix.scenario }}"
-      
-      - name: Install Flux CD
-        run: tests/e2e/scripts/02-install-flux.sh "${{ matrix.scenario }}"
-      
-      - name: Deploy infrastructure (Redis + MinIO)
-        run: tests/e2e/scripts/03-deploy-infrastructure.sh "${{ matrix.include_s3 }}"
-      
-      - name: Build and deploy reference implementation
         run: |
-          tests/e2e/scripts/05-deploy-reference.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
-      
+          KNATIVE_VERSION="knative-v1.20.0"
+
+          kubectl apply -f https://github.com/knative/serving/releases/download/${KNATIVE_VERSION}/serving-crds.yaml
+
+          kubectl apply -f https://github.com/knative/serving/releases/download/${KNATIVE_VERSION}/serving-core.yaml
+
+          kubectl apply -f https://github.com/knative/net-kourier/releases/download/${KNATIVE_VERSION}/kourier.yaml
+
+          kubectl patch configmap/config-network \
+            --namespace knative-serving \
+            --type merge \
+            --patch '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'
+
+          kubectl wait --for=condition=available \
+            --timeout=300s \
+            -n knative-serving \
+            deployment/activator \
+            deployment/autoscaler \
+            deployment/controller \
+            deployment/webhook
+
+      - name: Install Redis
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
+          helm install redis bitnami/redis \
+            --set auth.enabled=false \
+            --set architecture=standalone \
+            --wait \
+            --timeout 120s
+
+      - name: Install MinIO (if needed)
+        if: matrix.include_s3 == 'true'
+        run: |
+          helm repo add minio https://charts.min.io/
+          helm repo update
+
+          helm install minio minio/minio \
+            --set replicas=1 \
+            --set mode=standalone \
+            --set resources.requests.memory=256Mi \
+            --set rootUser=minioadmin \
+            --set rootPassword=minioadmin \
+            --wait \
+            --timeout 180s
+
+      - name: Validate cluster dependencies
+        run: |
+          echo "✓ Checkpoint 4: Validating cluster dependencies"
+
+          echo "Checking Flux..."
+          flux check || { echo "❌ Flux check failed"; exit 1; }
+          echo "  ✓ Flux healthy"
+
+          echo ""
+          echo "Checking Knative..."
+          kubectl get pods -n knative-serving -o wide
+          kubectl wait --for=condition=ready pod \
+            -l app=activator \
+            -n knative-serving \
+            --timeout=60s || { echo "❌ Knative not ready"; exit 1; }
+          echo "  ✓ Knative healthy"
+
+          echo ""
+          echo "Checking Redis..."
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=redis \
+            --timeout=60s || { echo "❌ Redis not ready"; exit 1; }
+          echo "  ✓ Redis healthy"
+
+          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+            echo ""
+            echo "Checking MinIO..."
+            kubectl wait --for=condition=ready pod \
+              -l app=minio \
+              --timeout=60s || { echo "❌ MinIO not ready"; exit 1; }
+            echo "  ✓ MinIO healthy"
+          fi
+
+          echo "✅ Checkpoint 4 passed: All cluster dependencies healthy"
+
+      - name: Create application secrets
+        run: |
+          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+            kubectl create secret generic rust-service-secrets \
+              --from-literal=redis-url=redis://redis-master:6379 \
+              --from-literal=aws-access-key-id=minioadmin \
+              --from-literal=aws-secret-access-key=minioadmin \
+              --dry-run=client -o yaml | kubectl apply -f -
+          else
+            kubectl create secret generic rust-service-secrets \
+              --from-literal=redis-url=redis://redis-master:6379 \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
+
+      - name: Create GHCR pull secret for Flux
+        run: |
+          kubectl create secret docker-registry ghcr-auth \
+            --namespace=flux-system \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy OCIRepository and Kustomization
+        run: |
+          cat <<EOF | kubectl apply -f -
+          ---
+          apiVersion: source.toolkit.fluxcd.io/v1beta2
+          kind: OCIRepository
+          metadata:
+            name: test-app-${{ matrix.scenario }}
+            namespace: flux-system
+          spec:
+            interval: 1m
+            url: oci://${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}
+            ref:
+              tag: "${{ steps.image-meta.outputs.image_tag }}"
+            secretRef:
+              name: ghcr-auth
+          ---
+          apiVersion: kustomize.toolkit.fluxcd.io/v1
+          kind: Kustomization
+          metadata:
+            name: test-app-${{ matrix.scenario }}
+            namespace: flux-system
+          spec:
+            interval: 1m
+            sourceRef:
+              kind: OCIRepository
+              name: test-app-${{ matrix.scenario }}
+            path: ./
+            prune: true
+            targetNamespace: default
+            wait: true
+            timeout: 5m
+          EOF
+
+      - name: Wait for Flux reconciliation
+        run: |
+          echo "Waiting for OCIRepository to be ready..."
+          kubectl wait --for=condition=ready \
+            --timeout=180s \
+            -n flux-system \
+            ocirepository/test-app-${{ matrix.scenario }} || {
+              echo "❌ OCIRepository failed to become ready"
+              kubectl describe ocirepository/test-app-${{ matrix.scenario }} -n flux-system
+              exit 1
+            }
+
+          echo "Waiting for Kustomization to be ready..."
+          kubectl wait --for=condition=ready \
+            --timeout=300s \
+            -n flux-system \
+            kustomization/test-app-${{ matrix.scenario }} || {
+              echo "❌ Kustomization failed to become ready"
+              kubectl describe kustomization/test-app-${{ matrix.scenario }} -n flux-system
+              exit 1
+            }
+
+          echo "✓ Flux reconciliation complete"
+
+      - name: Validate application deployment
+        run: |
+          echo "✓ Checkpoint 5: Validating application deployment"
+
+          echo "Checking Flux resource status..."
+          flux get all -A
+
+          echo ""
+          echo "Checking deployed resources..."
+          kubectl get all -n default
+
+          echo ""
+          echo "Waiting for Knative Service to be ready..."
+          kubectl wait --for=condition=ready \
+            --timeout=300s \
+            ksvc/rust-service || {
+              echo "❌ Knative Service not ready"
+              kubectl describe ksvc/rust-service
+              kubectl logs -l serving.knative.dev/service=rust-service --tail=100
+              exit 1
+            }
+
+          echo "✅ Checkpoint 5 passed: Application deployed and ready"
+
+      - name: Get application URL
+        id: app-url
+        run: |
+          SERVICE_URL=$(kubectl get ksvc rust-service -o jsonpath='{.status.url}')
+          echo "service_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
+          echo "📡 Service URL: ${SERVICE_URL}"
+
       - name: Run E2E tests
+        env:
+          SERVICE_URL: ${{ steps.app-url.outputs.service_url }}
         run: |
-          tests/e2e/scripts/06-run-tests.sh \
-            "${{ matrix.scenario }}" \
-            "${{ matrix.include_s3 }}"
-      
-      - name: Collect diagnostics on failure
+          echo "Running E2E tests against: ${SERVICE_URL}"
+
+          FAILED=0
+
+          echo ""
+          echo "Test: Liveness probe..."
+          if curl -f -s "${SERVICE_URL}/health/live" > /dev/null; then
+            echo "  ✓ Liveness probe PASSED"
+          else
+            echo "  ✗ Liveness probe FAILED"
+            ((FAILED++))
+          fi
+
+          echo ""
+          echo "Test: Readiness probe..."
+          if curl -f -s "${SERVICE_URL}/health/ready" > /dev/null; then
+            echo "  ✓ Readiness probe PASSED"
+          else
+            echo "  ✗ Readiness probe FAILED"
+            ((FAILED++))
+          fi
+
+          echo ""
+          echo "Test: Prometheus metrics..."
+          if curl -f -s "${SERVICE_URL}/metrics" | grep -q 'rust_'; then
+            echo "  ✓ Metrics endpoint PASSED"
+          else
+            echo "  ✗ Metrics endpoint FAILED"
+            ((FAILED++))
+          fi
+
+          echo ""
+          echo "Test: Hello API..."
+          if curl -f -s "${SERVICE_URL}/api/v1/hello" | jq -e '.message' > /dev/null; then
+            echo "  ✓ Hello API PASSED"
+          else
+            echo "  ✗ Hello API FAILED"
+            ((FAILED++))
+          fi
+
+          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+            echo ""
+            echo "Test: S3 storage example..."
+            RESPONSE=$(curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+
+            if echo "$RESPONSE" | jq -e '.success == true' > /dev/null && \
+               echo "$RESPONSE" | jq -e '.read_verified == true' > /dev/null; then
+              echo "  ✓ S3 storage PASSED"
+            else
+              echo "  ✗ S3 storage FAILED"
+              echo "  Response: $RESPONSE"
+              ((FAILED++))
+            fi
+          fi
+
+          echo ""
+          echo "======================================"
+          if [ $FAILED -eq 0 ]; then
+            echo "✅ All tests PASSED for scenario: ${{ matrix.scenario }}"
+          else
+            echo "❌ ${FAILED} test(s) FAILED for scenario: ${{ matrix.scenario }}"
+            exit 1
+          fi
+          echo "======================================"
+
+      - name: Final validation summary
+        if: always()
+        run: |
+          echo "✓ Checkpoint 6: Final validation summary"
+          echo "============================================"
+          echo "           E2E Test Summary"
+          echo "============================================"
+          echo "Scenario: ${{ matrix.scenario }}"
+          echo "Image: ${{ steps.image-meta.outputs.app_image }}"
+          echo "Manifest: ${{ steps.image-meta.outputs.manifest_image }}"
+          echo ""
+          echo "Cluster state:"
+          kubectl get pods -A | grep -v kube-system || true
+          echo ""
+          echo "Flux resources:"
+          flux get all -A || true
+          echo "============================================"
+
+      - name: Collect debug information on failure
         if: failure()
         run: |
-          echo "=== Cluster Info ==="
-          kubectl cluster-info
-          echo ""
-          echo "=== All Resources ==="
-          kubectl get all -A
-          echo ""
-          echo "=== Knative Service ==="
-          kubectl describe ksvc rust-service -n test-app || true
-          echo ""
-          echo "=== Pod Logs ==="
-          kubectl logs -n test-app -l serving.knative.dev/service=rust-service --tail=200 || true
-          echo ""
-          echo "=== Flux Status ==="
-          flux get all -A || true
-      
-      - name: Cleanup
-        if: always()
-        run: tests/e2e/scripts/99-cleanup.sh "${{ matrix.scenario }}"
+          echo "::group::Flux logs"
+          kubectl logs -n flux-system deployment/source-controller --tail=100 || true
+          kubectl logs -n flux-system deployment/kustomize-controller --tail=100 || true
+          echo "::endgroup::"
+
+          echo "::group::Application logs"
+          kubectl logs -l serving.knative.dev/service=rust-service --tail=100 || true
+          echo "::endgroup::"
+
+          echo "::group::All pods"
+          kubectl get pods -A -o wide
+          echo "::endgroup::"
+
+          echo "::group::Events"
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50
+          echo "::endgroup::"
