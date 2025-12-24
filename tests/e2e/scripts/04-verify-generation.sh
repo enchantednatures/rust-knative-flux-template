@@ -15,6 +15,12 @@ cargo generate \
   --path "$OLDPWD" \
   --name "example-app-${SCENARIO}" \
   --define "include_s3=${INCLUDE_S3}" \
+  --define enable_image_updates=false \
+  --define target_namespace=default \
+  --define github_org=enchantednatures \
+  --define github_repo=rust-knative-flux-template \
+  --define default_branch=main \
+  --define image_registry=ghcr.io \
   --silent
 
 GENERATED_DIR="${TEMP_DIR}/example-app-${SCENARIO}"
