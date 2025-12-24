@@ -2,6 +2,7 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: rust-service
+  namespace: example-app
   labels:
     app.kubernetes.io/name: rust-service
     app.kubernetes.io/component: api

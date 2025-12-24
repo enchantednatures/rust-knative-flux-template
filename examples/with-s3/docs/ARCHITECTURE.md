@@ -1,0 +1,573 @@
+# Architecture Guide
+
+This document explains the system architecture, design decisions, and component interactions in example-app.
+
+## System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Client Requests                             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Knative Service (Auto-scaling)                      │
+│  - Min/Max replicas                                             │
+│  - Automatic scale-to-zero                                      │
+│  - Traffic splitting (canary/blue-green)                        │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│         Axum Web Framework + Tokio Runtime                       │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ HTTP Handlers                                            │   │
+│  │  - Health checks (/health/*)                            │   │
+│  │  - API endpoints (/api/*)                               │   │
+│  │  - Storage operations                              │   │
+│  │  - Upload/Download/Delete                               │   │
+│  │  - Metrics (/metrics)                                  │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                    ┌────────┴────────┐
+                    │                 │
+                    ▼                 ▼
+        ┌─────────────────────┐   ┌──────────────────┐
+        │   AppState          │   │ OpenTelemetry    │
+        │ ┌─────────────────┐ │   │ ┌──────────────┐ │
+        │ │ Redis Client    │ │   │ │ Tracing      │ │
+        │ └─────────────────┘ │   │ ├──────────────┤ │
+        │ ┌─────────────────┐ │   │ │ Metrics      │ │
+        │ │ OpenDAL         │ │   │ ├──────────────┤ │
+        │ │ S3 Operator     │ │   │ │ Structured   │ │
+        │ └─────────────────┘ │   │ │ Logging      │ │
+        └─────────────────────┘   └──────────────────┘
+                    │                 │
+        ┌───────────┘                 └──────────────┐
+        │                                            │
+        ▼                                            ▼
+  ┌──────────────┐                         ┌──────────────────┐
+  │ Redis        │                         │ OpenTelemetry    │
+  │ (Sessions/   │                         │ Collector        │
+  │  Cache)      │                         │                  │
+  └──────────────┘                         └────────┬─────────┘
+                                                   │
+                                  ┌────────────────┼────────────────┐
+                                  │                │                │
+                                  ▼                ▼                ▼
+                            ┌──────────┐    ┌──────────┐    ┌────────────┐
+                            │ Jaeger   │    │Prometheus│    │ Log Store  │
+                            │ (Traces) │    │(Metrics) │    │ (Loki/ELK) │
+                            └──────────┘    └──────────┘    └────────────┘
+
+        ┌─────────────────────┐
+        │ OpenDAL S3 Backend  │
+        └──────────┬──────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+        ▼                     ▼
+   ┌──────────┐          ┌──────────┐
+   │ MinIO    │          │ AWS S3   │
+   │ (Dev)    │          │ (Prod)   │
+   └──────────┘          └──────────┘
+
+```
+
+## Component Breakdown
+
+### Axum Web Framework
+
+The application is built on **Axum**, a fast, ergonomic web framework:
+- Type-safe routing
+- Extractors for dependency injection (path params, query strings, state)
+- Tower middleware support
+- Excellent error handling with custom responses
+
+**Location**: `src/main.rs`, `src/routes.rs`, `src/handlers/`
+
+### AppState
+
+Central application state shared across all handlers:
+
+```rust
+pub struct AppState {
+    pub redis: MultiplexedConnection,
+    pub storage: Operator,
+    
+}
+```
+
+This allows:
+- Shared Redis connection pool
+- Shared S3/OpenDAL operator
+- Dependency injection via `State` extractor
+- Easy testing with mock state
+
+**Location**: `src/state.rs`
+
+### Configuration Management
+
+Three-tier configuration hierarchy:
+1. **Environment Variables** (highest priority): `APP__SERVER__PORT=8080`
+2. **Environment-Specific File**: `config/{env}.toml` (e.g., `config/development.toml`)
+3. **Default File** (lowest priority): `config/default.toml`
+
+Configuration is loaded at startup and immutable during runtime.
+
+**Location**: `src/config.rs`
+
+### OpenTelemetry Integration
+
+Comprehensive observability stack:
+
+- **Tracing**: All requests generate distributed traces with context propagation
+  - B3 Propagation for Knative compatibility
+  - Custom spans for business logic
+  - Automatic HTTP/Redis tracing
+
+- **Metrics**: Prometheus-compatible metrics
+  - HTTP request latency (histograms)
+  - Request count (counters)
+  - Custom application metrics
+
+- **Logging**: Structured JSON logs with context
+  - Correlation IDs from traces
+  - Severity levels
+  - Contextual fields
+
+All telemetry flows to OpenTelemetry Collector, which routes to:
+- **Jaeger** for distributed tracing
+- **Prometheus** for metrics
+- **Loki/ELK** for centralized logging
+
+**Location**: `src/observability.rs`
+
+
+### OpenDAL S3/MinIO Integration
+
+**OpenDAL** provides a unified interface to multiple storage backends:
+
+- **Abstraction Layer**: Same code works with MinIO (local), AWS S3, Google Cloud Storage, etc.
+- **Built-in Retry Logic**: Automatic retries on transient failures
+- **Connection Pooling**: Efficient HTTP connection management
+- **Operation Types**:
+  - `write()` - Upload/overwrite object
+  - `read()` - Download object
+  - `list()` - List objects with prefix
+  - `stat()` - Get object metadata
+  - `delete()` - Delete object
+  - `rename()` - Move object
+
+**Initialization Flow**:
+1. Load S3 config (endpoint, bucket, credentials)
+2. Build OpenDAL operator with S3 backend
+3. Store in AppState for handler access
+4. All storage operations go through the operator
+
+**Testing**: MinIO for local development, AWS S3 for production
+
+**Location**: `src/main.rs` (initialization), handlers use via `State(state).storage`
+
+
+
+### Request Lifecycle
+
+```
+1. Client Request
+   │
+   ▼
+2. Knative Ingress (LoadBalancer/Ingress)
+   │
+   ▼
+3. Axum Router
+   │
+   ├─ Extract path/query params
+   ├─ Extract State (AppState)
+   ├─ Initialize trace span
+   │
+   ▼
+4. Handler Execution
+   │
+   ├─ Validate input
+   ├─ Access Redis/Storage
+   ├─ Create trace spans
+   │
+   ▼
+5. Response Generation
+   │
+   ├─ Serialize response
+   ├─ Record metrics
+   ├─ Emit trace spans
+   │
+   ▼
+6. HTTP Response to Client
+```
+
+## Design Decisions
+
+### Why Knative Serving?
+
+- **Serverless**: Pay only for actual usage, automatic scale-to-zero
+- **Auto-scaling**: Handles traffic spikes without pre-provisioning
+- **Revision Management**: Easy canary deployments and traffic splitting
+- **CloudEvents Support**: First-class support for event-driven architectures
+- **Industry Standard**: Used by Google Cloud Run, IBM Cloud Functions, etc.
+
+### Why FluxCD for GitOps?
+
+- **Declarative**: Infrastructure as Code in Git
+- **Automated**: Changes sync automatically to cluster
+- **Auditable**: Full Git history of infrastructure changes
+- **Multi-tenancy**: Separate namespaces per team/app
+- **Image Automation**: Auto-update image references on new builds
+
+### Why OpenDAL for Storage Abstraction?
+
+- **Provider Agnostic**: Same code works with any S3-compatible service
+- **Reduced Vendor Lock-in**: Easy migration from MinIO to AWS S3
+- **Ergonomic API**: Rust futures-based, async/await friendly
+- **Retry Policies**: Built-in retry logic with exponential backoff
+- **Production Ready**: Used by Apache projects
+
+### Why Redis?
+
+- **Fast**: In-memory, nanosecond latency
+- **Versatile**: Caching, sessions, queues, pub/sub
+- **Clustering**: High availability via Redis Cluster or Sentinel
+- **Simple**: Easy setup and monitoring
+
+### Configuration Hierarchy
+
+Environment variables override files because:
+- **Flexibility**: Different configs per environment without rebuilding
+- **Security**: Secrets (credentials) via env vars, never in code/files
+- **Kubernetes Native**: ConfigMaps and Secrets map naturally to env vars
+
+## Scaling Behavior
+
+### Knative Auto-scaling
+
+```
+Traffic Detection
+    │
+    ├─ Measure: Requests per second, concurrency
+    │
+    ▼
+Calculate Desired Replicas
+    │
+    ├─ Formula: current_concurrency / target_concurrency × current_replicas
+    │
+    ▼
+Scale Pods
+    │
+    ├─ Min: 1 (or 0 for serverless)
+    ├─ Max: Configured limit (e.g., 100)
+    │
+    ▼
+Monitor and Adjust
+```
+
+**Configuration** (in `deploy/base/knative-service.yaml`):
+```yaml
+autoscaling.knative.dev/minScale: "1"
+autoscaling.knative.dev/maxScale: "100"
+autoscaling.knative.dev/targetUtilizationPercentage: "70"
+```
+
+### Startup Sequence
+
+1. **Cold Start**: 
+   - Knative creates pod from image
+   - Application initializes (parse config, connect to Redis, init S3)
+   - Health check passes (/health/ready)
+   - Pod marked ready for traffic
+
+2. **Warm Start**: 
+   - Existing pod receives request
+   - ~1-5ms response time (depending on operation)
+
+3. **Scale-to-Zero**:
+   - If no requests for 5+ minutes
+   - Knative terminates pods
+   - Next request triggers cold start
+   - Graceful shutdown closes connections
+
+## Dependencies
+
+### External Services
+
+| Service | Purpose | Criticality | Local Dev | Production |
+|---------|---------|-------------|-----------|------------|
+| Kubernetes | Container orchestration | REQUIRED | Kind (tests) | EKS/GKE/etc |
+| Knative | Serverless runtime | REQUIRED | Included in Kind | Pre-installed |
+| Redis | Caching/sessions | REQUIRED | docker-compose | AWS ElastiCache/Redis Enterprise |
+| MinIO/S3 | Object storage | REQUIRED | docker-compose | AWS S3 | |
+| OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |
+| Jaeger | Distributed tracing | OPTIONAL | docker-compose | Cloud provider/self-hosted |
+| Prometheus | Metrics collection | OPTIONAL | docker-compose | Cloud provider/self-hosted |
+
+### Rust Dependencies
+
+Key crates:
+- **axum**: Web framework
+- **tokio**: Async runtime
+- **redis**: Redis client
+- **opendal**: Unified storage API
+- **opentelemetry**: Telemetry SDK
+- **tracing**: Structured logging
+- **serde**: Serialization
+- **serde_json**: JSON handling
+
+See `Cargo.toml` for complete dependency tree.
+
+## Data Flow Examples
+
+### S3 Upload Request
+
+
+```
+Client: POST /api/upload
+       └─ Content: {"key": "docs/report.pdf", "data": "base64..."}
+                   │
+                   ▼
+        Axum Handler: upload_handler
+               │
+               ├─ Extract JSON body
+               ├─ Decode base64 data
+               │
+               ▼
+        AppState.storage.write("docs/report.pdf", bytes)
+               │
+               ├─ OpenDAL S3 backend
+               │
+               ▼
+        MinIO/S3 HTTP API
+               │
+               ├─ PUT /docs/report.pdf
+               │
+               ▼
+        Object stored in bucket
+               │
+               ▼
+        HTTP 201 Created
+               │
+               ▼
+        Jaeger: Trace span "upload_handler" with duration
+        Prometheus: request_duration_seconds histogram
+        Logs: Structured JSON with trace_id
+```
+
+### Distributed Trace Flow
+
+```
+1. Request arrives with B3 headers (trace_id, span_id)
+2. Axum middleware extracts trace context
+3. Application spans created as child spans
+4. Redis operations traced automatically
+5. S3 operations traced with custom spans
+6. All spans collected and sent to OpenTelemetry Collector
+7. Collector forwards to Jaeger
+8. Jaeger combines into single distributed trace
+9. Developer views in Jaeger UI with full timeline
+```
+
+
+
+## Error Handling Strategy
+
+The application uses a custom `AppError` type for consistent error handling:
+
+```rust
+pub enum AppError {
+    NotFound(String),
+    BadRequest(String),
+    InternalServerError(String),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, body) = match self {
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        };
+        
+        (status, Json(json!({"error": body}))).into_response()
+    }
+}
+```
+
+Benefits:
+- Consistent error format
+- Automatic HTTP status codes
+- Logged with context
+- Traced in distributed traces
+
+## State Machine: Pod Lifecycle
+
+```
+┌──────────────────┐
+│  Pod Created     │
+│  (Cold Start)    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ App Initializing │
+│ - Parse config   │
+│ - Connect Redis  │
+│ - Init S3 operator  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Readiness Check  │
+│ (health/ready)   │
+└────────┬─────────┘
+         │
+         ├─ FAIL ──────────────┐
+         │                     │
+         ▼                     ▼
+    Ready to Receive      Crash/Restart
+    Traffic               (kubelet restarts)
+         │
+         ├─ Process requests
+         │  (warm phase)
+         │
+         ├─ No traffic
+         │  for 5 minutes
+         │
+         ▼
+    Scale-to-Zero
+    (Knative terminates)
+         │
+         ▼
+    SIGTERM Signal
+    (30s grace period)
+         │
+         ├─ Close connections
+         ├─ Finish in-flight requests
+         │
+         ▼
+    Pod Terminated
+```
+
+## Security Boundaries
+
+```
+┌─────────────────────────────────────────────────┐
+│ Kubernetes Network Boundary                     │
+│  - Enforced via NetworkPolicy                   │
+│  - mTLS via service mesh (optional)             │
+│                                                  │
+│  ┌──────────────────────────────────────────┐   │
+│  │ Pod Security Boundary                    │   │
+│  │  - Non-root user                         │   │
+│  │  - Read-only root filesystem             │   │
+│  │  - Seccomp/AppArmor profiles             │   │
+│  │                                          │   │
+│  │  ┌────────────────────────────────────┐ │   │
+│  │  │ Application Security Boundary      │ │   │
+│  │  │  - Input validation                │ │   │
+│  │  │  - Error handling (no secrets)     │ │   │
+│  │  │  - Dependency scanning (audit)     │ │   │
+│  │  └────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────┘   │
+│                                                  │
+│  External Dependencies (Encrypted)              │
+│  - Redis: Optional TLS                          │
+│  - S3: TLS to MinIO/AWS S3 |
+└─────────────────────────────────────────────────┘
+```
+
+See `docs/SECURITY.md` for detailed security guidance.
+
+## Performance Characteristics
+
+| Operation | Expected Latency | Bottleneck |
+|-----------|------------------|-----------|
+| Health check (/health/live) | <1ms | Network RTT |
+| Health ready (/health/ready) | 5-10ms | Redis PING |
+| S3 Upload (1MB) | 100-500ms | Network to S3 |
+| S3 Download (1MB) | 100-500ms | Network to S3 |
+| S3 List (100 objects) | 50-200ms | S3 API latency |
+Trace processing | <1ms | In-process |
+| Metrics recording | <1ms | In-process |
+
+Optimization techniques:
+- Connection pooling (Redis, S3)
+- Async/await with Tokio
+- Minimal allocations in hot paths
+- Zero-copy where possible
+- Trace sampling in production
+
+## Testing Architecture
+
+```
+Unit Tests
+  │
+  ├─ No external dependencies
+  └─ Run in CI/CD
+
+Integration Tests
+  │
+  ├─ Docker services (Redis, MinIO)
+  └─ Full handler testing
+
+E2E Tests
+  │
+  ├─ Kind Kubernetes cluster
+  ├─ Deploy via Kustomize/FluxCD
+  └─ End-to-end workflow verification
+```
+
+See `docs/TESTING.md` for detailed testing strategy.
+
+## Deployment Architecture
+
+```
+Git Repository
+    │
+    ├─ Application code
+    ├─ Kubernetes manifests (deploy/)
+    ├─ Configuration (config/)
+    │
+    ▼
+FluxCD GitRepository
+    │
+    ├─ Polls Git every 1 minute
+    │
+    ▼
+FluxCD Kustomization
+    │
+    ├─ Applies Kustomize patches
+    ├─ Template substitution
+    │
+    ▼
+Kubernetes Apply
+    │
+    ├─ Create Knative Service
+    ├─ Create ConfigMaps/Secrets
+    ├─ Create RBAC resources
+    │
+    ▼
+Knative Controller
+    │
+    ├─ Create Deployment
+    ├─ Create Service
+    ├─ Manage revisions
+    │
+    ▼
+Pods Running on Nodes
+```
+
+See `docs/DEPLOYMENT.md` for detailed deployment procedures.
+
+## Next Steps
+
+- **For Developers**: Read `docs/DEVELOPMENT.md` for local setup
+- **For Operators**: Read `docs/DEPLOYMENT.md` and `docs/MONITORING.md`
+- **For Security**: Read `docs/SECURITY.md` for hardening
+- **For Troubleshooting**: Read `docs/TROUBLESHOOTING.md`

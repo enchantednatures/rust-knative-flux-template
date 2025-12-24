@@ -1,68 +1,85 @@
 # Self-Hosted GitHub Actions Runners
 
-This document describes the self-hosted GitHub Actions runners setup for this repository.
+This document describes the self-hosted GitHub Actions runners setup for example-app.
 
 ## Overview
 
-- **Purpose**: Run E2E tests without consuming GitHub-hosted runner credits
-- **Location**: `/opt/actions-runner-1` and `/opt/actions-runner-2`
-- **Runners**: 2 parallel runners for matrix jobs
+- **Purpose**: Run CI/CD without consuming GitHub-hosted runner credits
+- **Location**: Configurable directory (default: `/opt/actions-runner-*`)
+- **Runners**: 1-2 parallel runners for matrix jobs
 - **Auto-start**: Yes (systemd services)
 - **Auto-update**: Yes (enabled by default)
 
-## Configuration
+## Prerequisites
 
-### Runners
-
-| Name | Directory | Labels | Service Name |
-|------|-----------|--------|--------------|
-| seko-runner-1 | /opt/actions-runner-1 | self-hosted,linux,x64 | actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service |
-| seko-runner-2 | /opt/actions-runner-2 | self-hosted,linux,x64 | actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-2.service |
-
-### Docker Cleanup
-
-- **Service**: `github-runner-docker-cleanup.service`
-- **Timer**: `github-runner-docker-cleanup.timer`
-- **Script**: `/usr/local/bin/github-runner-docker-cleanup.sh`
-- **Schedule**: Daily
-- **Action**: Removes Docker resources older than 24 hours
-- **Removes**: Unused containers, images, networks, volumes, build cache
+- Linux server (Ubuntu 20.04+ recommended)
+- GitHub CLI installed: `gh`
+- Authenticated: `gh auth status`
+- Docker installed: For running containers
+- kubectl installed: For E2E tests
+- Rust toolchain installed
 
 ## Installation
 
-### Prerequisites
-
-Ensure GitHub CLI is authenticated:
-
-```bash
-gh auth status
-```
-
-If not authenticated, run:
+### Step 1: Authenticate GitHub CLI
 
 ```bash
 gh auth login
 ```
 
-### Run Setup Script
+Follow prompts to authenticate.
 
-Run the setup script as root:
+### Step 2: Clone Repository
 
 ```bash
+git clone https://github.com/your-org/example-app.git
+cd example-app
+```
+
+### Step 3: Run Setup Script
+
+```bash
+chmod +x scripts/setup-github-runners.sh
 sudo ./scripts/setup-github-runners.sh
 ```
 
 The script will:
-1. Check prerequisites (Docker, kubectl, flux, cargo, gh, etc.)
+1. Check prerequisites (Docker, kubectl, gh CLI, Rust)
 2. Verify gh CLI authentication
 3. Download latest GitHub Actions runner
-4. **Automatically generate registration tokens** (via gh CLI)
-5. Configure both runners
+4. Generate registration tokens via gh CLI
+5. Configure runners
 6. Install as systemd services
-7. Setup daily Docker cleanup systemd timer
+7. Setup daily Docker cleanup
 8. Verify installation
 
-**Note**: The script automatically generates registration tokens using the GitHub CLI API, so no manual token copy/paste is required.
+### Step 4: Verify Installation
+
+```bash
+# Check runner status
+sudo systemctl status 'actions.runner.*'
+
+# Check runner registration
+# Navigate to: https://github.com/your-org/example-app/settings/actions/runners
+```
+
+## Configuration
+
+### Runner Labels
+
+Configure labels in GitHub Actions workflows:
+
+```yaml
+jobs:
+  test:
+    runs-on: [self-hosted, linux, x64]
+```
+
+### Runner Directory
+
+Default locations:
+- Runner 1: `/opt/actions-runner-1`
+- Runner 2: `/opt/actions-runner-2`
 
 ## Management
 
@@ -73,7 +90,7 @@ The script will:
 sudo systemctl status 'actions.runner.*'
 
 # Specific runner
-sudo systemctl status actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+sudo systemctl status actions.runner.your-org-example-app.runner-1.service
 ```
 
 ### View Logs
@@ -83,7 +100,7 @@ sudo systemctl status actions.runner.enchantednatures-rust-knative-flux-template
 sudo journalctl -u 'actions.runner.*' -f
 
 # Specific runner
-sudo journalctl -u actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service -f
+sudo journalctl -u actions.runner.your-org-example-app.runner-1.service -f
 
 # Last 100 lines
 sudo journalctl -u 'actions.runner.*' -n 100
@@ -102,7 +119,7 @@ sudo systemctl start 'actions.runner.*'
 sudo systemctl restart 'actions.runner.*'
 
 # Specific runner
-sudo systemctl restart actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+sudo systemctl restart actions.runner.your-org-example-app.runner-1.service
 ```
 
 ### Disable/Enable Auto-start
@@ -115,39 +132,61 @@ sudo systemctl disable 'actions.runner.*'
 sudo systemctl enable 'actions.runner.*'
 ```
 
+## Docker Cleanup
+
+### Automated Cleanup
+
+A systemd timer runs daily at midnight:
+
+```bash
+# View timer status
+sudo systemctl status github-runner-docker-cleanup.timer
+
+# View cleanup logs
+sudo journalctl -u github-runner-docker-cleanup.service -n 100
+```
+
+Cleanup actions:
+- Remove unused containers (> 24 hours old)
+- Remove dangling images
+- Remove unused networks
+- Remove unused volumes
+- Clean build cache
+
+### Manual Cleanup
+
+```bash
+# Clean everything
+sudo docker system prune -af
+
+# Clean with filters
+sudo docker system prune -af --filter "until=24h"
+```
+
 ## Monitoring
 
 ### GitHub UI
 
-Check runner status in GitHub:
-- https://github.com/enchantednatures/rust-knative-flux-template/settings/actions/runners
+Check runner status:
+- https://github.com/your-org/example-app/settings/actions/runners
 
 Status indicators:
-- **Green (Idle)**: Runner is online and waiting for jobs
-- **Yellow (Active)**: Runner is executing a job
-- **Gray (Offline)**: Runner is not connected
+- **Green (Idle)**: Runner online and waiting
+- **Yellow (Active)**: Runner executing job
+- **Gray (Offline)**: Runner disconnected
 
 ### System Resources
 
 ```bash
-# CPU and memory usage
+# CPU and memory
 htop
 
 # Disk usage
 df -h /opt/actions-runner-*
-
-# Docker disk usage
 docker system df
-```
 
-### Check Running Jobs
-
-```bash
-# List running containers (shows active jobs)
+# Running containers
 docker ps
-
-# List Kind clusters (E2E tests create these)
-kind get clusters
 ```
 
 ## Troubleshooting
@@ -156,33 +195,32 @@ kind get clusters
 
 ```bash
 # Check service status
-sudo systemctl status actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+sudo systemctl status actions.runner.your-org-example-app.runner-1.service
 
-# Check logs for errors
-sudo journalctl -u actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service -n 100
+# Check logs
+sudo journalctl -u actions.runner.your-org-example-app.runner-1.service -n 100
 
 # Restart runner
-sudo systemctl restart actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+sudo systemctl restart actions.runner.your-org-example-app.runner-1.service
 ```
 
 ### Jobs Failing
 
 ```bash
-# Check if Docker is running
+# Check Docker is running
 sudo systemctl status docker
 
-# Check if kubectl can connect (shouldn't in idle state, but tests will create clusters)
-kubectl cluster-info 2>/dev/null || echo "No cluster (this is normal when idle)"
+# Check kubectl
+kubectl cluster-info 2>/dev/null || echo "No cluster"
 
 # Check disk space
 df -h /opt/actions-runner-*
-df -h /var/lib/docker
 ```
 
 ### Disk Space Issues
 
 ```bash
-# Manual Docker cleanup
+# Manual cleanup
 sudo docker system prune -af
 
 # Remove old Kind clusters
@@ -190,39 +228,55 @@ kind get clusters | grep -v '^No' | xargs -r kind delete cluster --name
 
 # Check what's using space
 sudo du -sh /opt/actions-runner-*/*
-sudo du -sh /var/lib/docker/*
 ```
 
-### Runner Offline After Reboot
+## Security
 
-```bash
-# Check if service is enabled
-sudo systemctl is-enabled actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+### For Private Repositories Only
 
-# If not enabled, enable it
-sudo systemctl enable actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
+Self-hosted runners should only be used for **private repositories** to prevent:
+- Arbitrary code execution from PRs
+- Credential theft
+- Resource abuse
 
-# Start the service
-sudo systemctl start actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
-```
+### Best Practices
+
+- ✅ Keep runner software updated
+- ✅ Monitor runner logs for suspicious activity
+- ✅ Limit runner access to necessary resources
+- ✅ Use repository-level runners for sensitive repos
+- ✅ Regularly review runner activity
+- ❌ Don't use self-hosted runners for public repos
+- ❌ Don't disable auto-update
+
+## Performance
+
+### Expected Behavior
+
+With 1-2 parallel runners:
+- CI workflows run in parallel
+- E2E tests: ~15-20 minutes per job
+- Zero GitHub Actions credits consumed
+
+### Resource Requirements
+
+Per job:
+- **CPU**: 2-4 cores
+- **Memory**: 4-6 GB
+- **Disk**: 10-15 GB temporary
+
+Minimum for 2 runners:
+- **CPU**: 4 cores (8+ recommended)
+- **Memory**: 8 GB (16+ recommended)
+- **Disk**: 50 GB free space
 
 ## Updates
 
 ### Runner Auto-Update
 
-Runners automatically update themselves when GitHub releases new versions. No action required.
-
-To verify auto-update is enabled:
-```bash
-# Check runner version
-cat /opt/actions-runner-1/.runner
-
-# Auto-update is enabled by default unless explicitly disabled during setup
-```
+Runners automatically update when GitHub releases new versions.
 
 ### Manual Update (if needed)
-
-If auto-update fails, manually update:
 
 ```bash
 # Download new version
@@ -233,22 +287,17 @@ wget https://github.com/actions/runner/releases/download/v2.XXX.X/actions-runner
 cd /opt/actions-runner-1
 sudo ./svc.sh stop
 
-# Backup current version
+# Backup current
 sudo cp -r /opt/actions-runner-1 /opt/actions-runner-1.backup
 
-# Extract new version
+# Extract new
 sudo tar xzf /tmp/actions-runner-linux-x64-2.XXX.X.tar.gz -C /opt/actions-runner-1
 
-# Restart runner
+# Restart
 sudo ./svc.sh start
-
-# Verify
-sudo systemctl status actions.runner.enchantednatures-rust-knative-flux-template.seko-runner-1.service
 ```
 
 ## Removal
-
-To completely remove a runner:
 
 ```bash
 # Stop and uninstall service
@@ -256,142 +305,25 @@ cd /opt/actions-runner-1
 sudo ./svc.sh stop
 sudo ./svc.sh uninstall
 
-# Get removal token from GitHub
-# Navigate to: https://github.com/enchantednatures/rust-knative-flux-template/settings/actions/runners
-# Click the runner, then "Remove"
-# Copy the removal token from the command shown
+# Get removal token from GitHub UI
+# Navigate to: Settings → Actions → Runners → Runner → Remove
 
-# Remove runner registration
+# Remove runner
 sudo -u <RUNNER_USER> ./config.sh remove --token <REMOVAL_TOKEN>
 
 # Remove directory
 sudo rm -rf /opt/actions-runner-1
 
-# Repeat for runner-2 if needed
-```
-
-To remove Docker cleanup timer:
-```bash
+# Remove Docker cleanup
 sudo systemctl stop github-runner-docker-cleanup.timer
 sudo systemctl disable github-runner-docker-cleanup.timer
 sudo rm /etc/systemd/system/github-runner-docker-cleanup.timer
 sudo rm /etc/systemd/system/github-runner-docker-cleanup.service
-sudo rm /usr/local/bin/github-runner-docker-cleanup.sh
 sudo systemctl daemon-reload
 ```
-
-## Security Considerations
-
-### Private Repository
-This setup is designed for **private repositories only**. Self-hosted runners on public repositories can be a security risk as anyone can create a PR and execute arbitrary code on your runner.
-
-### Runner Isolation
-- Runners execute in `/opt/actions-runner-{1,2}/_work/` workspace
-- Docker containers run with runner user permissions
-- Runners do not have elevated privileges (except Docker access)
-
-### Token Security
-- Registration tokens expire after 1 hour
-- Removal tokens are required to deregister runners
-- Runner credentials stored in `/opt/actions-runner-{1,2}/.credentials`
-
-### Best Practices
-- ✅ Keep runner software updated (auto-update enabled)
-- ✅ Monitor runner logs for suspicious activity
-- ✅ Limit runner access to necessary resources only
-- ✅ Use repository-level runners (not organization-level for sensitive repos)
-- ✅ Regularly review runner activity in GitHub UI
-- ❌ Don't use self-hosted runners for public repositories
-- ❌ Don't disable auto-update without good reason
-- ❌ Don't run multiple workflows simultaneously if disk space is limited
-
-## Performance
-
-### Expected Behavior
-
-With 2 parallel runners:
-- Matrix jobs run simultaneously (no-s3 and with-s3)
-- Total workflow time: ~15-20 minutes (vs 30-40 sequential)
-- Zero GitHub Actions credits consumed
-
-### Resource Usage Per Job
-
-Typical E2E test job uses:
-- **CPU**: 2-4 cores during build/test, 1 core idle
-- **Memory**: 4-6 GB during Kind cluster operations
-- **Disk**: ~10-15 GB temporary (Docker images, Kind clusters, build cache)
-
-### System Requirements
-
-Recommended:
-- **CPU**: 4+ cores (8+ for parallel jobs)
-- **Memory**: 8+ GB (16+ GB recommended)
-- **Disk**: 50+ GB free space in `/opt` and `/var/lib/docker`
-
-Current system (seko):
-- ✅ CPU: 16 cores (excellent)
-- ✅ Memory: 24 GB available (excellent)
-- ⚠️  Disk: 32 GB free (adequate, monitor usage)
-
-## Maintenance Tasks
-
-### Daily (Automated)
-- Docker cleanup (via cron job)
-
-### Weekly (Manual)
-```bash
-# Check runner status
-sudo systemctl status 'actions.runner.*'
-
-# Check disk usage
-df -h /opt/actions-runner-*
-docker system df
-
-# Review logs for errors
-sudo journalctl -u 'actions.runner.*' --since "7 days ago" | grep -i error
-```
-
-### Monthly (Manual)
-```bash
-# Verify runners are registered in GitHub UI
-# Check for runner updates (auto-update should handle this)
-
-# Review Docker cleanup timer logs
-sudo journalctl -u github-runner-docker-cleanup.service --since "30 days ago"
-
-# Check Docker cleanup timer status
-sudo systemctl status github-runner-docker-cleanup.timer
-
-# Check for orphaned Kind clusters
-kind get clusters
-
-# Check for orphaned Docker networks
-docker network ls | grep kind
-```
-
-## Workflow Configuration
-
-The E2E workflow (`.github/workflows/template-e2e-test.yaml`) should use:
-
-```yaml
-jobs:
-  verify-and-test:
-    runs-on: [self-hosted, linux, x64]  # Instead of ubuntu-latest
-```
-
-This allows both matrix jobs to run in parallel on your two runners.
-
-## Support
-
-For issues or questions:
-1. Check troubleshooting section above
-2. Review GitHub Actions runner documentation: https://docs.github.com/en/actions/hosting-your-own-runners
-3. Check runner logs for specific errors
-4. Verify system resources are adequate
 
 ## Additional Resources
 
 - [GitHub Actions Runner Documentation](https://docs.github.com/en/actions/hosting-your-own-runners)
 - [GitHub Actions Runner Releases](https://github.com/actions/runner/releases)
-- [Docker System Prune Documentation](https://docs.docker.com/engine/reference/commandline/system_prune/)
-- [systemd Service Management](https://www.freedesktop.org/software/systemd/man/systemctl.html)
+- [Docker System Prune](https://docs.docker.com/engine/reference/commandline/system_prune/)

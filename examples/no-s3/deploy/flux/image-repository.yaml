@@ -4,7 +4,7 @@ metadata:
   name: rust-service
   namespace: flux-system
 spec:
-  image: ghcr.io/your-org/rust-service
+  image: ghcr.io//
   interval: 1m
   # Optional: For private container registries
   # secretRef:
