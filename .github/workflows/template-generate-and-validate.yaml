@@ -1,0 +1,90 @@
+name: Template Generate & Validate
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  generate-and-validate:
+    name: Generate & Validate (s3=${{ matrix.include_s3 }}, updates=${{ matrix.enable_image_updates }})
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: no-s3
+            include_s3: "false"
+            enable_image_updates: "false"
+          - scenario: no-s3
+            include_s3: "false"
+            enable_image_updates: "true"
+          - scenario: with-s3
+            include_s3: "true"
+            enable_image_updates: "false"
+          - scenario: with-s3
+            include_s3: "true"
+            enable_image_updates: "true"
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Verify template generation matches reference
+        if: ${{ matrix.enable_image_updates == 'false' }}
+        run: |
+          chmod +x tests/e2e/scripts/04-verify-generation.sh
+          tests/e2e/scripts/04-verify-generation.sh "${{ env.SCENARIO }}" "${{ matrix.include_s3 }}"
+
+      - name: Generate template and run build & lint checks
+        run: |
+          set -euo pipefail
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+
+          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+          cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
+            --define "include_s3=${{ matrix.include_s3 }}" \
+            --define "enable_image_updates=${{ matrix.enable_image_updates }}" \
+            --define "target_namespace=default" \
+            --silent
+
+          GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
+          cd "$GENERATED_DIR"
+
+          echo "Running formatting check"
+          cargo fmt --all -- --check
+
+          echo "Running Clippy"
+          cargo clippy --all-targets --all-features -- -D warnings
+
+          echo "Building"
+          cargo build --all-features
+
+          echo "Compiling tests (no run)"
+          cargo test --all-features --no-run
+        shell: bash
