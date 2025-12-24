@@ -431,7 +431,9 @@ kubectl apply -f my-secret.sealed.yaml
    ```bash
    kubectl create secret generic {{ project_name }}-secrets \
      --from-literal=redis-url='redis://redis-staging:6379' \
-     {% if include_s3 %}-n staging
+     {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+     --from-literal=aws-secret-access-key='...' \
+     {% endif %}-n staging
    ```
 
 ### Production
