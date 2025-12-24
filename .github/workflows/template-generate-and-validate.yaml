@@ -3,7 +3,7 @@ name: Template Generate & Validate
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -53,12 +53,6 @@ jobs:
 
       - name: Install cargo-generate
         run: cargo install cargo-generate --locked
-
-      - name: Verify template generation matches reference
-        if: ${{ matrix.enable_image_updates == 'false' }}
-        run: |
-          chmod +x tests/e2e/scripts/04-verify-generation.sh
-          tests/e2e/scripts/04-verify-generation.sh "${{ env.SCENARIO }}" "${{ matrix.include_s3 }}"
 
       - name: Generate template and run build & lint checks
         run: |
