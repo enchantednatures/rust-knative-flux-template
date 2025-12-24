@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # GitHub Actions Self-Hosted Runner Setup Script
-# 
+#
 # Sets up two GitHub Actions runners for parallel E2E testing
 # - Installs to /opt/actions-runner-{1,2}
 # - Configures as systemd services
@@ -19,6 +19,8 @@ RUNNER_BASE_DIR="/opt/actions-runner"
 RUNNER_USER="${SUDO_USER:-$USER}"
 RUNNER_1_NAME="seko-runner-1"
 RUNNER_2_NAME="seko-runner-2"
+RUNNER_3_NAME="seko-runner-3"
+RUNNER_4_NAME="seko-runner-4"
 RUNNER_LABELS="self-hosted,linux,x64"
 
 # Colors for output
@@ -51,47 +53,47 @@ check_root() {
         log_error "This script must be run as root (use sudo)"
         exit 1
     fi
-    
+
     if [[ -z "${SUDO_USER:-}" ]]; then
         log_error "Please run with sudo, not as root user directly"
         log_info "Usage: sudo ./setup-github-runners.sh"
         exit 1
     fi
-    
+
     log_success "Running as root with SUDO_USER=${SUDO_USER}"
 }
 
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     local missing_deps=()
-    
+
     # Check required commands
     for cmd in docker kubectl flux cargo rustc kind jq curl gh; do
-        if ! command -v "$cmd" &> /dev/null; then
+        if ! command -v "$cmd" &>/dev/null; then
             missing_deps+=("$cmd")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         log_error "Missing required dependencies: ${missing_deps[*]}"
         exit 1
     fi
-    
+
     # Check systemd
-    if ! systemctl --version &> /dev/null; then
+    if ! systemctl --version &>/dev/null; then
         log_error "systemd is required but not found"
         exit 1
     fi
-    
+
     # Check gh CLI authentication
-    if ! sudo -u "$RUNNER_USER" gh auth status &> /dev/null; then
+    if ! sudo -u "$RUNNER_USER" gh auth status &>/dev/null; then
         log_error "GitHub CLI (gh) is not authenticated"
         log_info "Please run: gh auth login"
         exit 1
     fi
-    
+
     log_success "All prerequisites satisfied"
 }
 
@@ -99,13 +101,13 @@ check_prerequisites() {
 get_latest_runner_version() {
     local api_url="https://api.github.com/repos/actions/runner/releases/latest"
     local version
-    
+
     version=$(curl -s "$api_url" | jq -r '.tag_name' | sed 's/^v//')
-    
+
     if [[ -z "$version" || "$version" == "null" ]]; then
         return 1
     fi
-    
+
     echo "$version"
 }
 
@@ -113,24 +115,24 @@ get_latest_runner_version() {
 download_runner() {
     local version=$1
     local runner_dir=$2
-    
+
     log_info "Downloading GitHub Actions runner v${version}..."
-    
+
     local download_url="https://github.com/actions/runner/releases/download/v${version}/actions-runner-linux-x64-${version}.tar.gz"
     local temp_dir
     temp_dir=$(mktemp -d)
     local tarball="${temp_dir}/actions-runner.tar.gz"
-    
+
     # Download
     if ! curl -L -o "$tarball" "$download_url"; then
         log_error "Failed to download runner from $download_url"
         rm -rf "$temp_dir"
         exit 1
     fi
-    
+
     # Create runner directory
     mkdir -p "$runner_dir"
-    
+
     # Extract
     log_info "Extracting to ${runner_dir}..."
     if ! tar xzf "$tarball" -C "$runner_dir"; then
@@ -138,13 +140,13 @@ download_runner() {
         rm -rf "$temp_dir"
         exit 1
     fi
-    
+
     # Set ownership
     chown -R "${RUNNER_USER}:${RUNNER_USER}" "$runner_dir"
-    
+
     # Cleanup
     rm -rf "$temp_dir"
-    
+
     log_success "Runner extracted to ${runner_dir}"
 }
 
@@ -154,11 +156,11 @@ get_registration_token() {
     token=$(sudo -u "$RUNNER_USER" gh api \
         repos/enchantednatures/rust-knative-flux-template/actions/runners/registration-token \
         -X POST | jq -r '.token')
-    
+
     if [[ -z "$token" || "$token" == "null" ]]; then
         return 1
     fi
-    
+
     echo "$token"
 }
 
@@ -167,11 +169,11 @@ configure_runner() {
     local runner_dir=$1
     local runner_name=$2
     local token=$3
-    
+
     log_info "Configuring ${runner_name}..."
-    
+
     cd "$runner_dir"
-    
+
     # Run configuration as the runner user
     if ! sudo -u "$RUNNER_USER" ./config.sh \
         --url "$REPO_URL" \
@@ -184,7 +186,7 @@ configure_runner() {
         log_error "Failed to configure ${runner_name}"
         exit 1
     fi
-    
+
     log_success "${runner_name} configured successfully"
 }
 
@@ -192,27 +194,27 @@ configure_runner() {
 install_service() {
     local runner_dir=$1
     local runner_name=$2
-    
+
     log_info "Installing ${runner_name} as systemd service..."
-    
+
     cd "$runner_dir"
-    
+
     # Install service
     if ! ./svc.sh install "$RUNNER_USER"; then
         log_error "Failed to install service for ${runner_name}"
         exit 1
     fi
-    
+
     # Start service
     if ! ./svc.sh start; then
         log_error "Failed to start service for ${runner_name}"
         exit 1
     fi
-    
+
     # Enable service (auto-start on boot)
     local service_name
     service_name=$(./svc.sh status 2>&1 | grep -oP 'actions\.runner\.[^.]+\.[^.]+\.service' | head -n1)
-    
+
     if [[ -n "$service_name" ]]; then
         systemctl enable "$service_name"
         log_success "${runner_name} service installed and started: ${service_name}"
@@ -224,11 +226,11 @@ install_service() {
 # Setup Docker cleanup systemd timer
 setup_docker_cleanup() {
     log_info "Setting up daily Docker cleanup systemd timer..."
-    
+
     # Create cleanup script
     local cleanup_script="/usr/local/bin/github-runner-docker-cleanup.sh"
-    
-    cat > "$cleanup_script" << 'EOF'
+
+    cat >"$cleanup_script" <<'EOF'
 #!/bin/bash
 #
 # Daily Docker cleanup for GitHub Actions runners
@@ -247,11 +249,11 @@ docker volume prune -f --filter "until=24h" 2>&1
 
 echo "[$(date)] Docker cleanup completed"
 EOF
-    
+
     chmod +x "$cleanup_script"
-    
+
     # Create systemd service
-    cat > /etc/systemd/system/github-runner-docker-cleanup.service << EOF
+    cat >/etc/systemd/system/github-runner-docker-cleanup.service <<EOF
 [Unit]
 Description=GitHub Actions Runner Docker Cleanup
 After=docker.service
@@ -262,9 +264,9 @@ ExecStart=${cleanup_script}
 StandardOutput=journal
 StandardError=journal
 EOF
-    
+
     # Create systemd timer
-    cat > /etc/systemd/system/github-runner-docker-cleanup.timer << 'EOF'
+    cat >/etc/systemd/system/github-runner-docker-cleanup.timer <<'EOF'
 [Unit]
 Description=Daily Docker cleanup for GitHub Actions runners
 
@@ -275,12 +277,12 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-    
+
     # Reload systemd, enable and start timer
     systemctl daemon-reload
     systemctl enable github-runner-docker-cleanup.timer
     systemctl start github-runner-docker-cleanup.timer
-    
+
     log_success "Docker cleanup timer installed and started"
     log_info "Cleanup runs daily and removes Docker resources older than 24 hours"
     log_info "Check timer status: systemctl status github-runner-docker-cleanup.timer"
@@ -290,12 +292,12 @@ EOF
 verify_runner() {
     local runner_dir=$1
     local runner_name=$2
-    
+
     log_info "Verifying ${runner_name} status..."
-    
+
     cd "$runner_dir"
-    
-    if ./svc.sh status &> /dev/null; then
+
+    if ./svc.sh status &>/dev/null; then
         log_success "${runner_name} is running"
         return 0
     else
@@ -308,22 +310,22 @@ verify_runner() {
 check_existing_runner() {
     local runner_dir=$1
     local runner_name=$2
-    
+
     if [[ -d "$runner_dir" ]]; then
         log_warning "${runner_name} directory already exists: ${runner_dir}"
         echo ""
         read -r -p "Remove and reinstall? [y/N] " response
-        
+
         if [[ "$response" =~ ^[Yy]$ ]]; then
             log_info "Removing existing ${runner_name}..."
-            
+
             # Stop and uninstall service if it exists
             if [[ -f "${runner_dir}/svc.sh" ]]; then
                 cd "$runner_dir"
                 ./svc.sh stop 2>/dev/null || true
                 ./svc.sh uninstall 2>/dev/null || true
             fi
-            
+
             # Remove directory
             rm -rf "$runner_dir"
             log_success "Removed existing ${runner_name}"
@@ -332,7 +334,7 @@ check_existing_runner() {
             return 1
         fi
     fi
-    
+
     return 0
 }
 
@@ -341,52 +343,52 @@ setup_single_runner() {
     local runner_num=$1
     local runner_name=$2
     local runner_dir="${RUNNER_BASE_DIR}-${runner_num}"
-    
+
     echo ""
     log_info "==================================================================="
     log_info "Setting up ${runner_name}"
     log_info "==================================================================="
-    
+
     # Check if already exists
     if ! check_existing_runner "$runner_dir" "$runner_name"; then
         return 0
     fi
-    
+
     # Get registration token
     log_info "Generating registration token for ${runner_name}..."
     local token
     token=$(get_registration_token)
-    
+
     if [[ -z "$token" ]]; then
         log_error "Failed to generate registration token"
         log_info "Ensure gh CLI is authenticated: gh auth login"
         exit 1
     fi
-    
+
     log_success "Registration token generated for ${runner_name}"
-    
+
     # Download runner
     log_info "Fetching latest GitHub Actions runner version..."
     local version
     version=$(get_latest_runner_version)
-    
+
     if [[ -z "$version" ]]; then
         log_error "Failed to fetch runner version from GitHub API"
         exit 1
     fi
-    
+
     log_success "Latest runner version: $version"
     download_runner "$version" "$runner_dir"
-    
+
     # Configure runner
     configure_runner "$runner_dir" "$runner_name" "$token"
-    
+
     # Install as service
     install_service "$runner_dir" "$runner_name"
-    
+
     # Verify
     verify_runner "$runner_dir" "$runner_name"
-    
+
     log_success "${runner_name} setup complete!"
 }
 
@@ -449,24 +451,26 @@ main() {
     echo "  Labels: ${RUNNER_LABELS}"
     echo "  User: ${RUNNER_USER}"
     echo ""
-    
+
     read -r -p "Continue? [y/N] " response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         log_info "Setup cancelled"
         exit 0
     fi
-    
+
     # Run checks
     check_root
     check_prerequisites
-    
+
     # Setup runners
     setup_single_runner "1" "$RUNNER_1_NAME"
     setup_single_runner "2" "$RUNNER_2_NAME"
-    
+    setup_single_runner "3" "$RUNNER_3_NAME"
+    setup_single_runner "4" "$RUNNER_4_NAME"
+
     # Setup Docker cleanup
     setup_docker_cleanup
-    
+
     # Display summary
     display_summary
 }
