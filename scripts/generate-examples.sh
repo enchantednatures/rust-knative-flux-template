@@ -16,6 +16,8 @@ echo "Generating with-s3..."
 cargo generate --path "$REPO_DIR" \
   --name example-app-with-s3 \
   --define include_s3=true \
+  --define gh_org=your-org \
+  --define gh_repo=rust-service \
   --silent
 
 # Generate no-s3 scenario
@@ -23,6 +25,8 @@ echo "Generating no-s3..."
 cargo generate --path "$REPO_DIR" \
   --name example-app-no-s3 \
   --define include_s3=false \
+  --define gh_org=your-org \
+  --define gh_repo=rust-service \
   --silent
 
 # Move to examples directory

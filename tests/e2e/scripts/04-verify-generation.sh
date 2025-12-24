@@ -7,18 +7,46 @@ INCLUDE_S3="${2}"
 echo "Installing cargo-generate..."
 cargo install cargo-generate --locked
 
-TEMP_DIR=$(mktemp -d)
-cd "$TEMP_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# Create a persistent directory for the generated template (not temp!)
+GENERATED_BASE="/tmp/e2e-generated"
+mkdir -p "$GENERATED_BASE"
+GENERATED_DIR="${GENERATED_BASE}/example-app-${SCENARIO}"
+
+# Remove any previous generation
+rm -rf "$GENERATED_DIR"
+
+cd "$GENERATED_BASE"
 
 echo "Generating template: ${SCENARIO}..."
+
+# Extract org and repo from GITHUB_REPOSITORY (format: owner/repo)
+if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  GH_ORG="${GITHUB_REPOSITORY%%/*}"
+  GH_REPO="${GITHUB_REPOSITORY##*/}"
+else
+  # Local development fallback
+  GH_ORG="your-org"
+  GH_REPO="rust-service"
+fi
+
+echo "  Using gh_org=${GH_ORG}, gh_repo=${GH_REPO}"
+
+# Generate with actual repository parameters for E2E testing
 cargo generate \
-  --path "$OLDPWD" \
+  --path "$PROJECT_ROOT" \
   --name "example-app-${SCENARIO}" \
   --define "include_s3=${INCLUDE_S3}" \
+  --define "gh_org=${GH_ORG}" \
+  --define "gh_repo=${GH_REPO}" \
   --silent
 
-GENERATED_DIR="${TEMP_DIR}/example-app-${SCENARIO}"
-REFERENCE_DIR="${OLDPWD}/examples/${SCENARIO}"
+REFERENCE_DIR="${PROJECT_ROOT}/examples/${SCENARIO}"
+
+# Save the generated directory path for later steps
+echo "$GENERATED_DIR" > "${SCRIPT_DIR}/.generated-dir-${SCENARIO}"
 
 if [ ! -d "$GENERATED_DIR" ]; then
   echo "ERROR: Template generation failed - directory not created"
@@ -84,7 +112,11 @@ if [ -n "$DIFF_OUTPUT" ]; then
 fi
 
 echo "✓ Template generation verified - output matches reference"
+echo "✓ Generated template saved at: ${GENERATED_DIR}"
+echo ""
+echo "Generated template will be used for E2E deployment with:"
+echo "  - gh_org: ${GH_ORG}"
+echo "  - gh_repo: ${GH_REPO}"
 
-# Cleanup
-cd "$OLDPWD"
-rm -rf "$TEMP_DIR"
+# Return to original directory (don't cleanup - we need generated template!)
+cd "$PROJECT_ROOT"
