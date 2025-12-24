@@ -63,6 +63,17 @@ EOF
 echo "Waiting for Redis..."
 kubectl wait --for=condition=Ready pod -l app=redis -n services --timeout=3m
 
+echo "Verifying Redis is accepting connections..."
+# Give Redis a moment to fully start accepting connections
+sleep 5
+# Test Redis connectivity
+if ! kubectl run redis-verify --rm -i --restart=Never --image=redis:7-alpine -n services --command -- \
+  redis-cli -h redis.services.svc.cluster.local ping 2>&1 | grep -q PONG; then
+  echo "❌ Warning: Redis is not responding to PING"
+  kubectl get pods -n services -l app=redis
+  # Don't exit, let the deployment script handle this
+fi
+
 if [ "$INCLUDE_S3" = "true" ]; then
   echo "Deploying MinIO..."
   cat <<EOF | kubectl apply -f -

@@ -21,12 +21,42 @@ echo "Creating test-app namespace..."
 kubectl create namespace test-app 2>/dev/null || true
 
 echo "Verifying infrastructure is ready..."
-# Check Redis is accessible
-if ! kubectl run redis-test --rm -i --restart=Never --image=redis:7-alpine -n test-app -- \
-  redis-cli -h redis.services.svc.cluster.local ping 2>/dev/null | grep -q PONG; then
-  echo "❌ Redis is not accessible from test-app namespace"
+# Check Redis is accessible with retries
+MAX_RETRIES=5
+RETRY_COUNT=0
+REDIS_ACCESSIBLE=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Testing Redis connectivity (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+  
+  REDIS_TEST_OUTPUT=$(kubectl run redis-test-$RETRY_COUNT --rm -i --restart=Never --image=redis:7-alpine -n test-app --command -- \
+    redis-cli -h redis.services.svc.cluster.local ping 2>&1 || true)
+  
+  if echo "$REDIS_TEST_OUTPUT" | grep -q PONG; then
+    REDIS_ACCESSIBLE=true
+    break
+  fi
+  
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+    echo "Redis not accessible yet, waiting 5 seconds before retry..."
+    sleep 5
+  fi
+done
+
+if [ "$REDIS_ACCESSIBLE" = false ]; then
+  echo "❌ Redis is not accessible from test-app namespace after $MAX_RETRIES attempts"
+  echo "Last test output: $REDIS_TEST_OUTPUT"
+  echo ""
   echo "Checking Redis status:"
   kubectl get pods -n services -l app=redis
+  echo ""
+  echo "Checking Redis service:"
+  kubectl get svc -n services redis
+  echo ""
+  echo "Testing DNS resolution:"
+  kubectl run dns-test --rm -i --restart=Never --image=busybox:latest -n test-app -- \
+    nslookup redis.services.svc.cluster.local || true
   exit 1
 fi
 echo "✓ Redis is accessible"
