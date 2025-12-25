@@ -43,7 +43,7 @@ jobs:
 
           if ! command -v kind &> /dev/null; then
             echo "Installing kind..."
-            curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/v0.22.0/kind-linux-amd64"
+            curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/v0.31.0/kind-linux-amd64"
             chmod +x ./kind
             sudo mv ./kind /usr/local/bin/
           fi
