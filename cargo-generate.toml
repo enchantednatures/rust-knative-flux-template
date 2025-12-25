@@ -21,12 +21,20 @@ github_repo = { prompt = "GitHub repository name", type = "string", default = "y
 default_branch = { prompt = "Default git branch for Flux", type = "string", default = "main" }
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
 
+edit_scaling = { prompt = "Change default scaling", type = "bool", default = false }
+[conditional.'edit_scaling']
 base_min_scale = { prompt = "Base minimum scale", type = "string", default = "1" }
+[conditional.'edit_scaling']
 base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
+[conditional.'edit_scaling']
 base_target = { prompt = "Base autoscaling target (concurrency)", type = "string", default = "100" }
+[conditional.'edit_scaling']
 base_cpu_request = { prompt = "Base CPU request", type = "string", default = "100m" }
+[conditional.'edit_scaling']
 base_cpu_limit = { prompt = "Base CPU limit", type = "string", default = "500m" }
+[conditional.'edit_scaling']
 base_memory_request = { prompt = "Base memory request", type = "string", default = "64Mi" }
+[conditional.'edit_scaling']
 base_memory_limit = { prompt = "Base memory limit", type = "string", default = "256Mi" }
 
 dev_min_scale = { prompt = "Dev minimum scale", type = "string", default = "0" }
