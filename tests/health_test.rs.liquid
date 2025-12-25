@@ -1,7 +1,8 @@
 mod common;
 
 use axum_test::TestServer;
-use rust_knative_flux_template::routes;
+use {{ crate_name }}::routes;
+
 
 #[tokio::test]
 async fn test_liveness_endpoint() {
