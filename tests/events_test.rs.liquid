@@ -1,9 +1,10 @@
 mod common;
 
-use axum_test::TestServer;
 use axum::http::StatusCode;
-use {{ crate_name }}::routes;
+use axum_test::TestServer;
 use serde_json::json;
+
+use {{ crate_name }}::routes;
 
 #[tokio::test]
 async fn test_cloudevent_ping() {

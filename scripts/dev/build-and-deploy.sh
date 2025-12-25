@@ -20,8 +20,33 @@ fi
 
 export KUBECONFIG="$KUBECONFIG_PATH"
 
+echo "Building and deploying application..."
+echo ""
+
+# Check if this is a template project (Cargo.toml.liquid with template variables)
+if [[ -f "${PROJECT_ROOT}/Cargo.toml.liquid" ]] && grep -q "{{ crate_name }}" "${PROJECT_ROOT}/Cargo.toml.liquid"; then
+  echo -e "${YELLOW}⚠ Template Project Detected${NC}"
+  echo "This is a cargo-generate template repository."
+  echo ""
+  echo "To use this template:"
+  echo "  1. Create a new project: cargo generate --path <path-to-this-template>"
+  echo "  2. Or use it directly by rendering templates first"
+  echo ""
+  echo -e "${YELLOW}→${NC} Skipping application deployment (no concrete project to build)"
+  echo ""
+  echo -e "${GREEN}✓ Infrastructure is ready for a generated project${NC}"
+  echo ""
+  exit 0
+fi
+
 # Extract project name from Cargo.toml
-PROJECT_NAME=$(grep '^name = ' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/')
+if [[ ! -f "${PROJECT_ROOT}/Cargo.toml" ]]; then
+  echo -e "${RED}✗ Error: Cargo.toml not found${NC}"
+  echo "This is a template project. Please generate a project using cargo-generate first."
+  exit 1
+fi
+
+PROJECT_NAME=$(grep '^name = ' "${PROJECT_ROOT}/Cargo.toml" | head -1 | sed 's/name = "\(.*\)"/\1/')
 
 if [[ -z "$PROJECT_NAME" ]]; then
   echo -e "${RED}✗ Error: Could not determine project name${NC}"
@@ -30,12 +55,9 @@ fi
 
 IMAGE="localhost:${REGISTRY_PORT}/${PROJECT_NAME}:latest"
 
-echo "Building and deploying application..."
-echo ""
-
 # Build Docker image
 echo -e "${YELLOW}→${NC} Building Docker image: ${IMAGE}"
-if ! docker build -t "${IMAGE}" .; then
+if ! docker build -t "${IMAGE}" "${PROJECT_ROOT}"; then
   echo -e "${RED}✗ Error: Docker build failed${NC}"
   exit 1
 fi
@@ -49,7 +71,7 @@ fi
 
 # Apply Knative service
 echo -e "${YELLOW}→${NC} Deploying to Knative..."
-if ! kubectl apply -k deploy/overlays/dev; then
+if ! kubectl apply -k "${PROJECT_ROOT}/deploy/overlays/dev"; then
   echo -e "${RED}✗ Error: Failed to apply Knative manifests${NC}"
   exit 1
 fi
@@ -84,3 +106,4 @@ fi
 
 kubectl get ksvc "${PROJECT_NAME}" -n default
 echo ""
+

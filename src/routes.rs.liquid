@@ -1,6 +1,6 @@
 use axum::{
-    routing::{get, post},
     Router,
+    routing::{get, post},
 };
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -63,12 +63,10 @@ pub fn create_router(state: AppState) -> Router {
 
 fn api_v1_routes() -> Router<AppState> {
     {%- if features contains "s3" %}
-    Router::new()
-        .route("/hello", get(api::hello))
-        .route(
-            "/storage/example",
-            post(crate::handlers::storage::storage_example),
-        )
+    Router::new().route("/hello", get(api::hello)).route(
+        "/storage/example",
+        post(crate::handlers::storage::storage_example),
+    )
     {%- else %}
     Router::new().route("/hello", get(api::hello))
     {%- endif %}

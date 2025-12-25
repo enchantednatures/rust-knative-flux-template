@@ -28,12 +28,14 @@ impl IntoResponse for CloudEventError {
             CloudEventError::MissingField(field) => {
                 (StatusCode::BAD_REQUEST, format!("Missing field: {}", field))
             }
-            CloudEventError::MissingHeader(header) => {
-                (StatusCode::BAD_REQUEST, format!("Missing header: {}", header))
-            }
-            CloudEventError::UnknownEventType(t) => {
-                (StatusCode::BAD_REQUEST, format!("Unknown event type: {}", t))
-            }
+            CloudEventError::MissingHeader(header) => (
+                StatusCode::BAD_REQUEST,
+                format!("Missing header: {}", header),
+            ),
+            CloudEventError::UnknownEventType(t) => (
+                StatusCode::BAD_REQUEST,
+                format!("Unknown event type: {}", t),
+            ),
         };
 
         tracing::error!(error = %self, "CloudEvent extraction failed");

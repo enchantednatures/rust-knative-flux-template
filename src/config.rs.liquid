@@ -1,6 +1,6 @@
 use figment::{
-    providers::{Env, Format, Serialized, Toml},
     Figment,
+    providers::{Env, Format, Serialized, Toml},
 };
 use serde::{Deserialize, Serialize};
 
@@ -87,6 +87,7 @@ impl Config {
     /// - APP__SERVER__PORT=9000
     /// - APP__REDIS__URL=redis://:password@host:6379/0
     /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
+    #[allow(clippy::result_large_err)]
     pub fn load() -> Result<Self, figment::Error> {
         let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
 
@@ -108,6 +109,7 @@ impl Config {
 
     /// Validate configuration
     /// Fails fast if required values are missing or invalid
+    #[allow(clippy::result_large_err)]
     fn validate(&self) -> Result<(), figment::Error> {
         if self.redis.url.is_empty() {
             return Err(figment::Error::from(

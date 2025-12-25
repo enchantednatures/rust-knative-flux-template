@@ -1,11 +1,11 @@
-use opentelemetry::{global, trace::TracerProvider, KeyValue};
+use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use opentelemetry_sdk::{
+    Resource,
     propagation::TraceContextPropagator,
     trace::{Config, Sampler},
-    Resource,
 };
 use opentelemetry_zipkin::Propagator as B3Propagator;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::TelemetryConfig;
 

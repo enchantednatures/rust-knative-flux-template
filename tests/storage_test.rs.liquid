@@ -1,4 +1,4 @@
-{%- if features contains "s3" %}
+{%- if features contains "s3" -%}
 //! S3-compatible storage integration tests
 //!
 //! These tests require MinIO running locally:
@@ -14,13 +14,13 @@
 use opendal::Operator;
 use uuid::Uuid;
 
-/// Check if a key exists in the operator
+/// Check if a key exists in operator
 async fn key_exists(op: &Operator, key: &str) -> bool {
     op.stat(key).await.is_ok()
 }
 
 /// Create a test operator pointing to local MinIO
-/// 
+///
 /// Note: Each operator creates its own HTTP client. When running tests in parallel,
 /// there can be interference between tests. Run with --test-threads=1 for reliability.
 fn create_test_operator() -> Operator {

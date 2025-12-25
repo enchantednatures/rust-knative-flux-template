@@ -1,10 +1,9 @@
-{%- if features contains "s3" %}
+{%- if features contains "s3" -%}
 use opendal::Operator;
 use redis::aio::MultiplexedConnection;
 {%- else %}
 use redis::aio::MultiplexedConnection;
 {%- endif %}
-
 /// Application state shared across all handlers
 /// Uses dependency injection pattern - accepts pre-configured dependencies
 #[derive(Clone)]

@@ -23,15 +23,15 @@
 //! }
 //! ```
 
-pub use extractor::CloudEvent;
-pub use metadata::CloudEventMetadata;
 pub use error::CloudEventError;
+pub use extractor::CloudEvent;
 pub use headers::*;
+pub use metadata::CloudEventMetadata;
 
 #[cfg(feature = "macros")]
 pub use axum_cloudevents_macros::CloudEventTagged;
 
-mod extractor;
-mod metadata;
 mod error;
+mod extractor;
 mod headers;
+mod metadata;

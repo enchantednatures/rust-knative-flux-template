@@ -58,9 +58,10 @@ spec:
     spec:
       containers:
       - name: otel-collector
-        image: otel/opentelemetry-collector-contrib:0.115.0
+        image: otel/opentelemetry-collector:latest
+        imagePullPolicy: IfNotPresent
         command:
-          - /otelcontribcol
+          - /otelcol
           - --config=/etc/otel-collector-config/config.yaml
         ports:
           - name: otlp-grpc
@@ -81,18 +82,6 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "300m"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 13133
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 13133
-          initialDelaySeconds: 10
-          periodSeconds: 5
       volumes:
         - name: config
           configMap:

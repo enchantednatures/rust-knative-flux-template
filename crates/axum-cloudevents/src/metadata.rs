@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::error::CloudEventError;
 use crate::headers::{
-    CE_DATACONTENTTYPE, CE_DATASCHEMA, CE_ID, CE_SPECVERSION, CE_SOURCE, CE_SUBJECT, CE_TIME,
+    CE_DATACONTENTTYPE, CE_DATASCHEMA, CE_ID, CE_SOURCE, CE_SPECVERSION, CE_SUBJECT, CE_TIME,
     CE_TYPE,
 };
 
@@ -40,7 +40,11 @@ fn default_spec_version() -> String {
 }
 
 impl CloudEventMetadata {
-    pub fn new(id: impl Into<String>, source: impl Into<String>, r#type: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        source: impl Into<String>,
+        r#type: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             source: source.into(),
@@ -57,8 +61,7 @@ impl CloudEventMetadata {
         let id = get_required_header(headers, CE_ID)?;
         let source = get_required_header(headers, CE_SOURCE)?;
         let r#type = get_required_header(headers, CE_TYPE)?;
-        let spec_version = get_header(headers, CE_SPECVERSION)
-            .unwrap_or_else(|| "1.0".to_string());
+        let spec_version = get_header(headers, CE_SPECVERSION).unwrap_or_else(|| "1.0".to_string());
 
         Ok(Self {
             id,
@@ -86,5 +89,8 @@ fn get_required_header(headers: &HeaderMap, name: &str) -> Result<String, CloudE
 }
 
 fn get_header(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
 }

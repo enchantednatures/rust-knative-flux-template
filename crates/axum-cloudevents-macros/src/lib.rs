@@ -45,8 +45,12 @@ pub fn derive_cloud_event_tagged(input: TokenStream) -> TokenStream {
             }
         }
 
-        let event_type = event_type
-            .unwrap_or_else(|| panic!("Variant {} missing #[cloud_event_type(\"...\")]", variant_name));
+        let event_type = event_type.unwrap_or_else(|| {
+            panic!(
+                "Variant {} missing #[cloud_event_type(\"...\")]",
+                variant_name
+            )
+        });
 
         variant_types.push(variant_name.clone());
 

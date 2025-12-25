@@ -1,9 +1,9 @@
-{% if features contains "s3" %}
+{% if features contains "s3" -%}
 //! S3 storage example endpoint
 //!
 //! Demonstrates OpenDAL usage for S3 operations
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -104,4 +104,3 @@ pub async fn storage_example(
     ))
 }
 {%- endif %}
-

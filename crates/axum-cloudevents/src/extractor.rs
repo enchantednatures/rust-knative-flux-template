@@ -1,12 +1,13 @@
-use crate::error::CloudEventError;
-use crate::headers::CE_ID;
-use crate::metadata::CloudEventMetadata;
+use async_trait::async_trait;
 use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
-use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
+
+use crate::error::CloudEventError;
+use crate::headers::CE_ID;
+use crate::metadata::CloudEventMetadata;
 
 #[derive(Debug)]
 pub struct CloudEvent<T: DeserializeOwned> {
