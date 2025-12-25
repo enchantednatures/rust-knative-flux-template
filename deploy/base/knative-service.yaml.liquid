@@ -16,9 +16,9 @@ spec:
     metadata:
       annotations:
         # Autoscaling configuration
-        autoscaling.knative.dev/min-scale: "1"
-        autoscaling.knative.dev/max-scale: "10"
-        autoscaling.knative.dev/target: "100"
+        autoscaling.knative.dev/min-scale: "{{ base_min_scale }}"
+        autoscaling.knative.dev/max-scale: "{{ base_max_scale }}"
+        autoscaling.knative.dev/target: "{{ base_target }}"
         # Prometheus (pod-level scraping)
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
@@ -67,11 +67,11 @@ spec:
                value: "rust-service"
           resources:
             requests:
-              cpu: "100m"
-              memory: "64Mi"
+              cpu: "{{ base_cpu_request }}"
+              memory: "{{ base_memory_request }}"
             limits:
-              cpu: "500m"
-              memory: "256Mi"
+              cpu: "{{ base_cpu_limit }}"
+              memory: "{{ base_memory_limit }}"
           # Liveness: Is the process alive?
           # Kubernetes restarts the pod if this fails
           livenessProbe:

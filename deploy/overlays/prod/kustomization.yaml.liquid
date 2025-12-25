@@ -13,22 +13,22 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "2"
+        value: "{{ prod_min_scale }}"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "20"
+        value: "{{ prod_max_scale }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "250m"
+        value: "{{ prod_cpu_request }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "256Mi"
+        value: "{{ prod_memory_request }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "1000m"
+        value: "{{ prod_cpu_limit }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "512Mi"
+        value: "{{ prod_memory_limit }}"
 
 {% if include_s3 %}
 # Production S3 configuration (typically AWS S3 or managed MinIO)

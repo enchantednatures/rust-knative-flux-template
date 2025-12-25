@@ -11,10 +11,22 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "0"
+        value: "{{ dev_min_scale }}"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "3"
+        value: "{{ dev_max_scale }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "{{ dev_cpu_request }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "{{ dev_memory_request }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "{{ dev_cpu_limit }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "{{ dev_memory_limit }}"
 
 {% if include_s3 %}
 # Environment-specific S3 configuration

@@ -13,16 +13,22 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "1"
+        value: "{{ staging_min_scale }}"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "5"
+        value: "{{ staging_max_scale }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "200m"
+        value: "{{ staging_cpu_request }}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "128Mi"
+        value: "{{ staging_memory_request }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "{{ staging_cpu_limit }}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "{{ staging_memory_limit }}"
 
 {% if include_s3 %}
 # Staging-specific S3 configuration (may use MinIO or S3)
