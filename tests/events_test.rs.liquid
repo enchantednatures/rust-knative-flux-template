@@ -1,6 +1,7 @@
 mod common;
 
 use axum_test::TestServer;
+use axum::http::StatusCode;
 use {{ crate_name }}::routes;
 use serde_json::json;
 
@@ -50,7 +51,7 @@ async fn test_cloudevent_missing_id() {
         }))
         .await;
 
-    response.assert_status(400);
+    response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -65,7 +66,7 @@ async fn test_cloudevent_invalid_json() {
         .text("{ invalid json }")
         .await;
 
-    response.assert_status(400);
+    response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
