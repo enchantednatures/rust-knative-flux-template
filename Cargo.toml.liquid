@@ -52,7 +52,7 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 # Object Storage (S3-compatible via OpenDAL)
 opendal = { version = "0.55", default-features = false, features = ["services-s3"] }
 

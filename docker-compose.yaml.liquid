@@ -19,7 +19,7 @@ services:
       APP__TELEMETRY__SERVICE_NAME: "rust-service-local"
       APP__TELEMETRY__LOG_LEVEL: "debug"
       RUST_LOG: "debug,hyper=info,tower=info"
-      {% if include_s3 %}
+      {% if features contains "s3" %}
       APP__S3__ENDPOINT: "http://minio:9000"
       APP__S3__BUCKET: "data"
       APP__S3__REGION: "us-east-1"
@@ -29,7 +29,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      {% if include_s3 %}
+      {% if features contains "s3" %}
       minio:
         condition: service_healthy
       {% endif %}
@@ -57,7 +57,7 @@ services:
       timeout: 3s
       retries: 5
 
-  {% if include_s3 %}
+  {% if features contains "s3" %}
   # ==========================================================================
   # MinIO (S3-compatible object storage)
   # ==========================================================================
@@ -134,6 +134,6 @@ services:
 
 volumes:
   redis-data:
-  {% if include_s3 %}
+  {% if features contains "s3" %}
   minio_data:
   {% endif %}

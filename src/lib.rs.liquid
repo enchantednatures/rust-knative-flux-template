@@ -4,7 +4,7 @@ pub mod handlers;
 pub mod observability;
 pub mod routes;
 pub mod state;
-{%- if include_s3 %}
+{%- if features contains "s3" %}
 
 // Re-export OpenDAL Operator for storage operations
 pub use opendal::Operator;

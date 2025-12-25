@@ -58,7 +58,7 @@ export APP__REDIS__TIMEOUT_SECS=5
 export APP__REDIS__POOL_SIZE=10
 ```
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 
 ### S3/MinIO Configuration
 
@@ -150,7 +150,7 @@ url = "redis://localhost:6379"
 timeout_secs = 5
 pool_size = 10
 
-{% if include_s3 %}[s3]
+{% if features contains "s3" %}[s3]
 endpoint = "http://minio:9000"
 bucket = "data"
 region = "us-east-1"
@@ -198,7 +198,7 @@ port = 8080
 # Use managed Redis in staging
 url = "redis://redis-staging.example.com:6379"
 
-{% if include_s3 %}[s3]
+{% if features contains "s3" %}[s3]
 # Use S3 staging bucket
 endpoint = "https://s3.us-east-1.amazonaws.com"
 bucket = "my-app-staging"
@@ -224,7 +224,7 @@ port = 8080
 url = "redis://redis-prod-cluster.example.com:6379"
 pool_size = 50  # Higher concurrency in production
 
-{% if include_s3 %}[s3]
+{% if features contains "s3" %}[s3]
 # Production S3 bucket with versioning enabled
 endpoint = "https://s3.amazonaws.com"
 bucket = "my-app-production"
@@ -270,7 +270,7 @@ kubectl create configmap {{ project_name }}-config \
 # Create Secret for sensitive values
 kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+  {% if features contains "s3" %}--from-literal=aws-access-key-id='...' \
   --from-literal=aws-secret-access-key='...' \
   {% endif %}
 ```
@@ -295,7 +295,7 @@ spec:
             secretKeyRef:
               name: {{ project_name }}-secrets
               key: redis-url
-        {% if include_s3 %}
+        {% if features contains "s3" %}
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
@@ -335,7 +335,7 @@ Create Secrets and mount as environment variables:
 ```bash
 kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://...' \
-  {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+  {% if features contains "s3" %}--from-literal=aws-access-key-id='...' \
   --from-literal=aws-secret-access-key='...' \
   {% endif %}
 ```
@@ -368,7 +368,7 @@ spec:
   - secretKey: redis-url
     remoteRef:
       key: /{{ project_name }}/production/redis-url
-  {% if include_s3 %}
+  {% if features contains "s3" %}
   - secretKey: aws-access-key-id
     remoteRef:
       key: /{{ project_name }}/production/aws-access-key-id
@@ -431,7 +431,7 @@ kubectl apply -f my-secret.sealed.yaml
    ```bash
    kubectl create secret generic {{ project_name }}-secrets \
      --from-literal=redis-url='redis://redis-staging:6379' \
-     {% if include_s3 %}--from-literal=aws-access-key-id='...' \
+     {% if features contains "s3" %}--from-literal=aws-access-key-id='...' \
      --from-literal=aws-secret-access-key='...' \
      {% endif %}-n staging
    ```

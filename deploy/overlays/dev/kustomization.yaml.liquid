@@ -28,7 +28,7 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "{{ dev_memory_limit }}"
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 # Environment-specific S3 configuration
 # Override S3 endpoint to point to local MinIO during development
 configMapGenerator:

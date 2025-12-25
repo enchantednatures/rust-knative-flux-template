@@ -13,7 +13,7 @@ service_name = "{{ project_name | kebab_case }}"
 log_level = "info"
 # otlp_endpoint = "http://otel-collector:4317"  # Optional
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 [s3]
 endpoint = "http://localhost:9000"  # MinIO endpoint
 bucket = "data"

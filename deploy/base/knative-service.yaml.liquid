@@ -43,7 +43,7 @@ spec:
                  secretKeyRef:
                    name: rust-service-secrets
                    key: redis-url
-             {% if include_s3 %}
+             {% if features contains "s3" %}
              - name: AWS_ACCESS_KEY_ID
                valueFrom:
                  secretKeyRef:

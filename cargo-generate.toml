@@ -15,7 +15,10 @@ ignore = [
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
-include_s3 = { prompt = "Include S3-compatible storage (MinIO/S3)?", type = "bool", default = false }
+features = { prompt = "Select default features", type = "array", choices = [
+  "s3",
+], default = [
+] }
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
 github_org = { prompt = "GitHub organization or username", type = "string", default = "your-org" }
@@ -51,7 +54,7 @@ prod_cpu_limit = { prompt = "Prod CPU limit", type = "string", default = "1000m"
 prod_memory_request = { prompt = "Prod memory request", type = "string", default = "256Mi" }
 prod_memory_limit = { prompt = "Prod memory limit", type = "string", default = "512Mi" }
 
-[conditional.'!include_s3']
+[conditional.'!if features contains "s3"']
 ignore = [
   "src/handlers/storage.rs.liquid",
   "tests/storage_test.rs.liquid",

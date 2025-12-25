@@ -5,7 +5,7 @@ service_name = "{{ project_name | kebab_case }}-dev"
 log_level = "debug"
 otlp_endpoint = "http://localhost:4317"
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 [s3]
 endpoint = "http://localhost:9000"
 bucket = "data"

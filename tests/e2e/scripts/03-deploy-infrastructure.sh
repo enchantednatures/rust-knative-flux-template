@@ -18,7 +18,7 @@ if [[ ! -f "$KUBECONFIG" ]]; then
   exit 1
 fi
 
-INCLUDE_S3="${1:-false}"
+if features contains "s3"="${1:-false}"
 
 echo "Creating services namespace..."
 kubectl create namespace services 2>/dev/null || true
@@ -74,7 +74,7 @@ if ! kubectl run redis-verify --rm -i --restart=Never --image=redis:7-alpine -n 
   # Don't exit, let the deployment script handle this
 fi
 
-if [ "$INCLUDE_S3" = "true" ]; then
+if [ "$if features contains "s3"" = "true" ]; then
   echo "Deploying MinIO..."
   cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1

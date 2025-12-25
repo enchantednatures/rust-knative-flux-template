@@ -24,7 +24,7 @@ This document explains the system architecture, design decisions, and component 
 │  │ HTTP Handlers                                            │   │
 │  │  - Health checks (/health/*)                            │   │
 │  │  - API endpoints (/api/*)                               │   │
-│  {% if include_s3 %}│  - Storage operations                              │   │
+│  {% if features contains "s3" %}│  - Storage operations                              │   │
 │  │  - Upload/Download/Delete                               │   │
 │  {% endif %}│  - Metrics (/metrics)                                  │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -38,7 +38,7 @@ This document explains the system architecture, design decisions, and component 
         │ ┌─────────────────┐ │   │ ┌──────────────┐ │
         │ │ Redis Client    │ │   │ │ Tracing      │ │
         │ └─────────────────┘ │   │ ├──────────────┤ │
-        {% if include_s3 %}│ ┌─────────────────┐ │   │ │ Metrics      │ │
+        {% if features contains "s3" %}│ ┌─────────────────┐ │   │ │ Metrics      │ │
         │ │ OpenDAL         │ │   │ ├──────────────┤ │
         │ │ S3 Operator     │ │   │ │ Structured   │ │
         │ └─────────────────┘ │   │ │ Logging      │ │
@@ -60,7 +60,7 @@ This document explains the system architecture, design decisions, and component 
                             │ Jaeger   │    │Prometheus│    │ Log Store  │
                             │ (Traces) │    │(Metrics) │    │ (Loki/ELK) │
                             └──────────┘    └──────────┘    └────────────┘
-{% if include_s3 %}
+{% if features contains "s3" %}
         ┌─────────────────────┐
         │ OpenDAL S3 Backend  │
         └──────────┬──────────┘
@@ -94,14 +94,14 @@ Central application state shared across all handlers:
 ```rust
 pub struct AppState {
     pub redis: MultiplexedConnection,
-    {% if include_s3 %}pub storage: Operator,
+    {% if features contains "s3" %}pub storage: Operator,
     {% endif %}
 }
 ```
 
 This allows:
 - Shared Redis connection pool
-- {% if include_s3 %}Shared S3/OpenDAL operator{% endif %}
+- {% if features contains "s3" %}Shared S3/OpenDAL operator{% endif %}
 - Dependency injection via `State` extractor
 - Easy testing with mock state
 
@@ -144,7 +144,7 @@ All telemetry flows to OpenTelemetry Collector, which routes to:
 
 **Location**: `src/observability.rs`
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 ### OpenDAL S3/MinIO Integration
 
 **OpenDAL** provides a unified interface to multiple storage backends:
@@ -191,7 +191,7 @@ All telemetry flows to OpenTelemetry Collector, which routes to:
 4. Handler Execution
    │
    ├─ Validate input
-   ├─ Access Redis/{% if include_s3 %}Storage{% endif %}
+   ├─ Access Redis/{% if features contains "s3" %}Storage{% endif %}
    ├─ Create trace spans
    │
    ▼
@@ -280,7 +280,7 @@ autoscaling.knative.dev/targetUtilizationPercentage: "70"
 
 1. **Cold Start**: 
    - Knative creates pod from image
-   - Application initializes (parse config, connect to Redis{% if include_s3 %}, init S3{% endif %})
+   - Application initializes (parse config, connect to Redis{% if features contains "s3" %}, init S3{% endif %})
    - Health check passes (/health/ready)
    - Pod marked ready for traffic
 
@@ -303,7 +303,7 @@ autoscaling.knative.dev/targetUtilizationPercentage: "70"
 | Kubernetes | Container orchestration | REQUIRED | Kind (tests) | EKS/GKE/etc |
 | Knative | Serverless runtime | REQUIRED | Included in Kind | Pre-installed |
 | Redis | Caching/sessions | REQUIRED | docker-compose | AWS ElastiCache/Redis Enterprise |
-| {% if include_s3 %}MinIO/S3 | Object storage | REQUIRED | docker-compose | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |{% endif %} |
+| {% if features contains "s3" %}MinIO/S3 | Object storage | REQUIRED | docker-compose | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |{% endif %} |
 | OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |
 | Jaeger | Distributed tracing | OPTIONAL | docker-compose | Cloud provider/self-hosted |
 | Prometheus | Metrics collection | OPTIONAL | docker-compose | Cloud provider/self-hosted |
@@ -314,7 +314,7 @@ Key crates:
 - **axum**: Web framework
 - **tokio**: Async runtime
 - **redis**: Redis client
-- {% if include_s3 %}**opendal**: Unified storage API{% endif %}
+- {% if features contains "s3" %}**opendal**: Unified storage API{% endif %}
 - **opentelemetry**: Telemetry SDK
 - **tracing**: Structured logging
 - **serde**: Serialization
@@ -324,9 +324,9 @@ See `Cargo.toml` for complete dependency tree.
 
 ## Data Flow Examples
 
-### {% if include_s3 %}S3 Upload Request{% else %}Health Check{% endif %}
+### {% if features contains "s3" %}S3 Upload Request{% else %}Health Check{% endif %}
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 ```
 Client: POST /api/upload
        └─ Content: {"key": "docs/report.pdf", "data": "base64..."}
@@ -462,7 +462,7 @@ Benefits:
 │ App Initializing │
 │ - Parse config   │
 │ - Connect Redis  │
-{% if include_s3 %}│ - Init S3 operator  │
+{% if features contains "s3" %}│ - Init S3 operator  │
 {% endif %}└────────┬─────────┘
          │
          ▼
@@ -522,7 +522,7 @@ Benefits:
 │                                                  │
 │  External Dependencies (Encrypted)              │
 │  - Redis: Optional TLS                          │
-│  - {% if include_s3 %}S3: TLS to MinIO/AWS S3{% else %}OpenTelemetry: OTLP/gRPC{% endif %} |
+│  - {% if features contains "s3" %}S3: TLS to MinIO/AWS S3{% else %}OpenTelemetry: OTLP/gRPC{% endif %} |
 └─────────────────────────────────────────────────┘
 ```
 
@@ -534,14 +534,14 @@ See `docs/SECURITY.md` for detailed security guidance.
 |-----------|------------------|-----------|
 | Health check (/health/live) | <1ms | Network RTT |
 | Health ready (/health/ready) | 5-10ms | Redis PING |
-| {% if include_s3 %}S3 Upload (1MB) | 100-500ms | Network to S3 |
+| {% if features contains "s3" %}S3 Upload (1MB) | 100-500ms | Network to S3 |
 | S3 Download (1MB) | 100-500ms | Network to S3 |
 | S3 List (100 objects) | 50-200ms | S3 API latency |
 {% endif %}Trace processing | <1ms | In-process |
 | Metrics recording | <1ms | In-process |
 
 Optimization techniques:
-- Connection pooling (Redis, {% if include_s3 %}S3{% endif %})
+- Connection pooling (Redis, {% if features contains "s3" %}S3{% endif %})
 - Async/await with Tokio
 - Minimal allocations in hot paths
 - Zero-copy where possible
@@ -557,7 +557,7 @@ Unit Tests
 
 Integration Tests
   │
-  ├─ Docker services (Redis, {% if include_s3 %}MinIO{% endif %})
+  ├─ Docker services (Redis, {% if features contains "s3" %}MinIO{% endif %})
   └─ Full handler testing
 
 E2E Tests

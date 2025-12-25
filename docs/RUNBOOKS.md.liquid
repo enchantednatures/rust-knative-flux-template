@@ -36,7 +36,7 @@ Procedures for operating {{ project_name }} in production.
 - High error rate
 - High latency (P95 > 1s)
 - Pod not ready
-- Redis connection failed{% if include_s3 %}
+- Redis connection failed{% if features contains "s3" %}
 - S3 operation failures{% endif %}
 
 **Manual Detection**:
@@ -227,7 +227,7 @@ kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"templa
 
 ## Backups
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 
 ### S3 Backup Strategy
 
@@ -339,7 +339,7 @@ shred -u secrets-backup.yaml
 redis-cli --rdb backup.rdb
 kubectl cp backup.rdb redis-0:/tmp/backup.rdb -n redis
 
-{% if include_s3 %}# S3 backup (metadata only)
+{% if features contains "s3" %}# S3 backup (metadata only)
 aws s3 sync s3://{{ project_name }}-data/ s3://{{ project_name }}-data-backup/
 {% endif %}
 ```

@@ -1,4 +1,4 @@
-{%- if include_s3 %}
+{%- if features contains "s3" %}
 use opendal::Operator;
 use redis::aio::MultiplexedConnection;
 {%- else %}
@@ -12,7 +12,7 @@ pub struct AppState {
     /// Redis multiplexed connection - supports Clone and handles concurrency internally
     /// No need for Arc<RwLock<>> - MultiplexedConnection is already designed for this
     pub redis: MultiplexedConnection,
-    {%- if include_s3 %}
+    {%- if features contains "s3" %}
     /// S3-compatible storage operator (MinIO/S3 via OpenDAL)
     pub storage: Operator,
     {%- endif %}
@@ -30,11 +30,11 @@ impl AppState {
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = Client::open("redis://localhost:6379")?;
     ///     let conn = client.get_multiplexed_async_connection().await?;
-    ///     let state = AppState::new(conn{%- if include_s3 %}, storage{%- endif %});
+    ///     let state = AppState::new(conn{%- if features contains "s3" %}, storage{%- endif %});
     ///     Ok(())
     /// }
     /// ```
-    {%- if include_s3 %}
+    {%- if features contains "s3" %}
     pub fn new(redis: MultiplexedConnection, storage: Operator) -> Self {
         Self { redis, storage }
     }

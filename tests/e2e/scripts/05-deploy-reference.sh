@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCENARIO="${1}"
-INCLUDE_S3="${2}"
+if features contains "s3"="${2}"
 CLUSTER_NAME="e2e-${SCENARIO}"
 REGISTRY_NAME="kind-registry-${SCENARIO}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,7 +72,7 @@ fi
 echo "✓ Redis is accessible"
 
 echo "Creating secrets..."
-if [ "$INCLUDE_S3" = "true" ]; then
+if [ "$if features contains "s3"" = "true" ]; then
   kubectl create secret generic rust-service-secrets \
     -n test-app \
     --from-literal=redis-url=redis://redis.services.svc.cluster.local:6379 \

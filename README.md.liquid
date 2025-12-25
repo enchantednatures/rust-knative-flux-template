@@ -2,7 +2,7 @@
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3).
 
-{% if include_s3 %}
+{% if features contains "s3" %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
