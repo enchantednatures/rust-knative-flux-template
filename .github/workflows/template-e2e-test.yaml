@@ -83,6 +83,10 @@ jobs:
           kind version
           kind delete cluster --name e2e-${{ matrix.scenario }} || true
           kind create cluster --name e2e-${{ matrix.scenario }} --wait 5m
+          
+          # Export Kind kubeconfig for subsequent steps
+          kind get kubeconfig --name e2e-${{ matrix.scenario }} > /tmp/kind-kubeconfig-${{ matrix.scenario }}
+          echo "KUBECONFIG=/tmp/kind-kubeconfig-${{ matrix.scenario }}" >> $GITHUB_ENV
 
       - name: Generate project from template
         run: |
