@@ -5,3 +5,4 @@ namespace: services
 
 resources:
   - redis.yaml
+  - kafka.yaml

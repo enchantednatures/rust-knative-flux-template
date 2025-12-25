@@ -4,7 +4,7 @@
 CLUSTER_NAME := dev
 KUBECONFIG_PATH := .kubeconfig-dev
 REGISTRY_PORT := 5001
-PROJECT_NAME := $(shell grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/')
+PROJECT_NAME := $(shell grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' || echo "app")
 
 # Colored output
 RED := \033[0;31m
@@ -63,8 +63,12 @@ dev-up: ## Start full development environment (cluster + all services)
 	@echo "     • Redis:         ${GREEN}localhost:6379${NC}"
 	@echo "     • MinIO Console: ${GREEN}http://localhost:9001${NC} (admin/minioadmin)"
 	@echo "     • MinIO API:     ${GREEN}http://localhost:9000${NC}"
+	@echo "     • Kafka:         ${GREEN}kafka.kafka.svc.cluster.local:9092${NC} (if Kafka enabled)"
 	@echo ""
-	@echo "  3. View application logs:"
+	@echo "  3. Send test Kafka event (if Kafka enabled):"
+	@echo "     ${GREEN}make kafka-send-event${NC}"
+	@echo ""
+	@echo "  4. View application logs:"
 	@echo "     ${GREEN}make dev-logs${NC}"
 	@echo ""
 	@echo "  4. Rebuild after code changes:"
@@ -164,6 +168,58 @@ dev-deploy: ## Deploy application only (assumes image exists in registry)
 dev-test: ## Run integration tests against Kind cluster
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		cargo test -- --ignored --nocapture
+
+# ============================================================================
+# Kafka Event Source Commands (conditional)
+# ============================================================================
+
+.PHONY: kafka-send-event
+kafka-send-event: ## Send a test event to Kafka topic
+	@./scripts/dev/send-kafka-event.sh "Test event from make target"
+
+.PHONY: kafka-create-topic
+kafka-create-topic: ## Create a new Kafka topic (usage: make kafka-create-topic TOPIC=my-topic)
+	@TOPIC="${TOPIC}" && \
+	if [ -z "$$TOPIC" ]; then \
+		echo "${RED}Error: TOPIC variable required${NC}"; \
+		echo "Usage: make kafka-create-topic TOPIC=my-topic"; \
+		exit 1; \
+	fi && \
+	./scripts/dev/create-kafka-topic.sh $$TOPIC
+
+.PHONY: kafka-list-topics
+kafka-list-topics: ## List all Kafka topics
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+	kubectl -n kafka exec -it kafka-0 -- kafka-topics \
+		--bootstrap-server localhost:9092 \
+		--list
+
+.PHONY: kafka-consumer-lag
+kafka-consumer-lag: ## Show consumer group lag
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		CONSUMER_GROUP=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"')-consumers && \
+		kubectl -n kafka exec -it kafka-0 -- kafka-consumer-groups \
+		--bootstrap-server localhost:9092 \
+		--describe \
+		--group $$CONSUMER_GROUP
+
+.PHONY: kafka-logs
+kafka-logs: ## View Kafka broker logs
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+	kubectl logs -n kafka -l app=kafka --tail=100 -f
+
+.PHONY: kafka-source-status
+kafka-source-status: ## Check KafkaSource status
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		PROJECT_NAME=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"') && \
+		kubectl get kafkasource -n default $$PROJECT_NAME-kafka-source -o yaml
+
+.PHONY: kafka-dlq-logs
+kafka-dlq-logs: ## View Dead Letter Queue handler logs
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		PROJECT_NAME=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"') && \
+		kubectl logs -f -l serving.knative.dev/service="$$PROJECT_NAME-dlq" -c user-container 2>/dev/null || \
+		echo "${RED}DLQ handler not running or no events failed${NC}"
 
 # ============================================================================
 # Utility Commands

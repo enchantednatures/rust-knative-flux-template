@@ -6,6 +6,11 @@ namespace: default
 resources:
   - ../../base
 
+{% if event_sources contains "kafka" %}
+patchesStrategicMerge:
+  - kafka-source-patch.yaml
+{% endif %}
+
 patches:
   - target:
       kind: Service

@@ -30,7 +30,7 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "{{ prod_memory_limit }}"
 
-{% if features contains "s3" %}
+ {% if features contains "s3" %}
 # Production S3 configuration (typically AWS S3 or managed MinIO)
 configMapGenerator:
   - name: s3-config
@@ -39,4 +39,10 @@ configMapGenerator:
       - S3_ENDPOINT=https://s3.amazonaws.com  # or your MinIO endpoint
       - S3_BUCKET=data-prod
       - S3_REGION=us-east-1
+ {% endif %}
+
+{% if event_sources contains "kafka" %}
+patchesStrategicMerge:
+  - kafka-source-patch.yaml
 {% endif %}
+

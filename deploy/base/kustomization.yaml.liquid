@@ -3,6 +3,10 @@ kind: Kustomization
 
 resources:
   - knative-service.yaml
+  {% if event_sources contains "kafka" %}
+  - kafka-source.yaml
+  - dlq-handler.yaml
+  {% endif %}
   # NOTE: secret.yaml is NOT included here
   # Users must create it from secret.yaml.example
   # This prevents accidental commits of secrets to git

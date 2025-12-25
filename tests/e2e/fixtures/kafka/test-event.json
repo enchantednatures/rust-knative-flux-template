@@ -1,0 +1,16 @@
+{
+  "specversion": "1.0",
+  "type": "com.example.test.event",
+  "source": "/tests/kafka",
+  "id": "kafka-test-event-001",
+  "time": "2025-12-25T12:00:00Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "message": "Test event from Kafka",
+    "testId": "001",
+    "metadata": {
+      "environment": "dev",
+      "version": "1.0"
+    }
+  }
+}

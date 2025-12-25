@@ -30,7 +30,7 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "{{ staging_memory_limit }}"
 
-{% if features contains "s3" %}
+ {% if features contains "s3" %}
 # Staging-specific S3 configuration (may use MinIO or S3)
 configMapGenerator:
   - name: s3-config
@@ -39,4 +39,10 @@ configMapGenerator:
       - S3_ENDPOINT=https://minio.staging.svc.cluster.local:9000  # Update as needed
       - S3_BUCKET=data-staging
       - S3_REGION=us-east-1
+ {% endif %}
+
+{% if event_sources contains "kafka" %}
+patchesStrategicMerge:
+  - kafka-source-patch.yaml
 {% endif %}
+

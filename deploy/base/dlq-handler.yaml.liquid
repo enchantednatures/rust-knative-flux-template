@@ -1,0 +1,44 @@
+{% if event_sources contains "kafka" %}
+---
+# Dead Letter Queue Handler Service
+# Receives events that failed to be delivered to main service
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: {{ project_name }}-dlq
+  namespace: {{ target_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ project_name }}-dlq
+    app.kubernetes.io/component: dlq-handler
+    app.kubernetes.io/managed-by: flux
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/max-scale: "2"
+    spec:
+      containers:
+        - name: dlq-handler
+          # Simple event-display container for DLQ
+          # In production, replace with custom handler
+          image: gcr.io/knative-releases/knative.dev/eventing/cmd/event_display
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+{% endif %}

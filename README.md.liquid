@@ -1,12 +1,21 @@
 # {{ project_name }}
 
-A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3).
+A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3) and Apache Kafka event source integration.
 
-{% if features contains "s3" %}
+{% if features contains "s3" or event_sources contains "kafka" %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
+{% if features contains "s3" %}
 - 📦 **S3-Compatible Storage**: Integrated OpenDAL for MinIO/AWS S3 object storage
+{% endif %}
+{% if event_sources contains "kafka" %}
+- 📨 **Apache Kafka Event Source**: Knative KafkaSource for consuming Kafka events
+- 🔁 **Topic-Per-Source Pattern**: One KafkaSource per topic for independent scaling
+- ⚰ **Dead Letter Queue**: Automatic DLQ handling for failed events
+{% endif %}
+- 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
+- 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
 - 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
 - 🏗️ **Infrastructure as Code**: Terraform modules for bucket management
@@ -68,15 +77,25 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 ### Kubernetes Deployment
 
 1. **Prerequisites**
-   - Kubernetes 1.24+
-   - Knative 1.5+
-   - FluxCD
+    - Kubernetes 1.24+
+    - Knative 1.5+
+    - FluxCD
 
 2. **Deploy with FluxCD**
-   ```bash
-   kubectl apply -f deploy/flux/git-repository.yaml
-   kubectl apply -f deploy/flux/kustomization.yaml
-   ```
+    ```bash
+    kubectl apply -f deploy/flux/git-repository.yaml
+    kubectl apply -f deploy/flux/kustomization.yaml
+    ```
+
+{% if event_sources contains "kafka" %}
+#### Kafka Event Source Deployment
+
+The KafkaSource and DLQ handler are automatically deployed with the application.
+
+For production/staging, ensure external Kafka is configured:
+- Update `deploy/overlays/staging/kafka-source-patch.yaml` with staging Kafka servers
+- Update `deploy/overlays/prod/kafka-source-patch.yaml` with production Kafka servers
+{% endif %}
 
 3. **Deploy Directly**
    ```bash
@@ -241,7 +260,29 @@ log_level = "debug"
 
 ## Storage Integration (S3/MinIO)
 
+{% if features contains "s3" %}
 See [STORAGE.md](./STORAGE.md) for detailed S3/MinIO integration guide covering:
+- Architecture and design patterns
+- Configuration for MinIO and AWS S3
+- Code examples for CRUD operations
+- Testing with integration tests
+- Terraform bucket management
+- Production deployment
+{% endif %}
+
+{% if event_sources contains "kafka" %}
+## Kafka Event Source Integration
+
+See [KAFKA_EVENTING.md](./KAFKA_EVENTING.md) for detailed Kafka integration guide covering:
+- Architecture and topic-per-source pattern
+- Knative Kafka controller setup
+- Event type routing examples
+- Subscribing to multiple topics
+- Dead Letter Queue configuration
+- Production deployment with external Kafka
+- Monitoring and troubleshooting
+- Best practices for idempotency and error handling
+{% endif %}
 - Architecture and design patterns
 - Configuration for MinIO and AWS S3
 - Code examples for CRUD operations

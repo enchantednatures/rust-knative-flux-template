@@ -1,5 +1,5 @@
 [template]
-cargo_generate_version = ">=0.18.0"
+cargo_generate_version = ">=0.23.0"
 ignore = [
   ".git",
   "tests/e2e",
@@ -12,7 +12,6 @@ ignore = [
   ".github/workflows/ci.yaml.liquid",
   "docs/MONITORING.md.liquid",
   "docs/TESTING.md.liquid",
-  "scripts",
 ]
 
 [placeholders]
@@ -20,6 +19,10 @@ project_name = { prompt = "Project name", type = "string", default = "example-ap
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
 features = { prompt = "Select default features", type = "array", choices = [
   "s3",
+], default = [
+] }
+event_sources = { prompt = "Select event sources", type = "array", choices = [
+  "kafka",
 ], default = [
 ] }
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
@@ -63,4 +66,22 @@ ignore = [
   "tests/storage_test.rs.liquid",
   "STORAGE.md.liquid",
   "terraform/modules/minio",
+]
+
+[conditional.'if event_sources contains "kafka"'.placeholders]
+kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events" }
+kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "{{project_name}}-consumers" }
+kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
+kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
+
+[conditional.'!if event_sources contains "kafka"']
+ignore = [
+  "deploy/base/kafka-source.yaml.liquid",
+  "deploy/base/dlq-handler.yaml.liquid",
+  "deploy/dev/infrastructure/kafka.yaml.liquid",
+  "scripts/dev/install-knative-kafka.sh",
+  "scripts/dev/send-kafka-event.sh",
+  "scripts/dev/create-kafka-topic.sh",
+  "docs/KAFKA_EVENTING.md.liquid",
+  "tests/e2e/fixtures/kafka",
 ]
