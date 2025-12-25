@@ -131,6 +131,10 @@ dev-test-health: ## Quick health check of application
 	@curl -sf http://localhost:8080/health/live >/dev/null 2>&1 && echo "${GREEN}✓ Liveness check passed${NC}" || echo "${RED}✗ Liveness check failed${NC}"
 	@curl -sf http://localhost:8080/health/ready >/dev/null 2>&1 && echo "${GREEN}✓ Readiness check passed${NC}" || echo "${RED}✗ Readiness check failed${NC}"
 
+.PHONY: dev-send-event
+dev-send-event: ## Send a test CloudEvent to the service
+	@./scripts/dev/send-test-event.sh localhost:8080 com.example.ping "Test event from make target"
+
 # ============================================================================
 # Component-Specific Commands
 # ============================================================================
