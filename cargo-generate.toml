@@ -1,18 +1,20 @@
 [template]
 cargo_generate_version = ">=0.18.0"
 ignore = [
-    "tests/e2e",
-    "target",
-    "Cargo.lock",
-    ".github/workflows/template-e2e-test.yaml",
-    ".github/workflows/template-generate-and-validate.yaml",
-    ".github/workflows/ci.yaml.liquid",
-    "docs/MONITORING.md.liquid",
-    "docs/TESTING.md.liquid",
+  ".git",
+  "tests/e2e",
+  "target",
+  "Cargo.lock",
+  ".github/workflows/template-e2e-test.yaml",
+  ".github/workflows/template-generate-and-validate.yaml",
+  ".github/workflows/ci.yaml.liquid",
+  "docs/MONITORING.md.liquid",
+  "docs/TESTING.md.liquid",
 ]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
+project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
 include_s3 = { prompt = "Include S3-compatible storage (MinIO/S3)?", type = "bool", default = false }
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
@@ -20,37 +22,28 @@ github_org = { prompt = "GitHub organization or username", type = "string", defa
 github_repo = { prompt = "GitHub repository name", type = "string", default = "your-repo" }
 default_branch = { prompt = "Default git branch for Flux", type = "string", default = "main" }
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
+use_default_scaling = { prompt = "Use the default scaling parameters", type = "bool", default = true }
 
-edit_scaling = { prompt = "Change default scaling", type = "bool", default = false }
-[conditional.'edit_scaling']
+[conditional.'!use_default_scaling'.placeholders]
 base_min_scale = { prompt = "Base minimum scale", type = "string", default = "1" }
-[conditional.'edit_scaling']
 base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
-[conditional.'edit_scaling']
 base_target = { prompt = "Base autoscaling target (concurrency)", type = "string", default = "100" }
-[conditional.'edit_scaling']
 base_cpu_request = { prompt = "Base CPU request", type = "string", default = "100m" }
-[conditional.'edit_scaling']
 base_cpu_limit = { prompt = "Base CPU limit", type = "string", default = "500m" }
-[conditional.'edit_scaling']
 base_memory_request = { prompt = "Base memory request", type = "string", default = "64Mi" }
-[conditional.'edit_scaling']
 base_memory_limit = { prompt = "Base memory limit", type = "string", default = "256Mi" }
-
 dev_min_scale = { prompt = "Dev minimum scale", type = "string", default = "0" }
 dev_max_scale = { prompt = "Dev maximum scale", type = "string", default = "3" }
 dev_cpu_request = { prompt = "Dev CPU request", type = "string", default = "100m" }
 dev_cpu_limit = { prompt = "Dev CPU limit", type = "string", default = "500m" }
 dev_memory_request = { prompt = "Dev memory request", type = "string", default = "64Mi" }
 dev_memory_limit = { prompt = "Dev memory limit", type = "string", default = "256Mi" }
-
 staging_min_scale = { prompt = "Staging minimum scale", type = "string", default = "1" }
 staging_max_scale = { prompt = "Staging maximum scale", type = "string", default = "5" }
 staging_cpu_request = { prompt = "Staging CPU request", type = "string", default = "200m" }
 staging_cpu_limit = { prompt = "Staging CPU limit", type = "string", default = "800m" }
 staging_memory_request = { prompt = "Staging memory request", type = "string", default = "128Mi" }
 staging_memory_limit = { prompt = "Staging memory limit", type = "string", default = "384Mi" }
-
 prod_min_scale = { prompt = "Prod minimum scale", type = "string", default = "2" }
 prod_max_scale = { prompt = "Prod maximum scale", type = "string", default = "20" }
 prod_cpu_request = { prompt = "Prod CPU request", type = "string", default = "250m" }
@@ -60,8 +53,8 @@ prod_memory_limit = { prompt = "Prod memory limit", type = "string", default = "
 
 [conditional.'!include_s3']
 ignore = [
-    "src/handlers/storage.rs.liquid",
-    "tests/storage_test.rs.liquid",
-    "STORAGE.md.liquid",
-    "terraform/modules/minio",
+  "src/handlers/storage.rs.liquid",
+  "tests/storage_test.rs.liquid",
+  "STORAGE.md.liquid",
+  "terraform/modules/minio",
 ]
