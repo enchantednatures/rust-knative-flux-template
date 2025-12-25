@@ -6,7 +6,7 @@ license = "MIT"
 description = "CloudEvents extractors for Axum"
 
 [dependencies]
-axum = { version = "0.7", default-features = false, features = ["json"] }
+axum = { version = "0.8", default-features = false, features = ["json"] }
 async-trait = "0.1"
 bytes = "1.0"
 http = "1.0"
