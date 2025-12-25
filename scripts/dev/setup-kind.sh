@@ -18,45 +18,45 @@ echo "Setting up Kind cluster for local development..."
 echo ""
 
 # Check if Kind is installed
-if ! command -v kind &> /dev/null; then
-  echo -e "${RED}✗ Error: Kind is not installed${NC}"
-  echo "Install from: https://kind.sigs.k8s.io/docs/user/quick-start/"
-  exit 1
+if ! command -v kind &>/dev/null; then
+	echo -e "${RED}✗ Error: Kind is not installed${NC}"
+	echo "Install from: https://kind.sigs.k8s.io/docs/user/quick-start/"
+	exit 1
 fi
 
 # Check if Docker is running
-if ! docker info &> /dev/null; then
-  echo -e "${RED}✗ Error: Docker is not running${NC}"
-  exit 1
+if ! docker info &>/dev/null; then
+	echo -e "${RED}✗ Error: Docker is not running${NC}"
+	exit 1
 fi
 
 # Stop and remove existing registry if it exists
-if docker ps -a --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}$"; then
-  echo -e "${YELLOW}→${NC} Removing existing registry..."
-  docker stop "${REGISTRY_NAME}" 2>/dev/null || true
-  docker rm "${REGISTRY_NAME}" 2>/dev/null || true
+if docker ps -a --format {% raw %} '{{.Names}}' {% endraw %} | grep -q "^${REGISTRY_NAME}$"; then
+	echo -e "${YELLOW}→${NC} Removing existing registry..."
+	docker stop "${REGISTRY_NAME}" 2>/dev/null || true
+	docker rm "${REGISTRY_NAME}" 2>/dev/null || true
 fi
 
 # Create local registry
 echo -e "${YELLOW}→${NC} Creating local Docker registry on port ${REGISTRY_PORT}..."
 docker run -d \
-  --restart=always \
-  -p "127.0.0.1:${REGISTRY_PORT}:5000" \
-  --name "${REGISTRY_NAME}" \
-  registry:2
+	--restart=always \
+	-p "127.0.0.1:${REGISTRY_PORT}:5000" \
+	--name "${REGISTRY_NAME}" \
+	registry:2
 
 # Wait for registry to be ready
 sleep 2
 
 # Delete existing cluster if it exists
 if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-  echo -e "${YELLOW}→${NC} Deleting existing cluster..."
-  kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+	echo -e "${YELLOW}→${NC} Deleting existing cluster..."
+	kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
 fi
 
 # Create Kind config
 TEMP_CONFIG=$(mktemp)
-cat > "${TEMP_CONFIG}" <<'EOF'
+cat >"${TEMP_CONFIG}" <<'EOF'
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -77,13 +77,13 @@ EOF
 # Create Kind cluster
 echo -e "${YELLOW}→${NC} Creating Kind cluster (${CLUSTER_NAME})..."
 kind create cluster \
-  --name "${CLUSTER_NAME}" \
-  --config "${TEMP_CONFIG}" \
-  --kubeconfig "${KUBECONFIG_PATH}" \
-  --wait 5m || {
-  echo -e "${RED}✗ Error: Failed to create Kind cluster${NC}"
-  rm -f "${TEMP_CONFIG}"
-  exit 1
+	--name "${CLUSTER_NAME}" \
+	--config "${TEMP_CONFIG}" \
+	--kubeconfig "${KUBECONFIG_PATH}" \
+	--wait 5m || {
+	echo -e "${RED}✗ Error: Failed to create Kind cluster${NC}"
+	rm -f "${TEMP_CONFIG}"
+	exit 1
 }
 
 rm -f "${TEMP_CONFIG}"
@@ -111,13 +111,13 @@ EOFCONFIG
 # Verify cluster is ready
 echo -e "${YELLOW}→${NC} Verifying cluster is ready..."
 kubectl cluster-info || {
-  echo -e "${RED}✗ Error: Cluster is not ready${NC}"
-  exit 1
+	echo -e "${RED}✗ Error: Cluster is not ready${NC}"
+	exit 1
 }
 
 kubectl wait --for=condition=Ready nodes --all --timeout=3m || {
-  echo -e "${RED}✗ Error: Nodes did not become ready${NC}"
-  exit 1
+	echo -e "${RED}✗ Error: Nodes did not become ready${NC}"
+	exit 1
 }
 
 echo ""
