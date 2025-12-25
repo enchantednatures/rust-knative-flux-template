@@ -1,41 +1,56 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+namespace: default
+
 resources:
   - ../../base
 
 patches:
   - target:
       kind: Service
-      name: rust-service
+      name: {{ project_name }}
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "{{ dev_min_scale }}"
+        value: "1"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "{{ dev_max_scale }}"
+        value: "3"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "{{ dev_cpu_request }}"
+        value: "100m"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "{{ dev_memory_request }}"
+        value: "128Mi"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "{{ dev_cpu_limit }}"
+        value: "1000m"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "{{ dev_memory_limit }}"
-
-{% if features contains "s3" %}
-# Environment-specific S3 configuration
-# Override S3 endpoint to point to local MinIO during development
-configMapGenerator:
-  - name: s3-config
-    behavior: create
-    literals:
-      - S3_ENDPOINT=http://minio:9000
-      - S3_BUCKET=data
-      - S3_REGION=us-east-1
-{% endif %}
+        value: "512Mi"
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: APP__REDIS__URL
+            value: "redis://redis.services.svc.cluster.local:6379"
+          {% if features contains "s3" %}
+          - name: APP__S3__ENDPOINT
+            value: "http://minio.services.svc.cluster.local:9000"
+          - name: APP__S3__BUCKET
+            value: "data"
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          - name: AWS_ACCESS_KEY_ID
+            value: "minioadmin"
+          - name: AWS_SECRET_ACCESS_KEY
+            value: "minioadmin"
+          {% endif %}
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "http://otel-collector.observability.svc.cluster.local:4317"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "{{ project_name }}-dev"
+          - name: APP__TELEMETRY__LOG_LEVEL
+            value: "debug"
+          - name: RUST_LOG
+            value: "debug,hyper=info,tower=info"

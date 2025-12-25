@@ -63,17 +63,20 @@ cargo test test_readiness_endpoint -- --nocapture --test-threads=1
 
 ### Development Workflow
 ```bash
+# Start local development environment (Kind + Knative + all services)
+make dev-up
+
 # Watch for changes and re-run tests
 cargo watch -x test
 
-# Watch and re-run specific test
-cargo watch -x "test test_liveness_endpoint"
+# Rebuild and redeploy application after changes
+make dev-restart
 
-# Start local services for testing
-docker-compose up -d
+# View application logs
+make dev-logs
 
-# Stop local services
-docker-compose down
+# Stop development environment
+make dev-down
 ```
 
 ## Code Style Guidelines

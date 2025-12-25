@@ -13,6 +13,9 @@ pub enum CloudEventError {
     #[error("Missing required field: {0}")]
     MissingField(&'static str),
 
+    #[error("Missing required header: {0}")]
+    MissingHeader(String),
+
     #[error("Unknown event type: {0}")]
     UnknownEventType(String),
 }
@@ -24,6 +27,9 @@ impl IntoResponse for CloudEventError {
             CloudEventError::InvalidJson(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             CloudEventError::MissingField(field) => {
                 (StatusCode::BAD_REQUEST, format!("Missing field: {}", field))
+            }
+            CloudEventError::MissingHeader(header) => {
+                (StatusCode::BAD_REQUEST, format!("Missing header: {}", header))
             }
             CloudEventError::UnknownEventType(t) => {
                 (StatusCode::BAD_REQUEST, format!("Unknown event type: {}", t))

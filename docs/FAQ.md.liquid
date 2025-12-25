@@ -55,18 +55,23 @@ It provides a complete starting point for building cloud-native services.
 ### How do I start local development?
 
 ```bash
-# Start services
-docker-compose up -d
+# Start development environment
+make dev-up
 
-# Run application
+# Run application (in another terminal)
 cargo run
 
 # Or with auto-reload
 cargo watch -q -c -w src -x run
+
+# Set up port forwarding (in another terminal)
+make dev-forward
 ```
 
-### What services are started with docker-compose?
+### What services are started with make dev-up?
 
+- **Kind Kubernetes Cluster** - Local Kubernetes environment
+- **Knative Serving** - Serverless framework
 - **Redis** (port 6379) - Caching/sessions
 {% if features contains "s3" %}
 - **MinIO** (port 9000) - S3-compatible storage
@@ -107,12 +112,12 @@ pub use my_handler::my_handler;
 # Unit tests
 cargo test
 
-# Integration tests
-docker-compose up -d
-cargo test --test '*' --ignored --nocapture
+# Integration tests (requires dev environment)
+make dev-up
+cargo test -- --ignored --nocapture
 
 # E2E tests
-./tests/e2e/test-deployment.sh
+./tests/e2e/scripts/06-run-tests.sh
 ```
 
 ### What IDE do you recommend?
@@ -305,20 +310,20 @@ See `docs/TROUBLESHOOTING.md` for detailed solutions.
 ### Why are tests failing?
 
 ```bash
-# Start services
-docker-compose up -d
+# Start development environment
+make dev-up
 
 # Run tests with output
 cargo test -- --nocapture
 
 # Run integration tests
-cargo test --test '*' --ignored --nocapture
+cargo test -- --ignored --nocapture
 ```
 
 Common causes:
-- **Services not running**: Check `docker-compose ps`
+- **Services not running**: Check `make dev-status`
 - **Port conflicts**: Check `lsof -i :8080`
-- **Network issues**: Check `docker network ls`
+- **Kubernetes issues**: Check `export KUBECONFIG=.kubeconfig-dev && kubectl get pods`
 
 ### Why is {% if features contains "s3" %}S3{% else %}Redis{% endif %} connection failing?
 

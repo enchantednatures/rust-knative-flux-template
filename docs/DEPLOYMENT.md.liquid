@@ -94,11 +94,11 @@ docker tag {{ project_name }}:latest {{ image_registry }}/{{ github_org }}/{{ pr
 docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0.0
 ```
 
-### 2. Test with Docker Compose
+### 2. Test with Kind Development Environment
 
 ```bash
-# Start services
-docker-compose up -d
+# Start development environment
+make dev-up
 
 # Verify health
 curl http://localhost:8080/health/live
@@ -114,14 +114,14 @@ curl http://localhost:8080/metrics
 {% endif %}
 
 # View logs
-docker-compose logs -f {{ project_name }}
+make dev-logs
 ```
 
 ### 3. Run Integration Tests
 
 ```bash
-# Start services
-docker-compose up -d
+# Start development environment
+make dev-up
 
 # Run tests
 cargo test -- --ignored --nocapture

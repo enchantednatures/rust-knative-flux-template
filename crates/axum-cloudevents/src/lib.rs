@@ -26,6 +26,7 @@
 pub use extractor::CloudEvent;
 pub use metadata::CloudEventMetadata;
 pub use error::CloudEventError;
+pub use headers::*;
 
 #[cfg(feature = "macros")]
 pub use axum_cloudevents_macros::CloudEventTagged;
@@ -33,3 +34,4 @@ pub use axum_cloudevents_macros::CloudEventTagged;
 mod extractor;
 mod metadata;
 mod error;
+mod headers;

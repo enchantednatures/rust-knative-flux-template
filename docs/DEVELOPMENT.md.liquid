@@ -24,7 +24,8 @@ Guide for local development, adding features, and following best practices for {
 | Rust | 1.92+ | https://rustup.rs/ |
 | Cargo | 1.92+ | Installed with Rust |
 | Docker | 20.10+ | https://docs.docker.com/get-docker/ |
-| Docker Compose | 2.0+ | Included with Docker |
+| Kind | 0.17+ | https://kind.sigs.k8s.io/docs/user/quick-start/ |
+| kubectl | 1.25+ | https://kubernetes.io/docs/tasks/tools/ |
 | cargo-watch | Latest | `cargo install cargo-watch` |
 | cargo-edit | Latest | `cargo install cargo-edit` |
 
@@ -46,26 +47,28 @@ rustc --version
 cargo --version
 ```
 
-### Starting Local Services
+### Starting Local Development Environment
 
 ```bash
-# Start all services (Redis{% if features contains "s3" %}, MinIO{% endif %}, Jaeger, Prometheus, OTEL Collector)
-docker-compose up -d
+# Start all services (Kind cluster with Knative, Redis{% if features contains "s3" %}, MinIO{% endif %}, Jaeger, Prometheus, OTEL Collector)
+make dev-up
 
 # Verify services are running
-docker-compose ps
+make dev-status
 
-# View logs
-docker-compose logs -f
+# View application logs
+make dev-logs
 
 # Stop services
-docker-compose down
+make dev-down
 
-# Stop and clean volumes
-docker-compose down -v
+# Stop and clean everything
+make dev-clean
 ```
 
 **Services Started**:
+- Kind Kubernetes Cluster (local)
+- Knative Serving v1.20.0
 - Redis (port 6379) - Caching/sessions
 {% if features contains "s3" %}- MinIO S3 API (port 9000) - Object storage
 - MinIO Console (port 9001) - Web UI at http://localhost:9001{% endif %}
@@ -141,18 +144,18 @@ curl http://localhost:8080/api/objects
 ├── deploy/
 │   ├── base/                     # Base Kubernetes manifests
 │   ├── overlays/                 # Environment-specific patches
+│   ├── dev/                      # Development-specific manifests
 │   └── flux/                     # FluxCD GitOps config
-├── docker/
-│   ├── otel-collector-config.yaml # OpenTelemetry config
-│   └── prometheus.yaml            # Prometheus config
+├── scripts/
+│   └── dev/                      # Development automation scripts
 ├── tests/
 │   ├── health_test.rs             # Health endpoint tests{% if features contains "s3" %}
 │   ├── storage_test.rs            # S3 integration tests{% endif %}
 │   └── common/
 │       └── mod.rs                # Test utilities
 ├── docs/                         # Documentation
-├── docker-compose.yaml           # Local development services
 ├── Dockerfile                    # Container build
+├── Makefile                      # Development commands
 ├── Cargo.toml                   # Rust dependencies
 └── README.md                    # This file
 ```
@@ -167,44 +170,50 @@ curl http://localhost:8080/api/objects
 # 1. Create feature branch
 git checkout -b feature/my-feature
 
-# 2. Start local services
-docker-compose up -d
+# 2. Start local development environment
+make dev-up
 
-# 3. Run with auto-reload
+# 3. Run with auto-reload (in another terminal)
 cargo watch -q -c -w src -x run
 
-# 4. Make changes
+# 4. Set up port forwarding (in another terminal)
+make dev-forward
+
+# 5. Make changes
 # Edit files in src/
 
-# 5. Run tests in another terminal
+# 6. Run tests in another terminal
 cargo test
 
-# 6. Check code quality
+# 7. Check code quality
 cargo fmt
 cargo clippy -- -D warnings
 
-# 7. Commit
+# 8. Commit
 git add .
 git commit -m "feat: add my feature"
 
-# 8. Push and create PR
+# 9. Push and create PR
 git push origin feature/my-feature
 ```
 
-### Using docker-compose for Integration Testing
+### Using Kind for Integration Testing
 
 ```bash
-# Start services
-docker-compose up -d
+# Start development environment
+make dev-up
 
 # Wait for services to be ready
-docker-compose ps
+make dev-status
 
 # Run tests with services
 cargo test -- --ignored --nocapture
 
+# View application logs
+make dev-logs
+
 # Clean up
-docker-compose down -v
+make dev-down
 ```
 
 ---

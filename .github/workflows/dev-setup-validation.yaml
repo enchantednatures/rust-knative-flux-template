@@ -1,0 +1,90 @@
+name: Validate Dev Setup
+
+on:
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'scripts/dev/**'
+      - 'deploy/dev/**'
+      - 'deploy/overlays/dev/**'
+      - '.github/workflows/dev-setup-validation.yaml'
+
+jobs:
+  validate-dev-setup:
+    name: Validate Kind Development Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Kind
+        uses: helm/kind-action@v1.11.0
+        with:
+          cluster_name: dev
+          config: deploy/dev/kind-config.yaml
+          wait: 5m
+
+      - name: Verify Kind cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Install Knative
+        run: |
+          ./scripts/dev/install-knative.sh
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Verify Knative installation
+        run: |
+          kubectl get pods -n knative-serving
+          kubectl wait --for=condition=Ready pods --all -n knative-serving --timeout=2m
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Deploy infrastructure
+        run: |
+          ./scripts/dev/deploy-infrastructure.sh
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Verify infrastructure
+        run: |
+          kubectl get pods -n services
+          kubectl wait --for=condition=Ready pod -l app=redis -n services --timeout=3m
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Deploy observability
+        run: |
+          ./scripts/dev/deploy-observability.sh
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Verify observability
+        run: |
+          kubectl get pods -n observability
+          kubectl wait --for=condition=Ready pod -l app=jaeger -n observability --timeout=3m
+          kubectl wait --for=condition=Ready pod -l app=otel-collector -n observability --timeout=3m
+          kubectl wait --for=condition=Ready pod -l app=prometheus -n observability --timeout=3m
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Show final status
+        if: always()
+        run: |
+          echo "=== Cluster Info ==="
+          kubectl cluster-info
+          echo ""
+          echo "=== Knative Status ==="
+          kubectl get pods -n knative-serving
+          echo ""
+          echo "=== Infrastructure Status ==="
+          kubectl get pods -n services
+          echo ""
+          echo "=== Observability Status ==="
+          kubectl get pods -n observability
+        env:
+          KUBECONFIG: /home/runner/.kube/config

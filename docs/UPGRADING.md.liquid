@@ -303,13 +303,13 @@ cargo clippy -- -D warnings
 cargo test
 
 # Start services for integration tests
-docker-compose up -d
+make dev-up
 
 # Run integration tests
-cargo test --test '*' --ignored --nocapture
+cargo test -- --ignored --nocapture
 
 # Cleanup
-docker-compose down -v
+make dev-down
 ```
 
 #### Step 8: Deploy to Staging

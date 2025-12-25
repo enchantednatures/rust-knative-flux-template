@@ -302,11 +302,11 @@ autoscaling.knative.dev/targetUtilizationPercentage: "70"
 |---------|---------|-------------|-----------|------------|
 | Kubernetes | Container orchestration | REQUIRED | Kind (tests) | EKS/GKE/etc |
 | Knative | Serverless runtime | REQUIRED | Included in Kind | Pre-installed |
-| Redis | Caching/sessions | REQUIRED | docker-compose | AWS ElastiCache/Redis Enterprise |
-| {% if features contains "s3" %}MinIO/S3 | Object storage | REQUIRED | docker-compose | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |{% endif %} |
-| OpenTelemetry | Observability | OPTIONAL | docker-compose | Dedicated collector |
-| Jaeger | Distributed tracing | OPTIONAL | docker-compose | Cloud provider/self-hosted |
-| Prometheus | Metrics collection | OPTIONAL | docker-compose | Cloud provider/self-hosted |
+| Redis | Caching/sessions | REQUIRED | make dev-up | AWS ElastiCache/Redis Enterprise |
+| {% if features contains "s3" %}MinIO/S3 | Object storage | REQUIRED | make dev-up | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |{% endif %} |
+| OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |
+| Jaeger | Distributed tracing | OPTIONAL | make dev-up | Cloud provider/self-hosted |
+| Prometheus | Metrics collection | OPTIONAL | make dev-up | Cloud provider/self-hosted |
 
 ### Rust Dependencies
 

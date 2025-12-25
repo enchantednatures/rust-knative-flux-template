@@ -6,9 +6,10 @@ This is a production-ready microservice template with optional S3/MinIO storage 
 
 - **Rust 1.75+**: Install from https://rustup.rs/
 - **cargo-generate**: `cargo install cargo-generate`
-- **Docker & Docker Compose**: For local development services
-- **kubectl 1.24+**: For Kubernetes deployment
-- **Knative Serving 1.12+**: For serverless deployment
+- **Docker**: For building container images
+- **Kind**: For local Kubernetes cluster - Install from https://kind.sigs.k8s.io/docs/user/quick-start/
+- **kubectl 1.24+**: For Kubernetes operations
+- **Knative Serving 1.20+**: Automatically installed with `make dev-up`
 - **FluxCD 2.0+**: For GitOps deployment
 
 ## Creating a New Project
@@ -35,61 +36,67 @@ cd my-awesome-service
 
 If you selected "No" for S3 storage:
 
-### Start Services
+### Start Development Environment
 
 ```bash
-docker-compose up -d
+make dev-up
 ```
 
-Services:
-- Redis (localhost:6379)
-- OpenTelemetry Collector (localhost:4317)
-- Jaeger UI (localhost:16686)
-- Prometheus (localhost:9090)
+This sets up:
+- Kind cluster with local Docker registry
+- Knative Serving v1.20.0
+- Redis for caching
+- OpenTelemetry Collector, Jaeger, and Prometheus for observability
+- Your application deployed to Knative
 
-### Run Application
+Services are accessible at:
+- Application: http://localhost:8080
+- Jaeger UI: http://localhost:16686
+- Prometheus: http://localhost:9090
+- Redis: localhost:6379
 
-```bash
-cargo run
-```
-
-Visit:
-- App: http://localhost:8080
-- Health: http://localhost:8080/health/live
-- Metrics: http://localhost:8080/metrics
-- Traces: http://localhost:16686
-
-### Run Tests
+### Run Application Tests
 
 ```bash
 cargo test
+```
+
+### Rebuild After Changes
+
+```bash
+make dev-restart
+```
+
+### View Logs
+
+```bash
+make dev-logs
+```
+
+### Stop Environment
+
+```bash
+make dev-down
 ```
 
 ## Local Development (With S3)
 
 If you selected "Yes" for S3 storage:
 
-### Start Services with MinIO
+### Start Development Environment
 
 ```bash
-docker-compose up -d
+make dev-up
 ```
 
-Services (same as above, plus):
-- MinIO S3 API (localhost:9000)
-- MinIO Console (localhost:9001)
+This sets up everything from the non-S3 version, plus:
+- MinIO S3-compatible storage (automatically initialized with `data` bucket)
+
+Additional services:
+- MinIO S3 API: http://localhost:9000
+- MinIO Console: http://localhost:9001
   - Username: `minioadmin`
   - Password: `minioadmin`
-
-The `data` bucket is automatically created.
-
-### Run Application
-
-```bash
-cargo run
-```
-
-The app connects to MinIO automatically via the configured endpoint.
 
 ### Use Storage in Code
 
@@ -105,7 +112,7 @@ async fn handler(State(state): State<AppState>) -> impl IntoResponse {
 }
 ```
 
-### Run Tests (Including S3)
+### Run Tests (Including S3 Integration)
 
 ```bash
 # Run all tests
@@ -113,24 +120,6 @@ cargo test
 
 # Run only S3 integration tests
 cargo test --test storage_test -- --ignored --nocapture
-```
-
-### Manage Buckets with Terraform
-
-```bash
-cd terraform
-
-# Create terraform.tfvars
-cat > terraform.tfvars <<EOF
-minio_endpoint   = "http://localhost:9000"
-minio_access_key = "minioadmin"
-minio_secret_key = "minioadmin"
-minio_use_ssl    = false
-EOF
-
-# Create buckets
-terraform init
-terraform apply
 ```
 
 ## Configuration
@@ -145,24 +134,18 @@ export APP__SERVER__HOST="0.0.0.0"
 export APP__SERVER__PORT="8080"
 
 # Redis
-export APP__REDIS__URL="redis://localhost:6379"
+export APP__REDIS__URL="redis://redis.services.svc.cluster.local:6379"
 
 # Telemetry
 export APP__TELEMETRY__LOG_LEVEL="debug"
-export APP__TELEMETRY__OTLP_ENDPOINT="http://localhost:4317"
+export APP__TELEMETRY__OTLP_ENDPOINT="http://otel-collector.observability.svc.cluster.local:4317"
 
-# S3 (if enabled)
-export APP__S3__ENDPOINT="http://localhost:9000"
+# S3 (if enabled, pre-configured in dev environment)
+export APP__S3__ENDPOINT="http://minio.services.svc.cluster.local:9000"
 export APP__S3__BUCKET="data"
 export APP__S3__REGION="us-east-1"
 export AWS_ACCESS_KEY_ID="minioadmin"
 export AWS_SECRET_ACCESS_KEY="minioadmin"
-```
-
-Then run:
-
-```bash
-cargo run
 ```
 
 ### Config Files
@@ -432,56 +415,44 @@ cargo test
 
 ## Troubleshooting
 
-### Redis connection refused
+### Kind cluster fails to start
 
 ```bash
-# Check if Redis is running
-docker ps | grep redis
+# Check if Docker is running
+docker ps
 
-# Start services
-docker-compose up -d redis
+# Check for port conflicts
+lsof -i :8080 :6379 :9000
 
-# Check logs
-docker logs redis
+# Clean up and retry
+make dev-down
+make dev-up
 ```
 
-### MinIO connection issues (S3 enabled)
+### Application not accessible
 
 ```bash
-# Check MinIO is running
-docker ps | grep minio
+# Check if port forwarding is running
+make dev-forward
 
-# Check bucket exists
-docker exec minio-init mc ls local/
+# Verify application is deployed
+make dev-status
 
-# View MinIO logs
-docker logs minio
+# View application logs
+make dev-logs
 ```
 
-### Build failures
+### Services not ready
 
 ```bash
-# Clean build cache
-cargo clean
+# Check specific service status
+kubectl get pods -n services
+kubectl get pods -n observability
+kubectl get ksvc -n default
 
-# Update dependencies
-cargo update
-
-# Rebuild
-cargo build
-```
-
-### Tests fail
-
-```bash
-# Run with backtrace
-RUST_BACKTRACE=1 cargo test
-
-# Run specific test
-cargo test test_name -- --nocapture
-
-# Run without parallelism
-cargo test -- --test-threads=1
+# View logs for a specific service
+kubectl logs -l app=redis -n services
+kubectl logs -l app=jaeger -n observability
 ```
 
 ## Next Steps

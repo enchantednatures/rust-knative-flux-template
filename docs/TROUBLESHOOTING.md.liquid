@@ -28,29 +28,33 @@ Error: Redis connection failed
 
 1. Check if Redis is running:
 ```bash
-docker-compose ps redis
+make dev-status
+# Should show redis pod in "services" namespace
 ```
 
-2. Start Redis:
+2. Restart Redis (part of make dev-up):
 ```bash
-docker-compose up -d redis
+make dev-down
+make dev-up
 ```
 
 3. Check Redis logs:
 ```bash
-docker-compose logs redis
+export KUBECONFIG=.kubeconfig-dev
+kubectl logs -n services -l app=redis
 ```
 
-4. Test Redis connection:
+4. Test Redis connection via port-forward (from another terminal):
 ```bash
+make dev-forward
 redis-cli -h localhost -p 6379 ping
 # Expected output: PONG
 ```
 
 5. Verify Redis URL in config:
 ```bash
-cat config/development.toml | grep redis
-# Should show: url = "redis://localhost:6379"
+grep -r "redis://" config/
+# Should show: redis://redis.services.svc.cluster.local:6379 (in-cluster)
 ```
 
 {% if features contains "s3" %}
@@ -67,21 +71,25 @@ Error: S3 operation failed: Connection refused
 
 1. Check if MinIO is running:
 ```bash
-docker-compose ps minio
+make dev-status
+# Should show minio pod in "services" namespace
 ```
 
-2. Start MinIO:
+2. Restart MinIO (part of make dev-up):
 ```bash
-docker-compose up -d minio minio-init
+make dev-down
+make dev-up
 ```
 
 3. Check MinIO logs:
 ```bash
-docker-compose logs minio
+export KUBECONFIG=.kubeconfig-dev
+kubectl logs -n services -l app=minio
 ```
 
-4. Test MinIO health:
+4. Test MinIO health via port-forward (from another terminal):
 ```bash
+make dev-forward
 curl http://localhost:9000/minio/health/live
 # Expected output: OK
 ```
@@ -94,6 +102,7 @@ echo $AWS_SECRET_ACCESS_KEY
 ```
 
 6. Check MinIO console:
+- Start port forwarding: `make dev-forward`
 - Navigate to: http://localhost:9001
 - Login with: minioadmin / minioadmin
 - Verify bucket exists
