@@ -25,11 +25,14 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Configuration
-figment = { version = "0.10", features = ["toml", "env"] }
+figment = { version = "0.10", features = ["toml", "env", "test"] }
 
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+# CloudEvents support (vendored)
+axum-cloudevents = { path = "crates/axum-cloudevents" }
 
 # Observability - Tracing
 tracing = "0.1"
@@ -70,6 +73,9 @@ anyhow = "1.0"
 [dev-dependencies]
 axum-test = "16"
 tokio-test = "0.4"
+{%- if features contains "s3" %}
+figment = { version = "0.10", features = ["test"] }
+{%- endif %}
 
 # Build dependencies
 [build-dependencies]

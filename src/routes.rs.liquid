@@ -6,7 +6,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{api, health};
+use crate::handlers::{api, events, health};
 use crate::state::AppState;
 
 #[derive(OpenApi)]
@@ -14,6 +14,7 @@ use crate::state::AppState;
     paths(
         health::liveness,
         health::readiness,
+        events::handle_event,
         api::hello,
         {%- if features contains "s3" %}
         crate::handlers::storage::storage_example,
@@ -22,6 +23,8 @@ use crate::state::AppState;
     components(
         schemas(
             health::HealthResponse,
+            events::Ping,
+            events::Pong,
             api::HelloResponse,
             api::HelloQuery,
             {%- if features contains "s3" %}
@@ -32,6 +35,7 @@ use crate::state::AppState;
     ),
     tags(
         (name = "Health", description = "Health check endpoints"),
+        (name = "CloudEvents", description = "CloudEvents endpoints"),
         (name = "API", description = "Application endpoints"),
         {%- if features contains "s3" %}
         (name = "Storage", description = "S3 storage examples"),
@@ -47,6 +51,8 @@ struct ApiDoc;
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        // CloudEvents endpoint (Knative sink)
+        .route("/", post(events::handle_event))
         // Health endpoints (not versioned)
         .route("/health/live", get(health::liveness))
         .route("/health/ready", get(health::readiness))

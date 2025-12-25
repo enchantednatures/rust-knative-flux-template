@@ -5,6 +5,7 @@ ignore = [
   "tests/e2e",
   "target",
   "Cargo.lock",
+  "crates",
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/ci.yaml.liquid",

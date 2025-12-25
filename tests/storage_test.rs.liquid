@@ -14,6 +14,11 @@
 use opendal::Operator;
 use uuid::Uuid;
 
+/// Check if a key exists in the operator
+async fn key_exists(op: &Operator, key: &str) -> bool {
+    op.stat(key).await.is_ok()
+}
+
 /// Create a test operator pointing to local MinIO
 fn create_test_operator() -> Operator {
     let builder = opendal::services::S3::default()
@@ -21,87 +26,99 @@ fn create_test_operator() -> Operator {
         .bucket("data")
         .region("us-east-1");
 
-    // MinIO credentials from environment or defaults
-    std::env::set_var("AWS_ACCESS_KEY_ID", "minioadmin");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "minioadmin");
-
     Operator::new(builder).unwrap().finish()
 }
 
 #[tokio::test]
 #[ignore = "requires MinIO running (docker-compose up -d minio)"]
 async fn test_write_and_read() {
-    let op = create_test_operator();
-    let key = format!("test/{}.txt", Uuid::new_v4());
-    let content = b"hello from integration test";
+    figment::Jail::expect_with(|jail| {
+        jail.set_env("AWS_ACCESS_KEY_ID", "minioadmin");
+        jail.set_env("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
-    // Write
-    op.write(&key, content.to_vec()).await.unwrap();
+        tokio::runtime::Handle::current().block_on(async {
+            let op = create_test_operator();
+            let key = format!("test/{}.txt", Uuid::new_v4());
+            let content = b"hello from integration test";
 
-    // Read back
-    let data = op.read(&key).await.unwrap();
-    assert_eq!(data.to_vec(), content.to_vec());
+            op.write(&key, content.to_vec()).await.unwrap();
+            let data = op.read(&key).await.unwrap();
+            assert_eq!(data.to_vec(), content.to_vec());
+            op.delete(&key).await.unwrap();
+        });
 
-    // Cleanup
-    op.delete(&key).await.unwrap();
+        Ok(())
+    });
 }
 
 #[tokio::test]
 #[ignore = "requires MinIO running (docker-compose up -d minio)"]
 async fn test_stat() {
-    let op = create_test_operator();
-    let key = format!("test/{}.txt", Uuid::new_v4());
+    figment::Jail::expect_with(|jail| {
+        jail.set_env("AWS_ACCESS_KEY_ID", "minioadmin");
+        jail.set_env("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
-    // Write first
-    op.write(&key, b"test content".to_vec()).await.unwrap();
+        tokio::runtime::Handle::current().block_on(async {
+            let op = create_test_operator();
+            let key = format!("test/{}.txt", Uuid::new_v4());
 
-    // Stat
-    let meta = op.stat(&key).await.unwrap();
-    assert_eq!(meta.content_length(), 12);
+            op.write(&key, b"test content".to_vec()).await.unwrap();
+            let meta = op.stat(&key).await.unwrap();
+            assert_eq!(meta.content_length(), 12);
+            op.delete(&key).await.unwrap();
+        });
 
-    // Cleanup
-    op.delete(&key).await.unwrap();
+        Ok(())
+    });
 }
 
 #[tokio::test]
 #[ignore = "requires MinIO running (docker-compose up -d minio)"]
 async fn test_list() {
-    let op = create_test_operator();
-    let prefix = format!("test-list-{}/", Uuid::new_v4());
+    figment::Jail::expect_with(|jail| {
+        jail.set_env("AWS_ACCESS_KEY_ID", "minioadmin");
+        jail.set_env("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
-    // Write a few files
-    for i in 0..3 {
-        op.write(&format!("{}{}.txt", prefix, i), b"content".to_vec())
-            .await
-            .unwrap();
-    }
+        tokio::runtime::Handle::current().block_on(async {
+            let op = create_test_operator();
+            let prefix = format!("test-list-{}/", Uuid::new_v4());
 
-    // List
-    let entries: Vec<_> = op.list(&prefix).await.unwrap().collect().await;
-    assert_eq!(entries.len(), 3);
+            for i in 0..3 {
+                op.write(&format!("{}{}.txt", prefix, i), b"content".to_vec())
+                    .await
+                    .unwrap();
+            }
 
-    // Cleanup
-    for i in 0..3 {
-        op.delete(&format!("{}{}.txt", prefix, i)).await.unwrap();
-    }
+            let entries = op.list(&prefix).await.unwrap();
+            assert_eq!(entries.len(), 3);
+
+            for i in 0..3 {
+                op.delete(&format!("{}{}.txt", prefix, i)).await.unwrap();
+            }
+        });
+
+        Ok(())
+    });
 }
 
 #[tokio::test]
 #[ignore = "requires MinIO running (docker-compose up -d minio)"]
 async fn test_delete() {
-    let op = create_test_operator();
-    let key = format!("test/{}.txt", Uuid::new_v4());
+    figment::Jail::expect_with(|jail| {
+        jail.set_env("AWS_ACCESS_KEY_ID", "minioadmin");
+        jail.set_env("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
-    // Write
-    op.write(&key, b"temporary content".to_vec()).await.unwrap();
+        tokio::runtime::Handle::current().block_on(async {
+            let op = create_test_operator();
+            let key = format!("test/{}.txt", Uuid::new_v4());
 
-    // Verify exists
-    assert!(op.is_exist(&key).await.unwrap());
+            op.write(&key, b"temporary content".to_vec()).await.unwrap();
+            assert!(key_exists(&op, &key).await);
+            op.delete(&key).await.unwrap();
+            assert!(!key_exists(&op, &key).await);
+        });
 
-    // Delete
-    op.delete(&key).await.unwrap();
-
-    // Verify deleted
-    assert!(!op.is_exist(&key).await.unwrap());
+        Ok(())
+    });
 }
 {%- endif %}

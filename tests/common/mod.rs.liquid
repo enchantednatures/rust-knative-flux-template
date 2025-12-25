@@ -1,3 +1,6 @@
+{%- if features contains "s3" %}
+use opendal::Operator;
+{%- endif %}
 use {{ crate_name }}::state::AppState;
 
 /// Create a test AppState with a mock Redis connection
@@ -12,5 +15,22 @@ pub async fn create_test_state() -> AppState {
         .await
         .expect("Failed to connect to Redis");
 
+{%- if features contains "s3" %}
+    let storage = create_test_storage();
+    AppState::new(conn, storage)
+{%- else %}
     AppState::new(conn)
+{%- endif %}
 }
+{%- if features contains "s3" %}
+
+/// Create a test storage operator pointing to local MinIO
+fn create_test_storage() -> Operator {
+    let builder = opendal::services::S3::default()
+        .endpoint("http://localhost:9000")
+        .bucket("data")
+        .region("us-east-1");
+
+    Operator::new(builder).unwrap().finish()
+}
+{%- endif %}
