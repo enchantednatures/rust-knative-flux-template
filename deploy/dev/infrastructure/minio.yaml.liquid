@@ -1,9 +1,14 @@
 {% if features contains "s3" %}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: minio
-  namespace: services
+  namespace: minio
 spec:
   replicas: 1
   selector:
@@ -57,7 +62,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: minio
-  namespace: services
+  namespace: minio
 spec:
   selector:
     app: minio
@@ -74,7 +79,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: minio-init
-  namespace: services
+  namespace: minio
 spec:
   ttlSecondsAfterFinished: 60
   template:
@@ -85,7 +90,7 @@ spec:
         image: minio/mc:latest
         env:
           - name: MC_HOST_local
-            value: "http://minioadmin:minioadmin@minio.services.svc.cluster.local:9000"
+            value: "http://minioadmin:minioadmin@minio.minio.svc.cluster.local:9000"
         command:
           - /bin/sh
           - -c

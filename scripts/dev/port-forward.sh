@@ -28,18 +28,18 @@ sleep 1
 
 # Start port-forwards in background
 echo -e "${YELLOW}→${NC} Redis (6379)"
-kubectl port-forward -n services svc/redis 6379:6379 >/dev/null 2>&1 &
+kubectl port-forward -n redis svc/redis 6379:6379 >/dev/null 2>&1 &
 REDIS_PID=$!
 
 # MinIO if it exists
 MINIO_PID=""
-if kubectl get service minio -n services 2>/dev/null >/dev/null; then
+if kubectl get service minio -n minio 2>/dev/null >/dev/null; then
   echo -e "${YELLOW}→${NC} MinIO API (9000)"
-  kubectl port-forward -n services svc/minio 9000:9000 >/dev/null 2>&1 &
+  kubectl port-forward -n minio svc/minio 9000:9000 >/dev/null 2>&1 &
   MINIO_API_PID=$!
   
   echo -e "${YELLOW}→${NC} MinIO Console (9001)"
-  kubectl port-forward -n services svc/minio 9001:9001 >/dev/null 2>&1 &
+  kubectl port-forward -n minio svc/minio 9001:9001 >/dev/null 2>&1 &
   MINIO_CONSOLE_PID=$!
 fi
 
@@ -60,7 +60,7 @@ echo "  • Application:   http://localhost:8080"
 echo "  • Jaeger UI:     http://localhost:16686"
 echo "  • Prometheus:    http://localhost:9090"
 echo "  • Redis:         localhost:6379"
-if kubectl get service minio -n services 2>/dev/null >/dev/null; then
+if kubectl get service minio -n minio 2>/dev/null >/dev/null; then
   echo "  • MinIO API:     http://localhost:9000"
   echo "  • MinIO Console: http://localhost:9001 (admin/minioadmin)"
 fi
