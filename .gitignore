@@ -41,3 +41,6 @@ docker-compose.override.yaml
 
 # E2E test kubeconfigs
 tests/e2e/scripts/.kubeconfig-*
+
+# Local Kind kubeconfigs
+.kubeconfig-dev
