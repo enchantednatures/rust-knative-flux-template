@@ -1,8 +1,9 @@
-use opentelemetry::{KeyValue, global, trace::TracerProvider};
+use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry_sdk::{
     Resource,
     propagation::TraceContextPropagator,
-    trace::{Config, Sampler},
+    trace::SdkTracerProvider,
 };
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -28,35 +29,32 @@ use crate::config::TelemetryConfig;
 ///
 /// This ensures traces propagate correctly through:
 /// External Client -> Knative Ingress -> Activator -> Queue-Proxy -> Your App
-pub fn init_telemetry(config: &TelemetryConfig) -> anyhow::Result<()> {
+pub fn init_telemetry(config: &TelemetryConfig) -> anyhow::Result<Option<SdkTracerProvider>> {
     // =========================================================================
     // CRITICAL: Composite Propagator for Knative Compatibility
     // =========================================================================
-    let composite_propagator =
-        opentelemetry_sdk::propagation::TextMapCompositePropagator::new(vec![
-            Box::new(TraceContextPropagator::new()), // W3C standard
-            Box::new(B3Propagator::new()),           // Zipkin/Knative B3
-        ]);
+    let composite_propagator = TextMapCompositePropagator::new(vec![
+        Box::new(TraceContextPropagator::new()), // W3C standard
+        Box::new(B3Propagator::new()),           // Zipkin/Knative B3
+    ]);
     global::set_text_map_propagator(composite_propagator);
 
     // Build OTLP exporter if endpoint is configured
     let tracer_provider = if let Some(ref endpoint) = config.otlp_endpoint {
         tracing::info!(endpoint = %endpoint, "Initializing OTLP exporter");
 
-        let exporter =
-            opentelemetry_otlp::SpanExporter::new_tonic(Default::default(), Default::default())
-                .map_err(|e| anyhow::anyhow!("Failed to create OTLP exporter: {}", e))?;
+        // OpenTelemetry 0.31: New exporter builder API, no runtime parameter needed
+        let exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to create OTLP exporter: {}", e))?;
 
-        let provider = opentelemetry_sdk::trace::TracerProvider::builder()
-            .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_config(
-                Config::default()
-                    .with_sampler(Sampler::AlwaysOn)
-                    .with_resource(Resource::new(vec![KeyValue::new(
-                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                        config.service_name.clone(),
-                    )])),
-            )
+        // OpenTelemetry 0.31: Use SdkTracerProvider, no runtime parameter for batch exporter
+        let provider = SdkTracerProvider::builder()
+            .with_resource(Resource::builder()
+                .with_service_name(config.service_name.clone())
+                .build())
+            .with_batch_exporter(exporter)
             .build();
 
         Some(provider)
@@ -80,17 +78,24 @@ pub fn init_telemetry(config: &TelemetryConfig) -> anyhow::Result<()> {
 
     if let Some(provider) = tracer_provider {
         let tracer = provider.tracer(config.service_name.clone());
-        global::set_tracer_provider(provider);
+        // Clone and set globally, return original for shutdown
+        global::set_tracer_provider(provider.clone());
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         registry.with(telemetry_layer).init();
+        Ok(Some(provider))
     } else {
         registry.init();
+        Ok(None)
     }
-
-    Ok(())
 }
 
 /// Shutdown telemetry gracefully
-pub fn shutdown_telemetry() {
-    global::shutdown_tracer_provider();
+///
+/// OpenTelemetry 0.31: Explicitly shutdown the tracer provider instead of using global
+pub fn shutdown_telemetry(provider: Option<SdkTracerProvider>) {
+    if let Some(provider) = provider
+        && let Err(e) = provider.shutdown()
+    {
+        tracing::error!(error = ?e, "Failed to shutdown tracer provider");
+    }
 }

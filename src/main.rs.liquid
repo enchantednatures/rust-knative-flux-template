@@ -16,7 +16,8 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // 2. Initialize Observability (Tracing + OpenTelemetry)
     // =========================================================================
-    observability::init_telemetry(&config.telemetry)?;
+    // Store the tracer provider for explicit shutdown (OpenTelemetry 0.31+)
+    let tracer_provider = observability::init_telemetry(&config.telemetry)?;
     tracing::info!(
         service_name = %config.telemetry.service_name,
         otlp_endpoint = ?config.telemetry.otlp_endpoint,
@@ -87,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
     // 7. Graceful Shutdown
     // =========================================================================
     tracing::info!("Server shutting down");
-    observability::shutdown_telemetry();
+    observability::shutdown_telemetry(tracer_provider);
 
     Ok(())
 }

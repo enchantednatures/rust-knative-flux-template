@@ -55,7 +55,7 @@ pub async fn storage_example(
     };
 
     let key = format!("test/{}.json", test_data.test_id);
-    tracing::Span::current().record("s3_key", &key.as_str());
+    tracing::Span::current().record("s3_key", key.as_str());
     let json_bytes = serde_json::to_vec(&test_data)
         .map_err(|e| AppError::Internal(format!("Serialization failed: {}", e)))?;
     let write_size = json_bytes.len();

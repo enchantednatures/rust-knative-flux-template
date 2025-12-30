@@ -16,7 +16,7 @@ path = "src/main.rs"
 tokio = { version = "1.41", features = ["full"] }
 
 # Web Framework
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 tower = { version = "0.5", features = ["timeout"] }
 tower-http = { version = "0.6", features = ["trace", "request-id", "propagate-header"] }
 
@@ -29,7 +29,7 @@ figment = { version = "0.10", features = ["toml", "env", "test"] }
 
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "8", features = ["axum"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # CloudEvents support (vendored)
 axum-cloudevents = { path = "crates/axum-cloudevents" }
@@ -37,16 +37,16 @@ axum-cloudevents = { path = "crates/axum-cloudevents" }
 # Observability - Tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.21"
+tracing-opentelemetry = "0.32"
 
 # Observability - OpenTelemetry
-opentelemetry = "0.20"
-opentelemetry_sdk = { version = "0.20", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.13", features = ["tonic"] }
-opentelemetry-semantic-conventions = "0.12"
+opentelemetry = "0.31"
+opentelemetry_sdk = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry-semantic-conventions = "0.31"
 
 # B3 Propagation (Critical for Knative)
-opentelemetry-zipkin = { version = "0.18", default-features = false, features = ["reqwest-client"] }
+opentelemetry-zipkin = { version = "0.31", default-features = false, features = ["reqwest-client"] }
 
 # Metrics
 metrics = "0.21"
@@ -71,7 +71,7 @@ thiserror = "1.0"
 anyhow = "1.0"
 
 [dev-dependencies]
-axum-test = "16"
+axum-test = "17"
 tokio-test = "0.4"
 {%- if features contains "s3" %}
 figment = { version = "0.10", features = ["test"] }

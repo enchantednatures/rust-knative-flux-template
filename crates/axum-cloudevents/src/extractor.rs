@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
 use serde::de::DeserializeOwned;
@@ -87,7 +86,6 @@ fn default_spec_version() -> String {
     "1.0".to_string()
 }
 
-#[async_trait]
 impl<S, T> FromRequest<S> for CloudEvent<T>
 where
     T: DeserializeOwned + Send,
