@@ -1,5 +1,6 @@
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Serialize;
+use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::state::AppState;
@@ -23,6 +24,7 @@ pub struct HealthResponse {
         (status = 200, description = "Service is alive", body = HealthResponse)
     )
 )]
+#[instrument(level = "debug")]
 pub async fn liveness() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "alive".into(),
@@ -45,6 +47,7 @@ pub async fn liveness() -> Json<HealthResponse> {
         (status = 503, description = "Service unavailable", body = HealthResponse)
     )
 )]
+#[instrument(level = "debug", skip(state))]
 pub async fn readiness(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, (StatusCode, Json<HealthResponse>)> {

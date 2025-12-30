@@ -238,6 +238,69 @@ tracing::error!(error = %e, "Operation failed");
 pub async fn get_user(/* ... */) -> Result<Json<User>, AppError> { }
 ```
 
+### Instrumentation with #[instrument]
+
+Use the `#[instrument]` macro from `tracing` to automatically create spans for function entry/exit:
+
+```rust
+use tracing::instrument;
+
+// Basic usage - auto-captures function name and parameters
+#[instrument]
+pub async fn process_data(id: String) -> Result<Data, AppError> {
+    // Span created automatically
+}
+
+// Skip complex parameters (State, large structs)
+#[instrument(skip(state, event))]
+pub async fn handler(
+    State(state): State<AppState>,
+    event: CloudEvent<T>,
+) -> Result<Response, AppError> { }
+
+// Extract specific fields from complex parameters
+#[instrument(
+    skip(event),
+    fields(
+        event_id = %event.id(),
+        event_type = %event.r#type()
+    )
+)]
+pub async fn handle_event(event: CloudEvent<T>) -> Response { }
+
+// Set custom trace level (default: info)
+#[instrument(level = "debug")]
+pub async fn health_check() -> bool { }
+
+// Auto-log errors on Result::Err
+#[instrument(err)]
+pub async fn fallible_operation() -> Result<T, AppError> { }
+
+// Record computed values in span
+#[instrument(fields(computed_key = tracing::field::Empty))]
+pub async fn storage_op() -> Result<(), AppError> {
+    let key = generate_key();
+    tracing              tracing::Span::current().record("computed_key", &key.as_str());
+    // ...
+}
+```
+
+**When to use `#[instrument]`:**
+- ✅ All public async functions (handlers, business logic)
+- ✅ Functions that represent logical operations
+- ✅ Any function you'd manually add entry/exit logging to
+
+**When NOT to use `#[instrument]`:**
+- ❌ `main()` and application lifecycle functions
+- ❌ Pure synchronous utility functions (unless complex)
+- ❌ Functions called in tight loops (performance impact)
+- ❌ Test functions
+
+**Keep explicit `tracing::` calls for:**
+- Progress logging within a function (debug/info events)
+- Error logging with additional context
+- Business-significant events (not just function entry/exit)
+
 ## Testing Patterns
 
 ```rust

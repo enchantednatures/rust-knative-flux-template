@@ -1,5 +1,6 @@
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::state::AppState;
@@ -33,13 +34,12 @@ pub struct HelloQuery {
         (status = 200, description = "Success", body = HelloResponse)
     )
 )]
+#[instrument(level = "debug", skip(_state, query))]
 pub async fn hello(
     State(_state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<HelloQuery>,
 ) -> Json<HelloResponse> {
     let name = query.name.unwrap_or_else(|| "World".into());
-
-    tracing::info!(name = %name, "Hello endpoint called");
 
     Json(HelloResponse {
         message: format!("Hello, {}!", name),

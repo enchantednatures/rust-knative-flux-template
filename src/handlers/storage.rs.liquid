@@ -5,6 +5,7 @@
 
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::{error::AppError, state::AppState};
@@ -42,6 +43,7 @@ pub struct StorageExampleResponse {
         (status = 500, description = "Storage operation failed")
     )
 )]
+#[instrument(skip(state), fields(s3_key = tracing::field::Empty), err)]
 pub async fn storage_example(
     State(state): State<AppState>,
 ) -> Result<(StatusCode, Json<StorageExampleResponse>), AppError> {
@@ -53,6 +55,7 @@ pub async fn storage_example(
     };
 
     let key = format!("test/{}.json", test_data.test_id);
+    tracing::Span::current().record("s3_key", &key.as_str());
     let json_bytes = serde_json::to_vec(&test_data)
         .map_err(|e| AppError::Internal(format!("Serialization failed: {}", e)))?;
     let write_size = json_bytes.len();
@@ -77,7 +80,7 @@ pub async fn storage_example(
     // Verify data integrity
     let verified = retrieved_data == test_data;
 
-    tracing::info!(
+    tracing::debug!(
         key = %key,
         verified = verified,
         "Read test data from S3"
@@ -90,7 +93,7 @@ pub async fn storage_example(
         .await
         .map_err(|e| AppError::Internal(format!("S3 delete failed: {}", e)))?;
 
-    tracing::info!(key = %key, "Cleaned up test file");
+    tracing::debug!(key = %key, "Cleaned up test file");
 
     Ok((
         StatusCode::OK,

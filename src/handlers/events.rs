@@ -1,6 +1,7 @@
 use axum::Json;
 use axum_cloudevents::CloudEvent;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 #[derive(Debug, Deserialize)]
 pub struct Ping {
@@ -13,15 +14,16 @@ pub struct Pong {
     pub event_id: String,
 }
 
-pub async fn handle_event(event: CloudEvent<Ping>) -> Json<Pong> {
-    tracing::info!(
+#[instrument(
+    skip(event),
+    fields(
         event_id = %event.id(),
         event_type = %event.r#type(),
         source = %event.source(),
-        message = %event.data.message,
-        "Received CloudEvent",
-    );
-
+        message = %event.data.message
+    )
+)]
+pub async fn handle_event(event: CloudEvent<Ping>) -> Json<Pong> {
     Json(Pong {
         reply: format!("pong: {}", event.data.message),
         event_id: event.id().to_string(),
