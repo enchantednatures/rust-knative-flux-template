@@ -1,35 +1,88 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# Port-Forward PostgreSQL Service
+#
+# Exposes PostgreSQL cluster on localhost:5432 for local development
+#
+# Usage:
+#   ./port-forward-postgres.sh [cluster-name] [namespace] [local-port]
+#
+# Arguments:
+#   cluster-name  - Name of PostgreSQL cluster (default: my-postgres-postgres)
+#   namespace     - Kubernetes namespace (default: default)
+#   local-port    - Local port to forward to (default: 5432)
+#
+# Examples:
+#   # Forward default cluster to localhost:5432
+#   ./port-forward-postgres.sh
+#
+#   # Forward specific cluster to localhost:6432
+#   ./port-forward-postgres.sh my-postgres-postgres default 6432
+#
+#   # Run in background
+#   ./port-forward-postgres.sh &
+#   export POSTGRES_HOST=localhost POSTGRES_PORT=5432
+
 set -euo pipefail
 
+# Source common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+source "${SCRIPT_DIR}/common.sh"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+# Default values
+CLUSTER_NAME="${1:-my-postgres-postgres}"
+NAMESPACE="${2:-default}"
+LOCAL_PORT="${3:-5432}"
+SERVICE_NAME="${CLUSTER_NAME}-rw"  # Use read-write service
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+info "Setting up port-forward for PostgreSQL"
+info "Cluster: $CLUSTER_NAME"
+info "Namespace: $NAMESPACE"
+info "Service: $SERVICE_NAME"
+info "Local port: $LOCAL_PORT"
+info ""
+
+# ============================================================================
+# Verify prerequisites
+# ============================================================================
+
+# Check if service exists
+if ! kubectl get service "$SERVICE_NAME" -n "$NAMESPACE" &> /dev/null; then
+    error "Service not found: $SERVICE_NAME in namespace $NAMESPACE"
+    info "Make sure the PostgreSQL cluster is deployed first:"
+    info "  ./deploy-postgres.sh"
+    exit 1
 fi
 
-export KUBECONFIG="$KUBECONFIG_PATH"
-
-# Check if PostgreSQL cluster exists
-if ! kubectl get cluster postgres-app -n default &>/dev/null; then
-  echo -e "${RED}✗ Error: PostgreSQL cluster 'postgres-app' not found${NC}"
-  echo "Run './scripts/dev/deploy-postgres.sh' first"
-  exit 1
+# Check if port is available
+if lsof -Pi :$LOCAL_PORT -sTCP:LISTEN -t >/dev/null ; then
+    warn "Port $LOCAL_PORT is already in use"
+    info "The port-forward may fail. You can use a different port:"
+    info "  ./port-forward-postgres.sh $CLUSTER_NAME $NAMESPACE $((LOCAL_PORT + 1))"
 fi
 
-echo -e "${GREEN}→${NC} Setting up port-forward to PostgreSQL..."
-echo ""
-echo "Primary (read-write) will be available at: localhost:5432"
-echo "Press Ctrl+C to stop"
-echo ""
+# ============================================================================
+# Setup port-forward
+# ============================================================================
 
-kubectl port-forward -n default svc/postgres-app-rw 5432:5432
+info "Starting port-forward..."
+info "Press Ctrl+C to stop"
+info ""
+info "Connection details for client:"
+info "  Host:     localhost"
+info "  Port:     $LOCAL_PORT"
+info "  Username: app"
+info "  Database: app"
+info ""
+info "Connect with:"
+info "  psql -h localhost -p $LOCAL_PORT -U app -d app"
+info ""
+
+# Start port-forward with error handling
+if ! kubectl port-forward svc/"$SERVICE_NAME" -n "$NAMESPACE" "$LOCAL_PORT:5432"; then
+    error "Port-forward failed"
+    info "Debug: Check service status with:"
+    info "  kubectl get svc $SERVICE_NAME -n $NAMESPACE"
+    info "  ./check-postgres-status.sh"
+    exit 1
+fi

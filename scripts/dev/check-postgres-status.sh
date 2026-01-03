@@ -1,112 +1,202 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# Check PostgreSQL Cluster Status and Health
+#
+# Provides comprehensive status information for a PostgreSQL cluster including:
+# - Cluster health and readiness
+# - Pod status and replication
+# - Instance information and roles
+# - Connection statistics
+# - Storage usage
+#
+# Usage:
+#   ./check-postgres-status.sh [cluster-name] [namespace]
+#
+# Arguments:
+#   cluster-name  - Name of PostgreSQL cluster (default: my-postgres-postgres)
+#   namespace     - Kubernetes namespace (default: default)
+
 set -euo pipefail
 
+# Source common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+source "${SCRIPT_DIR}/common.sh"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Default values
+CLUSTER_NAME="${1:-my-postgres-postgres}"
+NAMESPACE="${2:-default}"
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+info "Checking PostgreSQL cluster status: $CLUSTER_NAME"
+info "Namespace: $NAMESPACE"
+info ""
+
+# ============================================================================
+# Verify cluster exists
+# ============================================================================
+
+if ! kubectl get cluster "$CLUSTER_NAME" -n "$NAMESPACE" &> /dev/null; then
+    error "Cluster not found: $CLUSTER_NAME in namespace $NAMESPACE"
+    exit 1
 fi
 
-export KUBECONFIG="$KUBECONFIG_PATH"
+# ============================================================================
+# Cluster Status
+# ============================================================================
 
-echo -e "${BLUE}=== PostgreSQL Cluster Status ===${NC}"
-echo ""
+section "CLUSTER STATUS"
 
-# Check if cluster exists
-if ! kubectl get cluster postgres-app -n default &>/dev/null; then
-  echo -e "${RED}✗ PostgreSQL cluster 'postgres-app' not found${NC}"
-  echo "Run './scripts/dev/deploy-postgres.sh' to deploy"
-  exit 1
-fi
+kubectl get cluster "$CLUSTER_NAME" -n "$NAMESPACE" -o wide
 
-# Get cluster status
-echo -e "${YELLOW}Cluster Overview:${NC}"
-kubectl get cluster postgres-app -n default
-echo ""
+info ""
+info "Detailed cluster information:"
+kubectl describe cluster "$CLUSTER_NAME" -n "$NAMESPACE" | \
+    grep -E "Status:|Instances:|Phase:|Message:|Current Primary:|Ready:" | \
+    sed 's/^/  /'
 
-# Get detailed cluster info
-echo -e "${YELLOW}Cluster Details:${NC}"
-PHASE=$(kubectl get cluster postgres-app -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-INSTANCES=$(kubectl get cluster postgres-app -n default -o jsonpath='{.status.instances}' 2>/dev/null || echo "0")
-READY=$(kubectl get cluster postgres-app -n default -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
-PRIMARY=$(kubectl get cluster postgres-app -n default -o jsonpath='{.status.currentPrimary}' 2>/dev/null || echo "None")
-PG_VERSION=$(kubectl get cluster postgres-app -n default -o jsonpath='{.status.currentPrimaryTimestamp}' 2>/dev/null || echo "Unknown")
+# ============================================================================
+# Pod Status
+# ============================================================================
 
-echo "  Phase: $PHASE"
-echo "  Primary: $PRIMARY"
-echo "  Instances: $READY/$INSTANCES ready"
-echo ""
+section "POD STATUS"
 
-# Get pod status
-echo -e "${YELLOW}Pod Status:${NC}"
-kubectl get pods -l cnpg.io/cluster=postgres-app -n default -o wide
-echo ""
+PODS=$(kubectl get pods -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+    -o wide)
 
-# Get service endpoints
-echo -e "${YELLOW}Service Endpoints:${NC}"
-kubectl get svc -l cnpg.io/cluster=postgres-app -n default
-echo ""
-
-# Get PVC status
-echo -e "${YELLOW}Storage (PVC):${NC}"
-kubectl get pvc -l cnpg.io/cluster=postgres-app -n default
-echo ""
-
-# Check for backups
-echo -e "${YELLOW}Backups:${NC}"
-if kubectl get backup -n default &>/dev/null; then
-  kubectl get backup -l cnpg.io/cluster=postgres-app -n default 2>/dev/null || echo "  No backups found"
+if [[ -z "$PODS" ]]; then
+    warn "No pods found for cluster $CLUSTER_NAME"
 else
-  echo "  Backup CRD not available"
+    kubectl get pods -n "$NAMESPACE" \
+        -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+        -o wide
 fi
-echo ""
 
-# Check replication lag (if replicas exist)
-if [[ "$INSTANCES" -gt 1 ]] && [[ "$READY" -gt 1 ]]; then
-  echo -e "${YELLOW}Replication Status:${NC}"
-  
-  # Get primary pod name
-  PRIMARY_POD=$(kubectl get pods -l cnpg.io/cluster=postgres-app,role=primary -n default -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-  
-  if [[ -n "$PRIMARY_POD" ]]; then
-    echo "  Checking replication lag from primary: $PRIMARY_POD"
+# ============================================================================
+# Replica Status
+# ============================================================================
+
+section "REPLICATION STATUS"
+
+# Get primary pod
+PRIMARY_POD=$(kubectl get pods -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME",cnpg.io/podRole=primary \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+if [[ -z "$PRIMARY_POD" ]]; then
+    warn "No primary pod found"
+else
+    info "Primary: $PRIMARY_POD"
     
-    # Query replication status
-    kubectl exec -n default "$PRIMARY_POD" -- psql -U postgres -c "SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication;" 2>/dev/null || echo "  Unable to query replication status"
-  else
-    echo "  Primary pod not found"
-  fi
-  echo ""
+    # Try to get replication status
+    if kubectl exec -n "$NAMESPACE" "$PRIMARY_POD" -- \
+        psql -U postgres -d postgres -c \
+        "SELECT slot_name, slot_type, active, restart_lsn FROM pg_replication_slots;" \
+        2>/dev/null || true; then
+        :
+    else
+        warn "Could not query replication slots (database may not be ready yet)"
+    fi
 fi
 
-# Connection info
-echo -e "${YELLOW}Connection Information:${NC}"
-echo "  Primary (RW): postgres-app-rw.default.svc.cluster.local:5432"
-echo "  Replicas (RO): postgres-app-ro.default.svc.cluster.local:5432"
-echo ""
-echo "  Get superuser password:"
-echo "    kubectl get secret postgres-app-superuser -n default -o jsonpath='{.data.password}' | base64 -d"
-echo ""
-echo "  Port forward to localhost:"
-echo "    ./scripts/dev/port-forward-postgres.sh"
-echo ""
+# Get replica pods
+REPLICA_PODS=$(kubectl get pods -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME",cnpg.io/podRole=replica \
+    -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
 
-# Health check
-if [[ "$PHASE" == "Cluster in healthy state" ]] && [[ "$READY" == "$INSTANCES" ]]; then
-  echo -e "${GREEN}✓ Cluster is healthy${NC}"
-  exit 0
+if [[ -n "$REPLICA_PODS" ]]; then
+    info "Replicas: $REPLICA_PODS"
 else
-  echo -e "${YELLOW}⚠ Cluster is not fully healthy${NC}"
-  exit 1
+    info "No replica pods found (cluster may have 1 instance)"
 fi
+
+# ============================================================================
+# Services
+# ============================================================================
+
+section "SERVICES"
+
+RW_SERVICE="${CLUSTER_NAME}-rw"
+RO_SERVICE="${CLUSTER_NAME}-ro"
+R_SERVICE="${CLUSTER_NAME}-r"
+
+for svc in $RW_SERVICE $RO_SERVICE $R_SERVICE; do
+    if kubectl get service "$svc" -n "$NAMESPACE" &> /dev/null; then
+        info "Service: $svc"
+        CLUSTER_IP=$(kubectl get svc "$svc" -n "$NAMESPACE" -o jsonpath='{.spec.clusterIP}')
+        PORT=$(kubectl get svc "$svc" -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].port}')
+        info "  Endpoint: $CLUSTER_IP:$PORT"
+    fi
+done
+
+# ============================================================================
+# Storage
+# ============================================================================
+
+section "STORAGE"
+
+kubectl get persistentvolumeclaims -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+    -o wide 2>/dev/null || info "No persistent volume claims found"
+
+# ============================================================================
+# Backups
+# ============================================================================
+
+section "BACKUP STATUS"
+
+# Check for ScheduledBackup
+SCHEDULED_BACKUP="${CLUSTER_NAME}-daily-backup"
+if kubectl get scheduledbackup "$SCHEDULED_BACKUP" -n "$NAMESPACE" &> /dev/null 2>&1; then
+    info "Scheduled backup found: $SCHEDULED_BACKUP"
+    kubectl get scheduledbackup "$SCHEDULED_BACKUP" -n "$NAMESPACE" -o wide
+else
+    info "No scheduled backup found for this cluster"
+fi
+
+# Check for recent backups
+info ""
+info "Recent backups:"
+kubectl get backup -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+    --sort-by=.metadata.creationTimestamp \
+    -o wide 2>/dev/null | tail -5 || info "  No backups found"
+
+# ============================================================================
+# Events
+# ============================================================================
+
+section "RECENT EVENTS"
+
+kubectl get events -n "$NAMESPACE" \
+    --field-selector involvedObject.kind=Cluster,involvedObject.name="$CLUSTER_NAME" \
+    --sort-by='.lastTimestamp' | tail -10 || true
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+section "HEALTH SUMMARY"
+
+# Count ready pods
+TOTAL_PODS=$(kubectl get pods -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+    --no-headers | wc -l)
+
+READY_PODS=$(kubectl get pods -n "$NAMESPACE" \
+    -l postgresql.cnpg.io/cluster="$CLUSTER_NAME" \
+    -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | \
+    grep -c "True" || echo "0")
+
+info "Total pods: $TOTAL_PODS"
+info "Ready pods: $READY_PODS"
+
+if [[ "$TOTAL_PODS" -eq "$READY_PODS" && "$TOTAL_PODS" -gt 0 ]]; then
+    success "✓ Cluster is healthy"
+else
+    warn "⚠ Cluster is not yet healthy (waiting for pods)"
+fi
+
+info ""
+info "For more details, run:"
+info "  kubectl describe cluster $CLUSTER_NAME -n $NAMESPACE"
+info "  kubectl logs -n $NAMESPACE [pod-name]"
