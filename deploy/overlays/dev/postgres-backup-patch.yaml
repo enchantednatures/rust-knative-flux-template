@@ -1,0 +1,38 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-app-daily-backup
+spec:
+  # Development backup schedule - 3 AM UTC daily
+  # (dev environment, less critical timing)
+  schedule: "0 3 * * *"
+
+---
+apiVersion: objectstorage.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-backup-store
+  namespace: default
+spec:
+  configuration:
+    destinationPath: s3://postgres-backups/dev/
+    s3:
+      # MinIO endpoint for development
+      endpointURL: http://minio.minio.svc.cluster.local:9000
+      region: us-east-1
+      s3Credentials:
+        accessKeyId:
+          name: object-storage-secret
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: object-storage-secret
+          key: SECRET_ACCESS_KEY
+  
+  # Development: shorter retention (7 days)
+  retentionPolicy:
+    base: 7      # Keep base backups for 7 days
+    wal: 3       # Keep WAL files for 3 days
+  
+  # Development: faster compression (gzip)
+  compressionAlgorithm: gzip
+  walCompressionAlgorithm: gzip

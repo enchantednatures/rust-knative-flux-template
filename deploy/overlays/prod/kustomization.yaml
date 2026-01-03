@@ -8,6 +8,7 @@ resources:
 
 patchesStrategicMerge:
   - postgres-cluster-patch.yaml
+  - postgres-backup-patch.yaml
 
 # Note: Create and encrypt object-storage-secret.yaml with SOPS:
 # 1. cp ../../base/object-storage-secret.yaml.example object-storage-secret.yaml
