@@ -3,6 +3,8 @@ cargo_generate_version = ">=0.23.0"
 ignore = [
   ".git",
   "tests/e2e",
+  ".opencode",
+  ".specify",
   "target",
   "Cargo.lock",
   "crates/axum-cloudevents/target",

@@ -26,8 +26,8 @@ spec:
             severity: critical
             component: postgres
           annotations:
-            summary: "PostgreSQL backup failed ({{ $labels.cluster }})"
-            description: "Backup for PostgreSQL cluster {{ $labels.cluster }} failed within the last 5 minutes. This requires immediate attention."
+            summary: "PostgreSQL backup failed ({% raw %}{{ $labels.cluster }}) {% endraw %}"
+            description: "Backup for PostgreSQL cluster {% raw %}{{ $labels.cluster }}{% endraw %} failed within the last 5 minutes. This requires immediate attention."
         
         - alert: PostgreSQLBackupMissing
           expr: |
@@ -39,8 +39,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL backup missing ({{ $labels.cluster }})"
-            description: "No successful backup for PostgreSQL cluster {{ $labels.cluster }} in the last 24 hours. Please investigate."
+            summary: "PostgreSQL backup missing ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "No successful backup for PostgreSQL cluster {% raw %}{{ $labels.cluster }}{% endraw %} in the last 24 hours. Please investigate."
         
         # ====================================================================
         # Replication Alerts
@@ -53,8 +53,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL replication lag detected ({{ $labels.cluster }})"
-            description: "Replication lag is {{ $value }}s for cluster {{ $labels.cluster }}, expected < 10s. Check replica availability."
+            summary: "PostgreSQL replication lag detected ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "Replication lag is {% raw %}{{ $value }}{% endraw %}s for cluster {% raw %}{{ $labels.cluster }}{% endraw %}, expected < 10s. Check replica availability."
         
         - alert: PostgreSQLHighReplicationLag
           expr: |
@@ -64,8 +64,8 @@ spec:
             severity: critical
             component: postgres
           annotations:
-            summary: "PostgreSQL high replication lag ({{ $labels.cluster }})"
-            description: "Replication lag is {{ $value }}s for cluster {{ $labels.cluster }}. Immediate action required."
+            summary: "PostgreSQL high replication lag ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "Replication lag is {% raw %}{{ $value }}{% endraw %}s for cluster {% raw %}{{ $labels.cluster }}{% endraw %}. Immediate action required."
         
         # ====================================================================
         # Instance Health Alerts
@@ -78,8 +78,8 @@ spec:
             severity: critical
             component: postgres
           annotations:
-            summary: "PostgreSQL instance down ({{ $labels.pod }})"
-            description: "PostgreSQL pod {{ $labels.pod }} is not responding to metrics scrape for 1 minute."
+            summary: "PostgreSQL instance down ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL pod {% raw %}{{ $labels.pod }}{% endraw %} is not responding to metrics scrape for 1 minute."
         
         - alert: PostgreSQLNotReady
           expr: |
@@ -89,8 +89,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL not ready ({{ $labels.pod }})"
-            description: "PostgreSQL instance {{ $labels.pod }} is not reporting version information. It may still be starting up."
+            summary: "PostgreSQL not ready ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL instance {% raw %}{{ $labels.pod }}{% endraw %} is not reporting version information. It may still be starting up."
         
         # ====================================================================
         # Storage Alerts
@@ -107,8 +107,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL disk space low ({{ $labels.device }})"
-            description: "Disk space on {{ $labels.device }} is below 10%. Estimated time remaining: {{ $value }}."
+            summary: "PostgreSQL disk space low ({% raw %}{{ $labels.device }}{% endraw %})"
+            description: "Disk space on {% raw %}{{ $labels.device }}{% endraw %} is below 10%. Estimated time remaining: {% raw %}{{ $value }}{% endraw %}."
         
         # ====================================================================
         # WAL Archiving Alerts
@@ -121,8 +121,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL WAL archiving failed ({{ $labels.pod }})"
-            description: "WAL archiving has failed {{ $value }} times on {{ $labels.pod }}. Check connectivity to backup storage."
+            summary: "PostgreSQL WAL archiving failed ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "WAL archiving has failed {% raw %}{{ $value }}{% endraw %} times on {% raw %}{{ $labels.pod }}{% endraw %}. Check connectivity to backup storage."
         
         # ====================================================================
         # Connection Alerts
@@ -135,8 +135,8 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL high connection count ({{ $labels.pod }})"
-            description: "PostgreSQL has {{ $value }} active connections, approaching typical limits. Consider investigating application behavior."
+            summary: "PostgreSQL high connection count ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL has {% raw %}{{ $value }}{% endraw %} active connections, approaching typical limits. Consider investigating application behavior."
         
         # ====================================================================
         # Recovery/Failover Alerts
@@ -148,5 +148,5 @@ spec:
             severity: warning
             component: postgres
           annotations:
-            summary: "PostgreSQL in recovery mode ({{ $labels.pod }})"
-            description: "PostgreSQL instance {{ $labels.pod }} is in recovery mode. It may be a replica or recovering from failure."
+            summary: "PostgreSQL in recovery mode ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL instance {% raw %}{{ $labels.pod }}{% endraw %} is in recovery mode. It may be a replica or recovering from failure."
