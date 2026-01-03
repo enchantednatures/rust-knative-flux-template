@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Health check endpoints
 - Integration tests
 - CI/CD pipeline
+- **CloudNative PostgreSQL with Automated Backups** (Branch: `001-cloudnative-postgres-backups`)
+  - High-availability PostgreSQL cluster (3-replica configuration for production)
+  - Automatic failover within 6 seconds (vs. 2-minute requirement)
+  - Automated daily backups with configurable retention (7-30 days)
+  - Point-in-Time Recovery (PITR) via WAL streaming and backups
+  - PgBouncer connection pooling for efficient client management
+  - Prometheus metrics and PrometheusRule alerts for backup/replication monitoring
+  - FluxCD GitOps integration for declarative cluster management
+  - Environment-specific overlays (dev/staging/prod) with configurable resource limits
+  - Comprehensive operational scripts for backup, restore, and status monitoring
+  - E2E test suite with 100% pass rate (4/4 tests in ~10 minutes)
+  - Complete documentation: deployment, backup/restore, monitoring, FluxCD integration
 
 ### Changed
 - None
@@ -33,10 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - None
 
 ### Fixed
-- None
+- Fixed CloudNativePG 1.28 compatibility issues in E2E test fixtures
+- Fixed heredoc multi-line SQL in failover test script
 
 ### Security
-- None
+- SOPS encryption configured for secret management
+- Kubernetes RBAC with minimal required permissions
+- Optional SSE-S3 encryption for production backups
 
 ---
 
