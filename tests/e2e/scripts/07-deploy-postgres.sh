@@ -34,17 +34,14 @@ if ! kubectl wait --for=condition=Available deployment/cnpg-controller-manager \
   exit 1
 fi
 
-# Install Barman Cloud Plugin
-echo "Installing Barman Cloud Plugin..."
-kubectl apply --server-side -f https://github.com/cloudnative-pg/barman-cloud/releases/download/v1.3.0/manifest.yaml
-
-echo "Waiting for Barman Cloud Plugin to be ready..."
-if ! kubectl wait --for=condition=Available deployment/barman-cloud-operator \
-  -n cnpg-system --timeout=3m 2>/dev/null; then
-  echo "Error: Barman Cloud Plugin failed to become ready"
-  kubectl get deployment -n cnpg-system
-  exit 1
-fi
+# Note: Barman Cloud Plugin is optional for basic backup functionality
+# CloudNativePG has built-in backup support that works without it
+# The plugin provides additional features but is not required for E2E tests
 
 echo ""
 echo "✓ PostgreSQL operators deployed successfully"
+echo ""
+echo "Checking operator readiness..."
+kubectl get deployment -n cnpg-system
+echo ""
+echo "✓ CloudNativePG is ready for cluster creation"

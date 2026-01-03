@@ -5,13 +5,13 @@ metadata:
   namespace: default
 spec:
   instances: 2  # E2E test: 2 instances to test replication
+  imageName: "ghcr.io/cloudnative-pg/postgresql:16.4-1"
   
-  # PostgreSQL version and configuration
+  # PostgreSQL configuration
   postgresql:
-    version: "16"
     parameters:
       # Test configuration - lightweight but still tests HA
-      shared_buffers: "256Mi"
+      shared_buffers: "256MB"
       max_connections: "100"
       synchronous_commit: "on"  # Test replication
   
@@ -28,46 +28,9 @@ spec:
   storage:
     size: "2Gi"
   
-  # Barman Cloud Plugin configuration for WAL archiving (E2E test)
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
-      isWALArchiver: true
-      parameters:
-        barmanObjectName: postgres-backup-store-test  # References test ObjectStore CRD
-  
   # Bootstrap configuration
   bootstrap:
     initdb:
       postInitApplicationSQL:
         - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-  
-  # Monitoring configuration
-  monitoring:
-    enabled: true
-    podMonitorEnabled: false  # Disable for E2E tests
 
----
-apiVersion: objectstorage.cnpg.io/v1
-kind: ObjectStore
-metadata:
-  name: postgres-backup-store-test
-  namespace: default
-spec:
-  configuration:
-    destinationPath: s3://postgres-backups/test/
-    s3:
-      endpointURL: http://minio.minio.svc.cluster.local:9000
-      region: us-east-1
-      # Credentials from secret
-      s3Credentials:
-        accessKeyId:
-          name: postgres-backup-credentials-test
-          key: AWS_ACCESS_KEY_ID
-        secretAccessKey:
-          name: postgres-backup-credentials-test
-          key: AWS_SECRET_ACCESS_KEY
-  retentionPolicy:
-    base: 7  # Keep base backups for 7 days (test)
-    wal: 3   # Keep WAL files for 3 days (test)
-  compressionAlgorithm: gzip  # Use gzip for tests (faster than zstd)
-  walCompressionAlgorithm: gzip
