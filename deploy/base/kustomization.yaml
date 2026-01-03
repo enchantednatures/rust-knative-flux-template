@@ -8,6 +8,8 @@ resources:
   - postgres-cluster.yaml
   - postgres-backup.yaml
   # - postgres-pooler.yaml  # Temporarily disabled due to CRD size issues in K8s 1.35+
+  - postgres-podmonitor.yaml
+  - postgres-alerts.yaml
 
 # Note: object-storage-secret.yaml is created from object-storage-secret.yaml.example
 # and encrypted with SOPS, so it's managed separately per environment
