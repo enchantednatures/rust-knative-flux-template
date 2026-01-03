@@ -157,15 +157,18 @@ echo "✓ Zero data loss - all ${FINAL_DATA_COUNT} rows preserved"
 # Insert new data to verify write capability
 echo ""
 echo "Testing write capability on new primary..."
-kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres <<EOF
-  INSERT INTO test_table (data) VALUES ('post-failover-data');
-EOF
+if kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -c "INSERT INTO test_table (data) VALUES ('post-failover-data');" &>/dev/null; then
+  echo "✓ Insert command executed"
+else
+  echo "✗ Error: Insert command failed"
+  exit 1
+fi
 
-NEW_DATA_COUNT=$(kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -t -c "SELECT COUNT(*) FROM test_table;")
+NEW_DATA_COUNT=$(kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -t -c "SELECT COUNT(*) FROM test_table;" 2>/dev/null || echo "$FINAL_DATA_COUNT")
 NEW_DATA_COUNT=$(echo "$NEW_DATA_COUNT" | tr -d ' ')
 
 if [[ "$NEW_DATA_COUNT" -le "$FINAL_DATA_COUNT" ]]; then
-  echo "✗ Error: Failed to insert data after failover"
+  echo "✗ Error: Data count did not increase after insert (was ${FINAL_DATA_COUNT}, now ${NEW_DATA_COUNT})"
   exit 1
 fi
 echo "✓ Successfully wrote data to new primary (${NEW_DATA_COUNT} rows total)"
