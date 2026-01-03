@@ -1,11 +1,11 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: postgres-app-daily-backup
-  namespace: default
+  name: {{ project_name }}-postgres-daily-backup
+  namespace: {{ target_namespace }}
 spec:
   # Backup schedule (cron format, UTC timezone)
-  schedule: "0 2 * * *"  # Daily at 2:00 AM UTC
+  schedule: "{{ backup_schedule }}"  # Customizable via template
   
   # Backup method - MUST use plugin for Barman Cloud Plugin
   method: plugin
@@ -14,11 +14,11 @@ spec:
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
     parameters:
-      barmanObjectName: postgres-backup-store  # References ObjectStore CRD
+      barmanObjectName: {{ project_name }}-postgres-backup-store  # References ObjectStore CRD
   
   # Target cluster
   cluster:
-    name: postgres-app
+    name: {{ project_name }}-postgres
   
   # Backup target selection (prefer standby to reduce load on primary)
   target: prefer-standby

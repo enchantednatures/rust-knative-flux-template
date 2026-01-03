@@ -38,7 +38,7 @@ kubectl apply -k deploy/overlays/dev/
 psql postgresql://app:PASSWORD@localhost:5432/app
 
 # Or via kubectl
-kubectl exec -it postgres-app-1 -- psql -U app -d app
+kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 ```
 
 ### 3. Create a Backup
@@ -55,7 +55,7 @@ kubectl exec -it postgres-app-1 -- psql -U app -d app
 
 ```bash
 # Restore to specific backup
-./scripts/dev/restore-from-backup.sh -b postgres-app-backup-1704326400
+./scripts/dev/restore-from-backup.sh -b {{ project_name }}-postgres-backup-1704326400
 
 # Point-in-time restore
 ./scripts/dev/restore-from-backup.sh -t "2024-01-03 15:30:00"
@@ -103,8 +103,8 @@ kubectl exec -it postgres-app-1 -- psql -U app -d app
 
 3. **Verify deployment**:
    ```bash
-   kubectl get cluster postgres-app -o wide
-   kubectl get pods -l postgresql=postgres-app -o wide
+   kubectl get cluster {{ project_name }}-postgres -o wide
+   kubectl get pods -l postgresql={{ project_name }}-postgres -o wide
    ```
 
 ## Configuration
@@ -168,26 +168,26 @@ resources:
 
 ```bash
 # Check cluster status
-kubectl get cluster postgres-app
+kubectl get cluster {{ project_name }}-postgres
 
 # Detailed status
-kubectl describe cluster postgres-app
+kubectl describe cluster {{ project_name }}-postgres
 
 # Check instance status
-kubectl get pods -l postgresql=postgres-app
+kubectl get pods -l postgresql={{ project_name }}-postgres
 
 # Streaming replication status
-kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
 ```
 
 ### Scaling
 
 ```bash
 # Scale to 2 instances
-kubectl patch cluster postgres-app --type='json' -p='[{"op": "replace", "path": "/spec/instances", "value":2}]'
+kubectl patch cluster {{ project_name }}-postgres --type='json' -p='[{"op": "replace", "path": "/spec/instances", "value":2}]'
 
 # Verify scaling
-kubectl get pods -l postgresql=postgres-app --watch
+kubectl get pods -l postgresql={{ project_name }}-postgres --watch
 ```
 
 ### Backup Operations
@@ -265,14 +265,14 @@ Monitor failovers:
 kubectl get events -n default --sort-by='.lastTimestamp' | tail -20
 
 # Check cluster logs for failover
-kubectl logs postgres-app-1 | grep -i "failover\|promote"
+kubectl logs {{ project_name }}-postgres-1 | grep -i "failover\|promote"
 ```
 
 #### Manual Failover
 
 ```bash
 # Delete primary pod (forces failover)
-kubectl delete pod postgres-app-1
+kubectl delete pod {{ project_name }}-postgres-1
 
 # Verify new primary elected
 ./scripts/dev/check-postgres-status.sh
@@ -296,7 +296,7 @@ See [POSTGRES_MONITORING.md](POSTGRES_MONITORING.md) for:
 # Rolling restarts with no downtime
 
 # Trigger upgrade (optional, automatic on pod restart)
-kubectl rollout restart statefulset postgres-app
+kubectl rollout restart statefulset {{ project_name }}-postgres
 ```
 
 #### Major Version Upgrade (e.g., 15 → 16)
@@ -314,17 +314,17 @@ kubectl rollout restart statefulset postgres-app
 
 ```bash
 # Check cluster status
-kubectl get cluster postgres-app
-kubectl describe cluster postgres-app
+kubectl get cluster {{ project_name }}-postgres
+kubectl describe cluster {{ project_name }}-postgres
 
 # Check operator logs
 kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system -f
 
 # Check pod events
-kubectl describe pod postgres-app-1
+kubectl describe pod {{ project_name }}-postgres-1
 
 # Check pod logs
-kubectl logs postgres-app-1
+kubectl logs {{ project_name }}-postgres-1
 ```
 
 ### Pod Stuck in Pending
@@ -340,17 +340,17 @@ kubectl top nodes
 kubectl get nodes
 
 # Increase PVC size if needed
-kubectl patch pvc postgres-app-1 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'
+kubectl patch pvc {{ project_name }}-postgres-1 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'
 ```
 
 ### High Replication Lag
 
 ```bash
 # Check replication status
-kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
 
 # Monitor lag in real-time
-watch -n 5 'kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT client_addr, write_lag, flush_lag, replay_lag FROM pg_stat_replication;"'
+watch -n 5 'kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT client_addr, write_lag, flush_lag, replay_lag FROM pg_stat_replication;"'
 
 # Causes and solutions:
 # - Primary load: Increase primary resources or connection pool
@@ -370,7 +370,7 @@ kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | grep -i "
 
 # Check object storage connectivity
 # For MinIO:
-kubectl exec postgres-app-1 -- s3cmd ls s3://postgres-backups/
+kubectl exec {{ project_name }}-postgres-1 -- s3cmd ls s3://postgres-backups/
 
 # Check credentials secret
 kubectl get secret object-storage-secret -o jsonpath='{.data}' | base64 -d
@@ -380,11 +380,11 @@ kubectl get secret object-storage-secret -o jsonpath='{.data}' | base64 -d
 
 ```bash
 # Test connectivity from pod
-kubectl exec -it postgres-app-1 -- psql -U postgres -d postgres -c "SELECT 1;"
+kubectl exec -it {{ project_name }}-postgres-1 -- psql -U postgres -d postgres -c "SELECT 1;"
 
 # Check service endpoints
-kubectl get endpoints postgres-app-rw
-kubectl get endpoints postgres-app-ro
+kubectl get endpoints {{ project_name }}-postgres-rw
+kubectl get endpoints {{ project_name }}-postgres-ro
 
 # Port-forward for local testing
 ./scripts/dev/port-forward-postgres.sh
@@ -397,13 +397,13 @@ psql postgresql://app:PASSWORD@localhost:5432/app
 
 ```bash
 # Check slow queries (requires log_min_duration_statement < query_time)
-kubectl exec postgres-app-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;"
 
 # Check table sizes
-kubectl exec postgres-app-1 -- psql -U postgres -d app -c "SELECT tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) FROM pg_tables WHERE schemaname='public' ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) FROM pg_tables WHERE schemaname='public' ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Check index usage
-kubectl exec postgres-app-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_user_indexes WHERE idx_scan = 0;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_user_indexes WHERE idx_scan = 0;"
 ```
 
 ## Advanced Topics
@@ -439,7 +439,7 @@ Monitor WAL archiving:
 
 ```bash
 # Check WAL archiving status
-kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT * FROM pg_stat_archiver;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_archiver;"
 
 # List archived WAL files
 aws s3 ls s3://postgres-backups/wal/ --recursive
@@ -451,10 +451,10 @@ For applications needing logical replication:
 
 ```bash
 # Create replication slot
-kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT * FROM pg_create_physical_replication_slot('slot_name');"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_create_physical_replication_slot('slot_name');"
 
 # Monitor replication slot
-kubectl exec postgres-app-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication_slots;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication_slots;"
 ```
 
 ### PITR Window
@@ -486,7 +486,7 @@ WAL archiving enables point-in-time recovery to any timestamp within the WAL ret
    spec:
      podSelector:
        matchLabels:
-         postgresql: postgres-app
+         postgresql: {{ project_name }}-postgres
      policyTypes:
        - Ingress
      ingress:

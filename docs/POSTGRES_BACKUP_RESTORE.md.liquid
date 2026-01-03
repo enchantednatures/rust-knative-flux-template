@@ -109,8 +109,8 @@ credentials:
 ./scripts/dev/create-backup.sh
 
 # Output:
-# Creating manual backup: postgres-app-backup-1704326400
-# Backup job created: postgres-app-backup-1704326400
+# Creating manual backup: {{ project_name }}-postgres-backup-1704326400
+# Backup job created: {{ project_name }}-postgres-backup-1704326400
 # Waiting for backup to complete...
 # ✓ Backup completed successfully!
 ```
@@ -123,11 +123,11 @@ kubectl apply -f - <<EOF
 apiVersion: postgresql.cnpg.io/v1
 kind: Backup
 metadata:
-  name: postgres-app-backup-before-upgrade
-  namespace: default
+  name: {{ project_name }}-postgres-backup-before-upgrade
+  namespace: {{ target_namespace }}
 spec:
   cluster:
-    name: postgres-app
+    name: {{ project_name }}-postgres
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
@@ -137,8 +137,8 @@ spec:
 EOF
 
 # Monitor
-kubectl get backup postgres-app-backup-before-upgrade -w
-kubectl describe backup postgres-app-backup-before-upgrade
+kubectl get backup {{ project_name }}-postgres-backup-before-upgrade -w
+kubectl describe backup {{ project_name }}-postgres-backup-before-upgrade
 ```
 
 ### Check Backup Status
@@ -150,11 +150,11 @@ kubectl describe backup postgres-app-backup-before-upgrade
 # Output:
 # === PostgreSQL Scheduled Backups ===
 # NAME                           SCHEDULE     CLUSTER         SUSPEND
-# postgres-app-daily-backup      0 2 * * *    postgres-app    False
+# {{ project_name }}-postgres-daily-backup      0 2 * * *    {{ project_name }}-postgres    False
 #
 # === PostgreSQL Manual Backups ===
 # NAME                                  PHASE       STARTTIME             ENDTIME
-# postgres-app-backup-1704326400       completed   2024-01-03T16:30:45Z  2024-01-03T16:42:22Z
+# {{ project_name }}-postgres-backup-1704326400       completed   2024-01-03T16:30:45Z  2024-01-03T16:42:22Z
 ```
 
 ### List Backups in Object Storage
@@ -191,7 +191,7 @@ kubectl get schedulebackup -A
 watch kubectl get backup -A
 
 # Check next scheduled backup time
-kubectl get schedulebackup postgres-app-daily-backup -o jsonpath='{.status.lastScheduleTime}'
+kubectl get schedulebackup {{ project_name }}-postgres-daily-backup -o jsonpath='{.status.lastScheduleTime}'
 
 # List recent backup executions
 kubectl get backup --sort-by='.metadata.creationTimestamp' -o wide
@@ -201,15 +201,15 @@ kubectl get backup --sort-by='.metadata.creationTimestamp' -o wide
 
 ```bash
 # Change backup time to 1 AM
-kubectl patch schedulebackup postgres-app-daily-backup \
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
   -p '{"spec":{"schedule":"0 1 * * *"}}'
 
 # Disable scheduled backups (one-time)
-kubectl patch schedulebackup postgres-app-daily-backup \
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
   -p '{"spec":{"suspend":true}}'
 
 # Re-enable
-kubectl patch schedulebackup postgres-app-daily-backup \
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
   -p '{"spec":{"suspend":false}}'
 ```
 
@@ -236,7 +236,7 @@ kubectl get backup --sort-by='.metadata.creationTimestamp' -o jsonpath='{.items[
 
 # Restore from specific backup
 ./scripts/dev/restore-from-backup.sh \
-  -b postgres-app-backup-1704326400 \
+  -b {{ project_name }}-postgres-backup-1704326400 \
   -n my-restored-cluster
 
 # Monitor restore progress
@@ -358,7 +358,7 @@ kubectl create namespace postgres-recovery
 # 2. Restore from backup in new namespace
 ./scripts/dev/restore-from-backup.sh \
   -s postgres-recovery \
-  -n postgres-app \
+  -n {{ project_name }}-postgres \
   -b <latest-backup-name>
 
 # 3. Verify restored cluster
@@ -391,7 +391,7 @@ psql -U postgres -d app < lost_table.sql
 # Create PITR to before corruption occurred
 
 # Or reindex in place (if downtime acceptable):
-kubectl exec postgres-app-1 -- psql -U postgres -d app -c "REINDEX INDEX CONCURRENTLY idx_name;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "REINDEX INDEX CONCURRENTLY idx_name;"
 ```
 
 ## Backup Verification
@@ -413,14 +413,14 @@ kubectl exec postgres-app-1 -- psql -U postgres -d app -c "REINDEX INDEX CONCURR
 ```bash
 # Test restore (create test cluster)
 ./scripts/dev/restore-from-backup.sh \
-  -b postgres-app-backup-1704326400 \
+  -b {{ project_name }}-postgres-backup-1704326400 \
   -n test-restore
 
 # Verify data matches expectations
 kubectl exec test-restore-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
 
 # Compare with production
-kubectl exec postgres-app-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
 
 # If counts match, backup is valid
 # Delete test cluster
@@ -434,10 +434,10 @@ kubectl delete cluster test-restore
 aws s3 ls s3://postgres-backups/dev/base/ --recursive
 
 # Verify backup metadata
-kubectl get backup postgres-app-backup-1704326400 -o yaml | grep -E "checksum|phase|size"
+kubectl get backup {{ project_name }}-postgres-backup-1704326400 -o yaml | grep -E "checksum|phase|size"
 
 # Check WAL file integrity
-kubectl exec postgres-app-1 -- pg_checkpoints
+kubectl exec {{ project_name }}-postgres-1 -- pg_checkpoints
 ```
 
 ## Troubleshooting
@@ -449,10 +449,10 @@ kubectl exec postgres-app-1 -- pg_checkpoints
 kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | tail -50
 
 # Check backup pod logs (if exists)
-kubectl logs postgres-app-backup-pod
+kubectl logs {{ project_name }}-postgres-backup-pod
 
 # Kill stuck backup (forces retry)
-kubectl delete backup postgres-app-backup-<name>
+kubectl delete backup {{ project_name }}-postgres-backup-<name>
 ```
 
 ### Backup Fails with Timeout

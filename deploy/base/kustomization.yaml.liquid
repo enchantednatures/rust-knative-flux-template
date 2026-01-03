@@ -7,6 +7,13 @@ resources:
   - kafka-source.yaml
   - dlq-handler.yaml
   {% endif %}
+  {% if features contains "postgres" %}
+  - postgres-objectstore.yaml
+  - postgres-cluster.yaml
+  - postgres-backup.yaml
+  - postgres-podmonitor.yaml
+  - postgres-alerts.yaml
+  {% endif %}
   # NOTE: secret.yaml is NOT included here
   # Users must create it from secret.yaml.example
   # This prevents accidental commits of secrets to git

@@ -1,10 +1,10 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: postgres-app
-  namespace: default
+  name: {{ project_name }}-postgres
+  namespace: {{ target_namespace }}
 spec:
-  instances: 1  # Development: single instance
+  instances: {{ postgres_instances_dev }}  # Development: configurable instances
   
   # PostgreSQL configuration for development
   postgresql:

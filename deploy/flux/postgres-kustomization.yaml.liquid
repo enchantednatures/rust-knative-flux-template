@@ -9,7 +9,7 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: rust-service-postgres
+    name: {{ github_repo }}-postgres
   wait: true
   timeout: 10m
   # Wait for CloudNativePG operator to be ready
@@ -23,8 +23,8 @@ spec:
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
-      name: postgres-app
-      namespace: default
+      name: {{ project_name }}-postgres
+      namespace: {{ target_namespace }}
   postBuild:
     substitute:
-      POSTGRES_APP_NAME: "postgres-app"
+      POSTGRES_APP_NAME: "{{ project_name }}-postgres"

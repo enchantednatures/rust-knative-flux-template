@@ -1,8 +1,8 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: postgres-app
-  namespace: default
+  name: {{ project_name }}-postgres
+  namespace: {{ target_namespace }}
 spec:
   instances: 2  # Staging: 2 instances (1 primary + 1 standby)
   

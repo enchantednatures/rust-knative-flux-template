@@ -1,14 +1,14 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: postgres-app
-  namespace: default
+  name: {{ project_name }}-postgres
+  namespace: {{ target_namespace }}
 spec:
-  instances: 3  # Production default: 3 replicas (1 primary + 2 standby)
+  instances: 3  # Base: 3 replicas. Override in environment overlays (1 primary + 2 standby)
   
   # PostgreSQL version and configuration
   postgresql:
-    version: "16"
+    version: "{{ postgres_version }}"
     
     # SSL/TLS Certificate Configuration
     # CloudNativePG automatically generates and manages SSL certificates
@@ -47,14 +47,14 @@ spec:
   # Storage configuration
   storage:
     size: "200Gi"
-    # storageClass: "fast-ssd"  # Uncomment and set for production with specific storage class
+    storageClassName: "{{ postgres_storage_class }}"
   
   # Barman Cloud Plugin configuration for WAL archiving
   plugins:
     - name: barman-cloud.cloudnative-pg.io
       isWALArchiver: true
       parameters:
-        barmanObjectName: postgres-backup-store  # References ObjectStore CRD
+        barmanObjectName: {{ project_name }}-postgres-backup-store  # References ObjectStore CRD
   
   # Bootstrap configuration (for new clusters)
   bootstrap:
@@ -73,24 +73,24 @@ spec:
 # Documentation: SSL/TLS Certificate Management
 # CloudNativePG automatically generates and manages the following certificates:
 # 
-# 1. CA Certificate Secret (postgres-app-ca):
+# 1. CA Certificate Secret ({{ project_name }}-postgres-ca):
 #    - Contains: ca.crt, ca.key
 #    - Used to sign server and client certificates
 #    - Valid for 1 year, automatically renewed
 #
-# 2. Server Certificate Secret (postgres-app-server):
+# 2. Server Certificate Secret ({{ project_name }}-postgres-server):
 #    - Contains: tls.crt, tls.key
 #    - Used by PostgreSQL server for TLS connections
 #    - Signed by CA
-#    - Subject: CN=postgres-app
-#    - Alt Names: postgres-app, postgres-app.default, postgres-app-rw, etc.
+#    - Subject: CN={{ project_name }}-postgres
+#    - Alt Names: {{ project_name }}-postgres, {{ project_name }}-postgres.{{ target_namespace }}, {{ project_name }}-postgres-rw, etc.
 #
-# 3. Replication Certificate Secret (postgres-app-replication):
+# 3. Replication Certificate Secret ({{ project_name }}-postgres-replication):
 #    - Contains: tls.crt, tls.key
 #    - Used for encrypted replication between primary and standbys
 #    - Signed by CA
 #
-# 4. Application Password Secret (postgres-app-app):
+# 4. Application Password Secret ({{ project_name }}-postgres-app):
 #    - Contains: username, password for the 'app' user
 #    - Auto-generated on cluster creation
 #
@@ -101,7 +101,7 @@ spec:
 # Example client connection strings:
 # 
 # sslmode=require (allows self-signed certificates):
-#   postgresql://app:password@postgres-app-rw:5432/app?sslmode=require
+#   postgresql://app:password@{{ project_name }}-postgres-rw:5432/app?sslmode=require
 #
 # sslmode=verify-full (requires valid CA certificate):
-#   postgresql://app:password@postgres-app-rw:5432/app?sslmode=verify-full&sslrootcert=/path/to/ca.crt
+#   postgresql://app:password@{{ project_name }}-postgres-rw:5432/app?sslmode=verify-full&sslrootcert=/path/to/ca.crt

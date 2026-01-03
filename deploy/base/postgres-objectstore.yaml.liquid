@@ -1,13 +1,13 @@
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
-  name: postgres-backup-store
-  namespace: default
+  name: {{ project_name }}-postgres-backup-store
+  namespace: {{ target_namespace }}
 spec:
   # Configuration for Barman Cloud Plugin backup storage
   configuration:
     # S3-compatible endpoint and bucket
-    destinationPath: s3://postgres-backups/
+    destinationPath: s3://{{ project_name }}-postgres-backups/
     endpointURL: http://minio.minio.svc.cluster.local:9000
     
     # Credentials reference (from Kubernetes Secret)
@@ -30,4 +30,5 @@ spec:
       maxParallel: 4     # Parallel WAL fetches during restore
   
   # Retention policy (backups older than this are automatically deleted)
+  # Overridden per environment in overlays
   retentionPolicy: "30d"  # 30 days for production
