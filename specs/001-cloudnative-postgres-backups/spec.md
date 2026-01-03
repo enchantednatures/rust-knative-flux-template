@@ -15,6 +15,14 @@
 - Q: The spec doesn't specify how the Barman Cloud Plugin itself should be installed in the Kubernetes cluster. The plugin documentation shows it can be installed via Helm chart or raw manifests. Which installation method should be used? → A: Raw Kubernetes manifests managed by FluxCD - consistent with operator installation approach
 - Q: The spec mentions that ScheduledBackup resources should use the plugin (FR-004), but doesn't specify whether ScheduledBackup CRDs need to be updated to reference the plugin explicitly or if they work automatically once the cluster is configured with the plugin. Which approach? → A: Explicit plugin reference in ScheduledBackup (method: plugin, pluginConfiguration) - clear and unambiguous
 
+### Session 2026-01-03 (Integration Testing)
+
+- Q: When you say "integration tests to run to hit the postgres db," which testing strategy best matches your intent? → A: Integration tests against test PostgreSQL cluster - spin up lightweight CloudNativePG test cluster in Kind; run sqlx queries directly; validate CRUD operations
+- Q: Which PostgreSQL operations should integration tests validate via sqlx? → A: CRUD only (INSERT, SELECT, UPDATE, DELETE operations); skip backup/restore data validation in application-level tests
+- Q: How should the integration test environment manage the test PostgreSQL cluster and test data? → A: Dedicated test cluster in Kind - deploy lightweight CloudNativePG test cluster (1 replica) at test startup; create schema & seed tables; tear down after suite completes
+- Q: How should sqlx connection details be provided to integration tests? → A: Hybrid approach - use environment variables as primary configuration (POSTGRES_URL, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD); support kubectl port-forward fallback for local development (localhost:5432)
+- Q: Where should integration tests live in the repo? → A: `tests/integration/postgres_integration_test.rs` - single file with cluster setup and CRUD test logic; runs via `cargo test --test postgres_integration_test`
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Deploy PostgreSQL Cluster with High Availability (Priority: P1)
@@ -115,6 +123,10 @@ As a platform operator, I need visibility into backup status, success rates, sto
 - **FR-016**: System MUST support configurable storage classes for PostgreSQL persistent volumes to accommodate different performance requirements.
 - **FR-017**: System MUST allow configuration of PostgreSQL parameters (memory, connections, shared buffers) through cluster manifests.
 - **FR-018**: System MUST expose cluster health status including replica count, replication lag, and connection availability.
+- **FR-019**: Application integration tests MUST use sqlx for all PostgreSQL interactions (query execution, connection pooling, error handling).
+- **FR-020**: Integration tests MUST validate CRUD operations (INSERT, SELECT, UPDATE, DELETE) against a test CloudNativePG cluster deployed in Kind.
+- **FR-021**: Integration tests MUST support configurable PostgreSQL connection details via environment variables (POSTGRES_URL, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD) with port-forward fallback for local development.
+- **FR-022**: Integration test suite MUST provision and tear down a dedicated test PostgreSQL cluster in Kind at test startup and completion, isolating test execution from production clusters.
 
 ### Non-Functional Requirements *(mandatory per constitution)*
 
@@ -130,6 +142,11 @@ As a platform operator, I need visibility into backup status, success rates, sto
 - **NFR-010**: Backup retention policy enforcement MUST run at least once per day to free storage space.
 - **NFR-011**: All sensitive credentials (object storage access keys) MUST be stored in Kubernetes secrets and never logged or exposed in metrics.
 - **NFR-012**: System MUST support GitOps workflows by allowing all PostgreSQL and backup configurations to be defined as declarative YAML manifests.
+- **NFR-013**: Integration tests MUST complete in under 5 minutes for CRUD operations against the test cluster (excluding cluster startup time).
+- **NFR-014**: Integration test suite MUST be runnable in CI environments without requiring pre-deployed clusters; all infrastructure (Kind cluster, test PostgreSQL cluster) provisioned by test setup.
+- **NFR-015**: sqlx connection pool MUST handle transient PostgreSQL connection failures gracefully and retry with exponential backoff.
+- **NFR-016**: Integration tests MUST not pollute production or staging clusters; test data MUST be isolated to dedicated test cluster and cleaned up on test completion.
+
 
 ### Key Entities
 
@@ -158,6 +175,89 @@ As a platform operator, I need visibility into backup status, success rates, sto
 - **SC-009**: 95% of backup-related incidents are resolved using information from logs and metrics without needing to access cluster internals.
 - **SC-010**: Retention policies successfully free object storage space within 24 hours of backups exceeding the retention period.
 
+## Integration Testing Strategy
+
+### Test Cluster Architecture
+
+**Test Cluster Deployment:**
+- Deploy lightweight CloudNativePG test cluster (1 replica, 512Mi memory, 5Gi storage) in Kind cluster at test startup
+- Use same manifest structure as production clusters (postgres-cluster.yaml.liquid with dev parameters)
+- Test cluster isolated in dedicated namespace (`postgres-test`)
+- Automatic cleanup and resource deallocation on test completion
+
+**Connection Configuration:**
+- Primary connection method: Environment variables
+  - `POSTGRES_URL`: Full connection string (takes precedence)
+  - `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: Individual parameters
+  - Defaults to Kubernetes service discovery: `{{ project_name }}-postgres-rw.postgres-test.svc.cluster.local:5432`
+- Fallback connection method: `kubectl port-forward` (localhost:5432) for local development
+
+### sqlx Integration
+
+**Dependencies:**
+- sqlx with Tokio runtime and PostgreSQL driver: `sqlx = { version = "0.8+", features = ["runtime-tokio-rustls", "postgres", "json"] }`
+- Connection pool: `sqlx::Pool<sqlx::Postgres>` with configurable max connections (default: 5)
+- Query macros: `sqlx::query!()` for compile-time checked queries (preferred) or `sqlx::query()` for dynamic SQL
+
+**CRUD Test Coverage:**
+1. **INSERT**: Create test records with various data types (text, integer, boolean, JSON, timestamp)
+2. **SELECT**: Retrieve records by ID, range queries, filtering with WHERE clauses
+3. **UPDATE**: Modify existing records, verify atomic updates
+4. **DELETE**: Remove records, verify cascade behavior (if applicable)
+
+**Error Handling:**
+- Connection failures: Retry with exponential backoff (base: 100ms, max: 5s, attempts: 3)
+- Constraint violations: Verify error messages and recovery
+- Transaction rollback: Test nested transaction handling
+
+### Test File Structure
+
+**Location:** `tests/integration/postgres_integration_test.rs`
+
+**Module Structure:**
+```rust
+mod setup {
+    // Kind cluster provisioning
+    // CloudNativePG test cluster deployment
+    // sqlx connection pool initialization
+}
+
+mod fixtures {
+    // Test data seeds
+    // Schema creation
+    // Cleanup procedures
+}
+
+mod crud_tests {
+    // test_insert_*
+    // test_select_*
+    // test_update_*
+    // test_delete_*
+}
+
+#[tokio::test]
+async fn test_crud_operations() { ... }
+```
+
+### Test Execution
+
+**Running locally:**
+```bash
+# With Kind cluster and port-forward
+kubectl port-forward svc/postgres-test-postgres-rw -n postgres-test 5432:5432 &
+cargo test --test postgres_integration_test -- --nocapture
+
+# Or with environment variables
+export POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=app POSTGRES_PASSWORD=...
+cargo test --test postgres_integration_test
+```
+
+**Running in CI:**
+```bash
+# Test setup handles all provisioning
+cargo test --test postgres_integration_test -- --test-threads=1 --nocapture
+```
+
 ## Assumptions
 
 - The Kubernetes cluster has the CloudNativePG operator (v1.26+) and Barman Cloud Plugin installed and operational via raw Kubernetes manifests managed by FluxCD.
@@ -170,3 +270,5 @@ As a platform operator, I need visibility into backup status, success rates, sto
 - PostgreSQL version 14 or later is used, as CloudNativePG has best support for recent versions.
 - Backup retention periods follow typical enterprise standards (7 to 30 days) unless compliance requirements dictate otherwise.
 - Point-in-time recovery windows match the WAL archive retention period (typically same as backup retention).
+- Rust toolchain (1.75+) and sqlx CLI are available for integration test development and compilation.
+- Kind cluster can be provisioned with adequate resources (minimum 2 cores, 4Gi memory) to run test PostgreSQL cluster alongside other operators.
