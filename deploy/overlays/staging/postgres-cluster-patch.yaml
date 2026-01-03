@@ -1,0 +1,28 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app
+  namespace: default
+spec:
+  instances: 2  # Staging: 2 instances (1 primary + 1 standby)
+  
+  # PostgreSQL configuration for staging
+  postgresql:
+    parameters:
+      # Staging settings - moderate performance
+      synchronous_commit: "on"  # Async replication for staging
+      shared_buffers: "512Mi"   # Moderate memory allocation
+      max_connections: "200"
+  
+  # Staging resource allocation
+  resources:
+    requests:
+      cpu: "750m"
+      memory: "1Gi"
+    limits:
+      cpu: "1500m"
+      memory: "2Gi"
+  
+  # Medium storage for staging
+  storage:
+    size: "100Gi"

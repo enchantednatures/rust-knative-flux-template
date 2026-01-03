@@ -1,0 +1,104 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app
+  namespace: default
+spec:
+  instances: 3  # 1 primary + 2 replicas for HA
+  
+  # PostgreSQL version and configuration
+  postgresql:
+    version: "16"
+    parameters:
+      shared_buffers: "512MB"
+      max_connections: "300"
+      synchronous_commit: "remote_apply"  # Quorum replication for prod
+      synchronous_standby_names: "ANY 1 (*)"  # At least 1 replica confirms writes
+      archive_timeout: "5min"  # WAL archiving frequency
+      wal_compression: "on"
+    shared_preload_libraries:
+      - "pg_stat_statements"
+  
+  # Resource allocation
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  
+  # Storage configuration
+  storage:
+    size: "100Gi"
+    storageClass: "fast-ssd"  # Must support ReadWriteOnce, minimum 3000 IOPS
+  
+  # Barman Cloud Plugin configuration for WAL archiving
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-dev  # References ObjectStore CRD
+  
+  # Bootstrap configuration (for new clusters)
+  bootstrap:
+    initdb:
+      postInitApplicationSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+  
+  # Service account for IRSA (production only)
+  # serviceAccountTemplate:
+  #   metadata:
+  #     annotations:
+  #       eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/cnpg-backup-role"
+
+---
+# Example for production environment with IRSA
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app
+  namespace: production
+spec:
+  instances: 3
+  
+  postgresql:
+    version: "16"
+    parameters:
+      shared_buffers: "2Gi"
+      max_connections: "500"
+      synchronous_commit: "remote_apply"
+      synchronous_standby_names: "ANY 1 (*)"
+      archive_timeout: "5min"
+      wal_compression: "on"
+    shared_preload_libraries:
+      - "pg_stat_statements"
+  
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  storage:
+    size: "500Gi"
+    storageClass: "fast-ssd"
+  
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: s3-prod  # References ObjectStore CRD for AWS S3
+  
+  bootstrap:
+    initdb:
+      postInitApplicationSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+  
+  # IAM Role for Service Account (IRSA) for AWS S3 access
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/cnpg-backup-role"

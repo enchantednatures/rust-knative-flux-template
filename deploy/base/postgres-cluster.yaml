@@ -1,0 +1,61 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app
+  namespace: default
+spec:
+  instances: 3  # Production default: 3 replicas (1 primary + 2 standby)
+  
+  # PostgreSQL version and configuration
+  postgresql:
+    version: "16"
+    parameters:
+      # Performance tuning
+      shared_buffers: "2Gi"            # 25% of memory for production
+      max_connections: "300"           # Connection limit
+      
+      # High availability configuration
+      synchronous_commit: "remote_apply"       # Quorum replication for zero data loss
+      synchronous_standby_names: "ANY 1 (*)"  # At least 1 replica must confirm writes
+      
+      # WAL archiving for backups and PITR
+      archive_timeout: "5min"          # Archive WAL every 5 minutes
+      wal_compression: "on"            # Compress WAL files
+      
+    # Pre-load extensions
+    shared_preload_libraries:
+      - "pg_stat_statements"  # Query performance tracking
+  
+  # Resource allocation (production defaults)
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  
+  # Storage configuration
+  storage:
+    size: "200Gi"
+    # storageClass: "fast-ssd"  # Uncomment and set for production with specific storage class
+  
+  # Barman Cloud Plugin configuration for WAL archiving
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: postgres-backup-store  # References ObjectStore CRD
+  
+  # Bootstrap configuration (for new clusters)
+  bootstrap:
+    initdb:
+      postInitApplicationSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+        - "ALTER SYSTEM SET log_statement = 'all';"
+        - "ALTER SYSTEM SET log_min_duration_statement = '1000';"  # Log queries >1s
+  
+  # Monitoring configuration
+  monitoring:
+    enabled: true
+    podMonitorEnabled: true  # Enable PodMonitor for Prometheus

@@ -11,6 +11,26 @@ echo "Cleaning up local registry: ${REGISTRY_NAME}..."
 docker stop "${REGISTRY_NAME}" 2>/dev/null || true
 docker rm "${REGISTRY_NAME}" 2>/dev/null || true
 
+echo "Cleaning up PostgreSQL resources..."
+if [[ -f "$KUBECONFIG_FILE" ]]; then
+  export KUBECONFIG="$KUBECONFIG_FILE"
+  
+  # Delete PostgreSQL clusters (this will cascade to pods, PVCs, etc.)
+  kubectl delete cluster --all -n default 2>/dev/null || true
+  
+  # Delete PostgreSQL backups
+  kubectl delete backup --all -n default 2>/dev/null || true
+  
+  # Delete ObjectStore CRDs
+  kubectl delete objectstore --all -n default 2>/dev/null || true
+  
+  # Delete secrets
+  kubectl delete secret postgres-backup-credentials-test -n default 2>/dev/null || true
+  
+  # Wait a moment for resources to be cleaned up
+  sleep 5
+fi
+
 echo "Cleaning up Kind cluster: ${CLUSTER_NAME}..."
 kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
 

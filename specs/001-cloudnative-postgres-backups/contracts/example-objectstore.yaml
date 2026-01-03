@@ -1,0 +1,33 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: minio-dev
+  namespace: default
+spec:
+  # Configuration for Barman Cloud Plugin backup storage
+  configuration:
+    # S3-compatible endpoint (MinIO for dev, AWS S3 for prod)
+    destinationPath: s3://postgres-backups/
+    endpointURL: http://minio:9000
+    
+    # Credentials reference (stored in Kubernetes Secret)
+    s3Credentials:
+      accessKeyId:
+        name: minio-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: minio-credentials
+        key: ACCESS_SECRET_KEY
+    
+    # Backup data compression
+    data:
+      compression: gzip  # Dev: gzip (simpler), Prod: zstd (faster/better)
+      jobs: 2             # Parallel compression jobs
+    
+    # WAL archiving configuration
+    wal:
+      compression: gzip
+      maxParallel: 4      # Parallel WAL fetch during restore
+  
+  # Retention policy (backups older than this are automatically deleted)
+  retentionPolicy: "7d"  # Dev: 7 days, Staging: 14 days, Prod: 30 days

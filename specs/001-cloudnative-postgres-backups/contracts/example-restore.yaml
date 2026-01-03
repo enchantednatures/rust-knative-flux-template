@@ -1,0 +1,147 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app-restored
+  namespace: default
+spec:
+  instances: 3
+  
+  postgresql:
+    version: "16"
+    parameters:
+      shared_buffers: "512MB"
+      max_connections: "300"
+      synchronous_commit: "remote_apply"
+      synchronous_standby_names: "ANY 1 (*)"
+      archive_timeout: "5min"
+      wal_compression: "on"
+    shared_preload_libraries:
+      - "pg_stat_statements"
+  
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  
+  storage:
+    size: "100Gi"
+    storageClass: "fast-ssd"
+  
+  # Bootstrap from backup using recovery method
+  bootstrap:
+    recovery:
+      source: postgres-app-backup  # References external cluster definition
+      # Optional: Point-in-Time Recovery
+      # recoveryTarget:
+      #   targetTime: "2026-01-03T14:30:00Z"  # RFC 3339 timestamp
+  
+  # External cluster reference for restore source
+  externalClusters:
+    - name: postgres-app-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: minio-dev  # References ObjectStore CRD
+          serverName: postgres-app  # Original cluster name
+
+---
+# Example: Point-in-Time Recovery (PITR)
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app-pitr
+  namespace: default
+spec:
+  instances: 3
+  
+  postgresql:
+    version: "16"
+    parameters:
+      shared_buffers: "512MB"
+      max_connections: "300"
+  
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  
+  storage:
+    size: "100Gi"
+    storageClass: "fast-ssd"
+  
+  # Bootstrap with Point-in-Time Recovery
+  bootstrap:
+    recovery:
+      source: postgres-app-backup
+      recoveryTarget:
+        targetTime: "2026-01-03T12:00:00Z"  # Restore to specific timestamp
+        # Alternative recovery targets:
+        # targetName: "backup_label_20260103"  # Named restore point
+        # targetLSN: "0/3000000"  # Log Sequence Number
+        # targetXID: "1234567"  # Transaction ID
+        # targetImmediate: true  # Latest available data
+  
+  externalClusters:
+    - name: postgres-app-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: minio-dev
+          serverName: postgres-app
+
+---
+# Example: Restore from production backup to staging
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-app-staging
+  namespace: staging
+spec:
+  instances: 2  # Fewer replicas for staging
+  
+  postgresql:
+    version: "16"
+    parameters:
+      shared_buffers: "512MB"
+      max_connections: "200"
+      synchronous_commit: "on"  # Local commit for staging
+  
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  
+  storage:
+    size: "200Gi"
+    storageClass: "standard"
+  
+  # Bootstrap from production backup
+  bootstrap:
+    recovery:
+      source: postgres-app-prod-backup
+      recoveryTarget:
+        targetTime: "2026-01-03T00:00:00Z"  # Restore from midnight
+  
+  # Reference production backup with IRSA credentials
+  externalClusters:
+    - name: postgres-app-prod-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: s3-prod  # Production ObjectStore CRD
+          serverName: postgres-app  # Production cluster name
+  
+  # Service account with read-only access to production backups
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/cnpg-backup-readonly-role"

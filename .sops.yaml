@@ -1,0 +1,21 @@
+# SOPS configuration for secret encryption
+# Uses Age encryption for GitOps-friendly secret management
+#
+# Setup:
+# 1. Generate Age key: age-keygen -o age.key
+# 2. Add public key to SOPS_AGE_RECIPIENTS environment variable
+# 3. Encrypt secrets: sops -e -i deploy/base/object-storage-secret.yaml
+# 4. Configure FluxCD to decrypt: Use sops.decryption in Kustomization
+
+creation_rules:
+  # Encrypt all Kubernetes secrets
+  - path_regex: \.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: >-
+      age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    # Replace above with your Age public key from: age-keygen -o age.key
+
+  # Encrypt SOPS-specific files
+  - path_regex: \.sops\.yaml$
+    age: >-
+      age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
