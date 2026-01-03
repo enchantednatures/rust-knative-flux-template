@@ -50,16 +50,16 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 ### Base Manifests
 
-- [x] T009 Create base PostgreSQL Cluster CRD manifest: Create `deploy/base/postgres-cluster.yaml` with 3 replicas, PostgreSQL 16, 1 CPU/2Gi memory, 200Gi storage, quorum replication, pg_stat_statements enabled
-- [x] T010 Create base ScheduledBackup manifest: Create `deploy/base/postgres-backup.yaml` with daily schedule (cron: `0 2 * * *`), 30-day retention, zstd compression, streaming WAL archiving (5min interval)
-- [x] T011 [P] Create base PgBouncer pooler manifest: Create `deploy/base/postgres-pooler.yaml` with 300 max_client_conn, transaction pooling mode
-- [x] T012 Update base kustomization: Update `deploy/base/kustomization.yaml` to include postgres-cluster.yaml, postgres-backup.yaml, postgres-pooler.yaml, object-storage-secret.yaml
+- [x] T009 Create base PostgreSQL Cluster CRD manifest: Create `deploy/base/postgres-cluster.yaml.liquid` with 3 replicas, PostgreSQL 16, 1 CPU/2Gi memory, 200Gi storage, quorum replication, pg_stat_statements enabled
+- [x] T010 Create base ScheduledBackup manifest: Create `deploy/base/postgres-backup.yaml.liquid` with daily schedule (cron: `0 2 * * *`), 30-day retention, zstd compression, streaming WAL archiving (5min interval)
+- [x] T011 [P] Create base PgBouncer pooler manifest: Create `deploy/base/postgres-pooler.yaml.liquid` with 300 max_client_conn, transaction pooling mode
+- [x] T012 Update base kustomization: Update `deploy/base/kustomization.yaml.liquid` to include postgres-cluster.yaml, postgres-backup.yaml, postgres-pooler.yaml, object-storage-secret.yaml
 
 ### FluxCD Integration
 
-- [ ] T013 Create FluxCD GitRepository source: Create `deploy/flux/git-repository-postgres.yaml` referencing the repository with branch `001-cloudnative-postgres-backups`
-- [ ] T014 Create FluxCD Kustomization for PostgreSQL: Create `deploy/flux/postgres-kustomization.yaml` targeting `deploy/overlays/dev/` with SOPS decryption enabled, 5-minute reconciliation interval
-- [ ] T015 Add operator dependency: Update `deploy/flux/postgres-kustomization.yaml` to depend on `cnpg-system` namespace and CloudNativePG operator being ready
+- [x] T013 Create FluxCD GitRepository source: Create `deploy/flux/git-repository-postgres.yaml` referencing the repository with branch `001-cloudnative-postgres-backups`
+- [x] T014 Create FluxCD Kustomization for PostgreSQL: Create `deploy/flux/postgres-kustomization.yaml.liquid` targeting `deploy/overlays/dev/` with SOPS decryption enabled, 5-minute reconciliation interval
+- [x] T015 Add operator dependency: Update `deploy/flux/postgres-kustomization.yaml.liquid` to depend on `cnpg-system` namespace and CloudNativePG operator being ready
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -73,12 +73,12 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 ### Environment Overlays for User Story 1
 
-- [ ] T016 [P] [US1] Create dev overlay: Create `deploy/overlays/dev/postgres-cluster-patch.yaml` with 1 replica, async replication, 500m CPU/512Mi memory, 20Gi storage
-- [ ] T017 [P] [US1] Create staging overlay: Create `deploy/overlays/staging/postgres-cluster-patch.yaml` with 2 replicas, async replication, 750m CPU/1Gi memory, 100Gi storage
-- [ ] T018 [P] [US1] Create prod overlay: Create `deploy/overlays/prod/postgres-cluster-patch.yaml` with 3 replicas, quorum replication (`ANY 1 (*)`), 1 CPU/2Gi memory, 200Gi storage
-- [ ] T019 [US1] Create dev kustomization: Create `deploy/overlays/dev/kustomization.yaml` referencing base and applying dev patches
-- [ ] T020 [US1] Create staging kustomization: Create `deploy/overlays/staging/kustomization.yaml` referencing base and applying staging patches
-- [ ] T021 [US1] Create prod kustomization: Create `deploy/overlays/prod/kustomization.yaml` referencing base and applying prod patches
+- [x] T016 [P] [US1] Create dev overlay: Create `deploy/overlays/dev/postgres-cluster-patch.yaml.liquid` with 1 replica, async replication, 500m CPU/512Mi memory, 20Gi storage
+- [x] T017 [P] [US1] Create staging overlay: Create `deploy/overlays/staging/postgres-cluster-patch.yaml.liquid` with 2 replicas, async replication, 750m CPU/1Gi memory, 100Gi storage
+- [x] T018 [P] [US1] Create prod overlay: Create `deploy/overlays/prod/postgres-cluster-patch.yaml.liquid` with 3 replicas, quorum replication (`ANY 1 (*)`), 1 CPU/2Gi memory, 200Gi storage
+- [x] T019 [US1] Create dev kustomization: Create `deploy/overlays/dev/kustomization.yaml` referencing base and applying dev patches
+- [x] T020 [US1] Create staging kustomization: Create `deploy/overlays/staging/kustomization.yaml` referencing base and applying staging patches
+- [x] T021 [US1] Create prod kustomization: Create `deploy/overlays/prod/kustomization.yaml` referencing base and applying prod patches
 
 ### Operational Scripts for User Story 1
 
@@ -112,12 +112,12 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 ### Backup Configuration for User Story 2
 
-- [ ] T033 [P] [US2] Create dev backup schedule patch: Create `deploy/overlays/dev/postgres-backup-patch.yaml` with cron `0 3 * * *`, 7-day retention, gzip compression, MinIO endpoint
-- [ ] T034 [P] [US2] Create staging backup schedule patch: Create `deploy/overlays/staging/postgres-backup-patch.yaml` with cron `0 2 * * *`, 14-day retention, zstd compression (level 3), S3 endpoint
-- [ ] T035 [P] [US2] Create prod backup schedule patch: Create `deploy/overlays/prod/postgres-backup-patch.yaml` with cron `0 2 * * *`, 30-day retention, zstd compression (level 3), S3 endpoint, SSE-S3 encryption
-- [ ] T036 [US2] Update dev kustomization: Update `deploy/overlays/dev/kustomization.yaml` to include backup patches
-- [ ] T037 [US2] Update staging kustomization: Update `deploy/overlays/staging/kustomization.yaml` to include backup patches
-- [ ] T038 [US2] Update prod kustomization: Update `deploy/overlays/prod/kustomization.yaml` to include backup patches
+- [x] T033 [P] [US2] Create dev backup schedule patch: Create `deploy/overlays/dev/postgres-backup-patch.yaml.liquid` with cron `0 3 * * *`, 7-day retention, gzip compression, MinIO endpoint
+- [x] T034 [P] [US2] Create staging backup schedule patch: Create `deploy/overlays/staging/postgres-backup-patch.yaml.liquid` with cron `0 2 * * *`, 14-day retention, zstd compression (level 3), S3 endpoint
+- [x] T035 [P] [US2] Create prod backup schedule patch: Create `deploy/overlays/prod/postgres-backup-patch.yaml.liquid` with cron `0 2 * * *`, 30-day retention, zstd compression (level 3), S3 endpoint, SSE-S3 encryption
+- [x] T036 [US2] Update dev kustomization: Update `deploy/overlays/dev/kustomization.yaml` to include backup patches
+- [x] T037 [US2] Update staging kustomization: Update `deploy/overlays/staging/kustomization.yaml` to include backup patches
+- [x] T038 [US2] Update prod kustomization: Update `deploy/overlays/prod/kustomization.yaml` to include backup patches
 
 ### Operational Scripts for User Story 2
 
@@ -151,20 +151,20 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 ### Operational Scripts for User Story 3
 
-- [ ] T050 [US3] Create restore script: Create `scripts/dev/restore-from-backup.sh` to generate restore Cluster CRD with `bootstrap.recovery`, apply manifest, wait for new cluster ready, verify data integrity
+- [x] T050 [US3] Create restore script: Create `scripts/dev/restore-from-backup.sh` to generate restore Cluster CRD with `bootstrap.recovery`, apply manifest, wait for new cluster ready, verify data integrity
 
 ### E2E Tests for User Story 3
 
-- [ ] T051 [US3] Extend E2E script for restore testing: Extend `tests/e2e/scripts/09-test-backup-restore.sh` (part 2) to create restore cluster from backup, wait for restore completion (<10 min for 1GB), verify restored data matches original
-- [ ] T052 [US3] Create E2E script for PITR testing: Extend `tests/e2e/scripts/09-test-backup-restore.sh` (part 3) to insert data, record timestamp, insert more data, restore to timestamp, verify only first data present
-- [ ] T053 [US3] Create E2E script for restore failure handling: Create test case to corrupt backup file, attempt restore, verify failure message is clear and actionable
+- [x] T051 [US3] Extend E2E script for restore testing: Extend `tests/e2e/scripts/09-test-backup-restore.sh` (part 2) to create restore cluster from backup, wait for restore completion (<10 min for 1GB), verify restored data matches original
+- [x] T052 [US3] Create E2E script for PITR testing: Extend `tests/e2e/scripts/09-test-backup-restore.sh` (part 3) to insert data, record timestamp, insert more data, restore to timestamp, verify only first data present
+- [x] T053 [US3] Create E2E script for restore failure handling: Create test case to corrupt backup file, attempt restore, verify failure message is clear and actionable
 
 ### Validation for User Story 3
 
-- [ ] T054 [US3] Validate AC1: Restore from backup completes within 15 minutes for 10GB database (test with 1GB in ~8-10 min)
-- [ ] T055 [US3] Validate AC2: PITR restores to exact timestamp by replaying WAL files (test with timestamp between backups)
-- [ ] T056 [US3] Validate AC3: Restore failure reports specific error details (test with corrupted backup)
-- [ ] T057 [US3] Validate AC4: Restored data maintains integrity (test constraints, indexes, relationships)
+- [x] T054 [US3] Validate AC1: Restore from backup completes within 15 minutes for 10GB database (test with 1GB in ~8-10 min)
+- [x] T055 [US3] Validate AC2: PITR restores to exact timestamp by replaying WAL files (test with timestamp between backups)
+- [x] T056 [US3] Validate AC3: Restore failure reports specific error details (test with corrupted backup)
+- [x] T057 [US3] Validate AC4: Restored data maintains integrity (test constraints, indexes, relationships)
 
 **Checkpoint**: User Story 3 is complete - Database restore and PITR work correctly
 
@@ -178,24 +178,24 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 ### Monitoring Configuration for User Story 4
 
-- [ ] T058 [P] [US4] Create PodMonitor for PostgreSQL metrics: Create `deploy/base/postgres-podmonitor.yaml` targeting CloudNativePG pods on port 9187, 30-second interval
-- [ ] T059 [P] [US4] Create PrometheusRule for backup alerts: Create `deploy/base/postgres-alerts.yaml` with alerts for backup failure (>5 min), replication lag (>10s), instance down (>1 min)
-- [ ] T060 [US4] Update base kustomization: Update `deploy/base/kustomization.yaml` to include postgres-podmonitor.yaml and postgres-alerts.yaml
+- [x] T058 [P] [US4] Create PodMonitor for PostgreSQL metrics: Create `deploy/base/postgres-podmonitor.yaml.liquid` targeting CloudNativePG pods on port 9187, 30-second interval
+- [x] T059 [P] [US4] Create PrometheusRule for backup alerts: Create `deploy/base/postgres-alerts.yaml.liquid` with alerts for backup failure (>5 min), replication lag (>10s), instance down (>1 min)
+- [x] T060 [US4] Update base kustomization: Update `deploy/base/kustomization.yaml.liquid` to include postgres-podmonitor.yaml and postgres-alerts.yaml
 
 ### Dashboards and Documentation for User Story 4
 
-- [ ] T061 [P] [US4] Document Grafana dashboard setup: Create `docs/POSTGRES_MONITORING.md` with instructions to import CloudNativePG dashboard from `https://github.com/cloudnative-pg/grafana-dashboards`
-- [ ] T062 [P] [US4] Document key metrics: Update `docs/POSTGRES_MONITORING.md` with descriptions of `cnpg_collector_last_failed_backup_timestamp`, `cnpg_pg_replication_lag`, `cnpg_collector_up`, `cnpg_pg_stat_archiver_failed_count`
+- [x] T061 [P] [US4] Document Grafana dashboard setup: Create `docs/POSTGRES_MONITORING.md` with instructions to import CloudNativePG dashboard from `https://github.com/cloudnative-pg/grafana-dashboards`
+- [x] T062 [P] [US4] Document key metrics: Update `docs/POSTGRES_MONITORING.md` with descriptions of `cnpg_collector_last_failed_backup_timestamp`, `cnpg_pg_replication_lag`, `cnpg_collector_up`, `cnpg_pg_stat_archiver_failed_count`
 
 ### E2E Tests for User Story 4
 
-- [ ] T063 [US4] Create E2E script for metrics validation: Create `tests/e2e/scripts/11-test-monitoring.sh` to query Prometheus for backup metrics, verify values match expected state, trigger backup failure, verify alert fires within 5 minutes
+- [x] T063 [US4] Create E2E script for metrics validation: Create `tests/e2e/scripts/11-test-monitoring.sh` to query Prometheus for backup metrics, verify values match expected state, trigger backup failure, verify alert fires within 5 minutes
 
 ### Validation for User Story 4
 
-- [ ] T064 [US4] Validate AC1: Backup metrics are accurate (success rate, duration, size)
-- [ ] T065 [US4] Validate AC2: Alerts fire within 5 minutes of failure
-- [ ] T066 [US4] Validate AC3: Storage metrics identify highest consumers
+- [x] T064 [US4] Validate AC1: Backup metrics are accurate (success rate, duration, size)
+- [x] T065 [US4] Validate AC2: Alerts fire within 5 minutes of failure
+- [x] T066 [US4] Validate AC3: Storage metrics identify highest consumers
 
 **Checkpoint**: User Story 4 is complete - Monitoring and alerting are functional
 
@@ -209,8 +209,8 @@ All paths are relative to repository root: `/Users/hcasten/Developer/rust-knativ
 
 - [ ] T067 [P] Create main PostgreSQL operations guide: Create `docs/POSTGRES.md` with deployment instructions, connection examples, configuration reference, troubleshooting section
 - [ ] T068 [P] Create backup and restore procedures guide: Create `docs/POSTGRES_BACKUP_RESTORE.md` with backup configuration, manual backup triggers, restore procedures, PITR examples, disaster recovery workflows
-- [ ] T069 [P] Update main README: Update `README.md` to mention PostgreSQL support, link to `docs/POSTGRES.md`, add quickstart example
-- [ ] T070 [P] Create quickstart guide: Create `specs/001-cloudnative-postgres-backups/quickstart.md` with 5-minute deployment walkthrough, connection test, backup verification
+- [x] T069 [P] Update main README: Update `README.md` to mention PostgreSQL support, link to `docs/POSTGRES.md`, add quickstart example
+- [x] T070 [P] Create quickstart guide: Create `specs/001-cloudnative-postgres-backups/quickstart.md` with 5-minute deployment walkthrough, connection test, backup verification
 
 ### Validation and Compliance
 
