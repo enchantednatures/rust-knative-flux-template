@@ -1,9 +1,11 @@
 //! Kafka event publishing handler module
 //!
 //! Provides CloudEvent generation and Kafka publishing capabilities for HTTP handlers.
+//! Includes comprehensive observability through distributed tracing and Prometheus metrics.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::config::KafkaConfig;
@@ -163,6 +165,8 @@ impl KafkaPublisher {
 
     /// Publishes a CloudEvent to Kafka
     ///
+    /// Records distributed tracing span and Prometheus metrics for observability.
+    ///
     /// # Arguments
     ///
     /// * `event` - CloudEvent to publish
@@ -170,17 +174,27 @@ impl KafkaPublisher {
     /// # Returns
     ///
     /// Result containing partition and offset, or error
-    #[tracing::instrument(skip(self, event), fields(event_id = %event.id(), topic = %self.config.topic))]
+    #[tracing::instrument(
+        skip(self, event),
+        fields(
+            event_id = %event.id(),
+            topic = %self.config.topic,
+            event_type = %event.type_(),
+            source = %event.source()
+        ),
+        err(Debug)
+    )]
     pub async fn publish(&self, event: &CloudEvent) -> Result<(i32, i64), KafkaError> {
         use rdkafka::producer::FutureRecord;
 
+        let start = Instant::now();
         let json = event.to_json_bytes()?;
 
         let record = FutureRecord::to(&self.config.topic)
             .key(&event.id())
             .payload(&json);
 
-        self.producer
+        let result = self.producer
             .send_result(record)
             .await
             .map_err(|e| {
@@ -200,8 +214,25 @@ impl KafkaPublisher {
                     }
                     _ => KafkaError::PublishFailed(err.to_string()),
                 }
-            })
-            .map(|(p, o)| (p, o))
+            });
+
+        // Record metrics
+        let latency_ms = start.elapsed().as_millis() as f64;
+        match &result {
+            Ok((partition, offset)) => {
+                metrics::counter!("kafka_events_published_total", "topic" => self.config.topic.clone()).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone()).record(latency_ms);
+                tracing::Span::current().record("partition", *partition);
+                tracing::Span::current().record("offset", *offset);
+            }
+            Err(e) => {
+                let (error_type, _) = e.context();
+                metrics::counter!("kafka_events_failed_total", "topic" => self.config.topic.clone(), "error_type" => error_type).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone(), "error" => "true").record(latency_ms);
+            }
+        }
+
+        result.map(|(p, o)| (p, o))
     }
 
     /// Health check for Kafka broker connectivity

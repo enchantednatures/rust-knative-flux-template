@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     // =========================================================================
-    // 2. Initialize Observability (Tracing + OpenTelemetry)
+    // 2. Initialize Observability (Tracing + OpenTelemetry + Metrics)
     // =========================================================================
     // Store the tracer provider for explicit shutdown (OpenTelemetry 0.31+)
     let tracer_provider = observability::init_telemetry(&config.telemetry)?;
@@ -26,6 +26,10 @@ async fn main() -> anyhow::Result<()> {
         otlp_endpoint = ?config.telemetry.otlp_endpoint,
         "Telemetry initialized"
     );
+
+    // Initialize Prometheus metrics
+    observability::init_metrics()?;
+    tracing::info!("Metrics initialized (Prometheus available at GET /metrics)");
 
     // =========================================================================
     // 3. Initialize Redis Connection (Dependency Injection)

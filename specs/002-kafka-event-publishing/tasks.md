@@ -2,7 +2,7 @@
 
 **Feature**: Kafka Event Publishing from Handlers  
 **Branch**: `002-kafka-event-publishing`  
-**Status**: Phase 5 (Graceful Failure Handling) Complete | **Date**: 2026-01-04
+**Status**: Phase 6 (Distributed Tracing & Metrics) Complete | **Date**: 2026-01-04
 
 ---
 
@@ -237,9 +237,9 @@ curl http://localhost:8080/api/v1/hello
 
 **Story Tasks**:
 
-- [ ] T035 [US4] Add #[instrument(skip(self, event), fields(event_id = %event.id(), topic = %topic))] macro to KafkaPublisher::publish() method in src/handlers/kafka.rs.liquid for automatic span creation with event ID and topic fields
-- [ ] T036 [US4] Add metrics to observability in src/observability.rs: `counter!("kafka_events_published_total")`, `counter!("kafka_events_failed_total")`, `histogram!("kafka_publish_latency_ms")` using metrics crate
-- [ ] T037 [US4] Update KafkaPublisher::publish() to increment success/failure metrics and record latency histogram after rdkafka send_result completes
+- [x] T035 [US4] Add #[instrument(skip(self, event), fields(event_id = %event.id(), topic = %topic))] macro to KafkaPublisher::publish() method in src/handlers/kafka.rs.liquid for automatic span creation with event ID and topic fields
+- [x] T036 [US4] Add metrics to observability in src/observability.rs: `counter!("kafka_events_published_total")`, `counter!("kafka_events_failed_total")`, `histogram!("kafka_publish_latency_ms")` using metrics crate
+- [x] T037 [US4] Update KafkaPublisher::publish() to increment success/failure metrics and record latency histogram after rdkafka send_result completes
 
 ---
 
