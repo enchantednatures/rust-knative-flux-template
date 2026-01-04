@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CloudEvents 1.0",
+  "description": "Cloud Native Computing Foundation CloudEvents specification v1.0",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "description": "The version of the CloudEvents specification",
+      "const": "1.0",
+      "examples": ["1.0"]
+    },
+    "type": {
+      "type": "string",
+      "description": "Describes the type of event related to the originating occurrence",
+      "examples": [
+        "com.example.service.event.published",
+        "com.company.order.created",
+        "io.cloudevents.example.published"
+      ],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "source": {
+      "type": "string",
+      "description": "Identifies the context in which an event happened",
+      "examples": [
+        "/api/v1/hello",
+        "https://example.com/source",
+        "kafka://my-topic"
+      ],
+      "minLength": 1,
+      "format": "uri-reference"
+    },
+    "id": {
+      "type": "string",
+      "description": "Value that uniquely identifies the event within the event producer",
+      "examples": [
+        "550e8400-e29b-41d4-a716-446655440000",
+        "A234-1234-1234"
+      ],
+      "minLength": 1
+    },
+    "time": {
+      "type": "string",
+      "description": "Describes the time of the event in the RFC3339 format",
+      "format": "date-time",
+      "examples": [
+        "2025-01-03T15:30:45.123Z",
+        "2025-01-03T15:30:45Z"
+      ]
+    },
+    "datacontenttype": {
+      "type": "string",
+      "description": "Content type of the data value",
+      "default": "application/json",
+      "examples": ["application/json", "application/xml"],
+      "type": ["string", "null"]
+    },
+    "dataschema": {
+      "type": ["string", "null"],
+      "description": "Identifies the schema that the data property conforms to",
+      "format": "uri",
+      "examples": ["https://example.com/schema"]
+    },
+    "subject": {
+      "type": ["string", "null"],
+      "description": "Describes the subject of the event in the context of the originating source",
+      "examples": ["my-subject", "user-123"],
+      "maxLength": 256
+    },
+    "data": {
+      "description": "Event payload data",
+      "examples": [
+        { "message": "dummy event from handler" },
+        { "order_id": "123", "amount": 99.99 }
+      ]
+    },
+    "traceparent": {
+      "type": ["string", "null"],
+      "description": "W3C Trace Context (enables distributed tracing integration)",
+      "examples": [
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+      ],
+      "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-[01]$"
+    }
+  },
+  "required": ["specversion", "type", "source", "id"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "specversion": "1.0",
+      "type": "com.example.service.event.published",
+      "source": "/api/v1/hello",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "time": "2025-01-03T15:30:45.123Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "message": "dummy event from handler",
+        "request_id": "req-12345"
+      }
+    },
+    {
+      "specversion": "1.0",
+      "type": "com.company.order.created",
+      "source": "https://example.com/orders",
+      "id": "order-789",
+      "time": "2025-01-03T16:00:00Z",
+      "subject": "user-123",
+      "data": {
+        "order_id": "order-789",
+        "amount": 199.99,
+        "currency": "USD"
+      },
+      "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+    }
+  ]
+}

@@ -11,3 +11,10 @@ endpoint = "http://localhost:9000"
 bucket = "data"
 region = "us-east-1"
 {% endif %}
+
+{% if enable_kafka %}
+[kafka]
+broker_url = "kafka:9092"
+topic = "{{ kafka_topic | default: "events" }}"
+timeout_ms = 5000  # Shorter timeout for dev
+{% endif %}

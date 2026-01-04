@@ -17,6 +17,11 @@ pub enum AppError {
 
     #[error("Internal server error: {0}")]
     Internal(String),
+
+    {% if enable_kafka %}
+    #[error("Kafka error: {0}")]
+    Kafka(#[from] KafkaError),
+    {% endif %}
 }
 
 impl From<figment::Error> for AppError {
@@ -40,6 +45,12 @@ impl IntoResponse for AppError {
                 tracing::error!(error = %e, "Internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
+            {% if enable_kafka %}
+            AppError::Kafka(ref e) => {
+                tracing::error!(error = %e, "Kafka error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Event publishing failed")
+            }
+            {% endif %}
         };
 
         let body = Json(json!({
@@ -50,3 +61,30 @@ impl IntoResponse for AppError {
         (status, body).into_response()
     }
 }
+
+{% if enable_kafka %}
+/// Kafka-specific error type
+#[derive(Error, Debug)]
+pub enum KafkaError {
+    #[error("Kafka initialization failed: {0}")]
+    InitializationFailed(String),
+
+    #[error("Failed to publish event: {0}")]
+    PublishFailed(String),
+
+    #[error("Event serialization failed: {0}")]
+    SerializationFailed(String),
+
+    #[error("Kafka broker unreachable at {broker}: {reason}")]
+    BrokerUnreachable { broker: String, reason: String },
+
+    #[error("Invalid Kafka configuration: {0}")]
+    InvalidConfiguration(String),
+
+    #[error("Kafka topic not found: {0}")]
+    TopicNotFound(String),
+
+    #[error("Internal Kafka error: {0}")]
+    Internal(String),
+}
+{% endif %}
