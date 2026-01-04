@@ -12,9 +12,9 @@ bucket = "data"
 region = "us-east-1"
 {% endif %}
 
-{% if enable_kafka %}
+{% if enable_kafka_publishing %}
 [kafka]
-broker_url = "kafka:9092"
-topic = "{{ kafka_topic | default: "events" }}"
+broker_url = "{{ kafka_broker_url }}"
+topic = "{{ kafka_topic }}"
 timeout_ms = 5000  # Shorter timeout for dev
 {% endif %}

@@ -12,10 +12,10 @@ bucket = "{{ s3_bucket }}"
 region = "{{ s3_region }}"
 {% endif %}
 
-{% if enable_kafka %}
+{% if enable_kafka_publishing %}
 [kafka]
-broker_url = "{{ kafka_bootstrap_servers_prod | default: "kafka.kafka.svc.cluster.local:9092" }}"
-topic = "{{ kafka_topic | default: "events" }}"
+broker_url = "{{ kafka_broker_url }}"
+topic = "{{ kafka_topic }}"
 timeout_ms = 30000  # Longer timeout for prod reliability
 retries = 5
 {% endif %}

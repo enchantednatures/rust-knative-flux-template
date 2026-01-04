@@ -2,7 +2,7 @@
 
 **Feature**: Kafka Event Publishing from Handlers  
 **Branch**: `002-kafka-event-publishing`  
-**Status**: Phase 2 (Task Generation) | **Date**: 2026-01-03
+**Status**: Phase 3 (Generation-Time Configuration) Complete | **Date**: 2026-01-04
 
 ---
 
@@ -118,8 +118,8 @@ EOF
 
 **Story Tasks**:
 
-- [ ] T014 [US1] Update cargo-generate.toml with three new prompts: enable_kafka (bool, default false), kafka_brokers (string with conditional when enable_kafka==true), kafka_topic, kafka_event_name
-- [ ] T015 [US1] Add Liquid template conditionals to config/default.toml.liquid, config/development.toml.liquid, config/production.toml.liquid to conditionally include [kafka] sections using `{% if enable_kafka %}...{% endif %}` with {{kafka_brokers}}, {{kafka_topic}}, {{kafka_event_name}} placeholders
+- [x] T014 [US1] Update cargo-generate.toml with three new prompts: enable_kafka_publishing (bool, default false), kafka_broker_url (string with conditional when enable_kafka_publishing==true), kafka_topic, kafka_event_name
+- [x] T015 [US1] Add Liquid template conditionals to config/default.toml.liquid, config/development.toml.liquid, config/production.toml.liquid to conditionally include [kafka] sections using `{% if enable_kafka_publishing %}...{% endif %}` with {{kafka_broker_url}}, {{kafka_topic}}, {{kafka_event_name}} placeholders
 
 ---
 

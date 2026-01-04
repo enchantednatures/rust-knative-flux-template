@@ -20,11 +20,11 @@ bucket = "data"
 region = "us-east-1"
 {% endif %}
 
-{% if enable_kafka %}
+{% if enable_kafka_publishing %}
 [kafka]
-broker_url = "kafka:9092"
-topic = "{{ kafka_topic | default: "events" }}"
-event_name = "{{ project_name | kebab_case }}.event.published"
+broker_url = "{{ kafka_broker_url }}"
+topic = "{{ kafka_topic }}"
+event_name = "{{ kafka_event_name }}"
 compression = "snappy"
 linger_ms = 5
 retries = 3
