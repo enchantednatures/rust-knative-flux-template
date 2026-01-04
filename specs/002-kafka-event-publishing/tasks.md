@@ -2,7 +2,7 @@
 
 **Feature**: Kafka Event Publishing from Handlers  
 **Branch**: `002-kafka-event-publishing`  
-**Status**: Phase 3 (Generation-Time Configuration) Complete | **Date**: 2026-01-04
+**Status**: Phase 4 (Publish Dummy Events) Complete | **Date**: 2026-01-04
 
 ---
 
@@ -156,20 +156,20 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic my-events --fro
 
 **Story Tasks**:
 
-- [ ] T016 [P] [US2] Create CloudEvent struct in src/handlers/kafka.rs.liquid (or extend axum-cloudevents) with fields: specversion ("1.0"), type_, source, id, time, data (Option), datacontenttype (Option), traceparent (Option), using serde JSON serialization
-- [ ] T017 [P] [US2] Implement create_dummy_event() function in src/handlers/kafka.rs.liquid that generates CloudEvent with event_name from config, handler_path as source, UUID as id, current UTC timestamp, minimal dummy data payload
-- [ ] T018 [P] [US2] Add CloudEvent JSON serialization tests in src/handlers/kafka.rs.liquid: verify specversion="1.0", type matches event_name, source matches path, id is valid UUID, time is ISO 8601
-- [ ] T019 [P] [US2] Implement KafkaPublisher struct in src/handlers/kafka.rs.liquid with fields: producer (Arc<FutureProducer>), config (Arc<KafkaConfig>), using #[instrument] macro for #[derive] visibility
-- [ ] T020 [P] [US2] Implement KafkaPublisher::new() async constructor that initializes rdkafka FutureProducer with config settings (bootstrap_servers, compression, linger_ms, request_timeout_ms) using ClientConfig, return Result<Self, KafkaError>
-- [ ] T021 [P] [US2] Implement KafkaPublisher::publish() async method that: serializes CloudEvent to JSON, creates FutureRecord with event.id() as partition key, calls producer.send_result().await, returns Result<(i32, i64), KafkaError> with partition and offset
-- [ ] T022 [US2] Implement KafkaPublisher::health_check() async method that verifies broker connectivity (simple metadata fetch), return Result<(), KafkaError>
-- [ ] T023 [US2] Update AppState in src/state.rs.liquid to add kafka_publisher field: `pub kafka_publisher: Option<Arc<KafkaPublisher>>` using Liquid template conditional `{% if enable_kafka %}...{% endif %}`
-- [ ] T024 [US2] Update app initialization in src/main.rs.liquid to create KafkaPublisher from AppConfig::kafka if Some, call validate(), verify broker connectivity (fail fast if unreachable per CL-003), initialize publisher, add to AppState
-- [ ] T025 [US2] Update src/handlers/mod.rs.liquid to conditionally export kafka module using Liquid template: `{% if enable_kafka %}pub mod kafka;{% endif %}` (no Cargo feature flags)
-- [ ] T026 [US2] Update existing handler (src/handlers/api.rs - hello endpoint) to publish dummy event when Kafka enabled: extract publisher from State, call create_dummy_event(), spawn async task with tokio::spawn() to call publisher.publish(), return 200 OK immediately
-- [ ] T027 [US2] Update existing handler (src/handlers/storage.rs if S3 enabled) to publish dummy event on successful storage operation using same pattern as T026
-- [ ] T028 [US2] Create integration test in tests/integration/kafka_publishing_test.rs using testcontainers for embedded Kafka broker: auto-detect Docker availability and skip with warning if unavailable (per CL-004), start broker, initialize service with config, call handler, verify event in topic, verify event structure
-- [ ] T029 [US2] Create E2E test script tests/e2e/scripts/kafka-test.sh that: deploys service to Kind cluster via Kustomize, waits for readiness, makes HTTP requests, consumes from Kafka topic, verifies event fields
+- [x] T016 [P] [US2] Create CloudEvent struct in src/handlers/kafka.rs.liquid (or extend axum-cloudevents) with fields: specversion ("1.0"), type_, source, id, time, data (Option), datacontenttype (Option), traceparent (Option), using serde JSON serialization
+- [x] T017 [P] [US2] Implement create_dummy_event() function in src/handlers/kafka.rs.liquid that generates CloudEvent with event_name from config, handler_path as source, UUID as id, current UTC timestamp, minimal dummy data payload
+- [x] T018 [P] [US2] Add CloudEvent JSON serialization tests in src/handlers/kafka.rs.liquid: verify specversion="1.0", type matches event_name, source matches path, id is valid UUID, time is ISO 8601
+- [x] T019 [P] [US2] Implement KafkaPublisher struct in src/handlers/kafka.rs.liquid with fields: producer (Arc<FutureProducer>), config (Arc<KafkaConfig>), using #[instrument] macro for #[derive] visibility
+- [x] T020 [P] [US2] Implement KafkaPublisher::new() async constructor that initializes rdkafka FutureProducer with config settings (bootstrap_servers, compression, linger_ms, request_timeout_ms) using ClientConfig, return Result<Self, KafkaError>
+- [x] T021 [P] [US2] Implement KafkaPublisher::publish() async method that: serializes CloudEvent to JSON, creates FutureRecord with event.id() as partition key, calls producer.send_result().await, returns Result<(i32, i64), KafkaError> with partition and offset
+- [x] T022 [US2] Implement KafkaPublisher::health_check() async method that verifies broker connectivity (simple metadata fetch), return Result<(), KafkaError>
+- [x] T023 [US2] Update AppState in src/state.rs.liquid to add kafka_publisher field: `pub kafka_publisher: Option<Arc<KafkaPublisher>>` using Liquid template conditional `{% if enable_kafka_publishing %}...{% endif %}`
+- [x] T024 [US2] Update app initialization in src/main.rs.liquid to create KafkaPublisher from AppConfig::kafka if Some, call validate(), verify broker connectivity (fail fast if unreachable per CL-003), initialize publisher, add to AppState
+- [x] T025 [US2] Update src/handlers/mod.rs.liquid to conditionally export kafka module using Liquid template: `{% if enable_kafka_publishing %}pub mod kafka;{% endif %}` (no Cargo feature flags)
+- [x] T026 [US2] Update existing handler (src/handlers/api.rs - hello endpoint) to publish dummy event when Kafka enabled: extract publisher from State, call create_dummy_event(), spawn async task with tokio::spawn() to call publisher.publish(), return 200 OK immediately
+- [x] T027 [US2] Update existing handler (src/handlers/storage.rs if S3 enabled) to publish dummy event on successful storage operation using same pattern as T026
+- [x] T028 [US2] Create integration test in tests/integration/kafka_publishing_test.rs.liquid using testcontainers for embedded Kafka broker: auto-detect Docker availability and skip with warning if unavailable (per CL-004), start broker, initialize service with config, call handler, verify event in topic, verify event structure
+- [x] T029 [US2] Create E2E test script tests/e2e/scripts/kafka-test.sh.liquid that: deploys service to Kind cluster via Kustomize, waits for readiness, makes HTTP requests, consumes from Kafka topic, verifies event fields
 
 ---
 

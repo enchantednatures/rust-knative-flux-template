@@ -1,5 +1,8 @@
 use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
+{%- if enable_kafka_publishing %}
+use std::sync::Arc;
+{%- endif %}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -56,14 +59,49 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!("S3-compatible storage initialized");
     {%- endif %}
+    {%- if enable_kafka_publishing %}
+
+    // =========================================================================
+    // 3c. Initialize Kafka Publisher (Event Publishing)
+    // =========================================================================
+    let kafka_publisher = if let Some(kafka_config) = config.kafka.clone() {
+        tracing::info!(
+            broker_url = %kafka_config.broker_url,
+            topic = %kafka_config.topic,
+            "Initializing Kafka publisher"
+        );
+        
+        match {{ crate_name }}::handlers::kafka::KafkaPublisher::new(kafka_config).await {
+            Ok(publisher) => {
+                tracing::info!("Kafka publisher initialized");
+                Some(Arc::new(publisher))
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to initialize Kafka publisher - exiting (fail fast)");
+                return Err(anyhow::anyhow!("Kafka publisher initialization failed: {}", e));
+            }
+        }
+    } else {
+        tracing::info!("Kafka publishing not configured");
+        None
+    };
+    {%- endif %}
 
     // =========================================================================
     // 4. Build Application State
     // =========================================================================
     {%- if features contains "s3" %}
+    {%- if enable_kafka_publishing %}
+    let state = AppState::new(redis_conn, storage, kafka_publisher);
+    {%- else %}
     let state = AppState::new(redis_conn, storage);
+    {%- endif %}
+    {%- else %}
+    {%- if enable_kafka_publishing %}
+    let state = AppState::new(redis_conn, kafka_publisher);
     {%- else %}
     let state = AppState::new(redis_conn);
+    {%- endif %}
     {%- endif %}
 
     // =========================================================================
