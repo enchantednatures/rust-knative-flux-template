@@ -185,5 +185,88 @@ mod kafka_tests {
         assert_eq!(event.source(), "/api/v1/test");
         assert!(!event.id().is_empty());
     }
+
+    /// Test KafkaError context extraction for structured logging
+    #[tokio::test]
+    async fn test_kafka_error_context() {
+        let error = {{ crate_name }}::error::KafkaError::broker_unreachable(
+            "kafka.example.com:9092",
+            "Connection refused: Network is unreachable"
+        );
+
+        let (error_type, error_context) = error.context();
+        assert_eq!(error_type, "broker_unreachable");
+        assert!(error_context.contains("kafka.example.com:9092"));
+        assert!(error_context.contains("Connection refused"));
+    }
+
+    /// Test KafkaError PublishFailed context
+    #[tokio::test]
+    async fn test_kafka_error_publish_failed_context() {
+        let error = {{ crate_name }}::error::KafkaError::PublishFailed(
+            "Message too large".to_string()
+        );
+
+        let (error_type, error_context) = error.context();
+        assert_eq!(error_type, "publish_failed");
+        assert_eq!(error_context, "Message too large");
+    }
+
+    /// Test KafkaError SerializationFailed context
+    #[tokio::test]
+    async fn test_kafka_error_serialization_failed_context() {
+        let error = {{ crate_name }}::error::KafkaError::SerializationFailed(
+            "JSON serialization error".to_string()
+        );
+
+        let (error_type, error_context) = error.context();
+        assert_eq!(error_type, "serialization_failed");
+        assert_eq!(error_context, "JSON serialization error");
+    }
+
+    /// Test KafkaError TopicNotFound context
+    #[tokio::test]
+    async fn test_kafka_error_topic_not_found_context() {
+        let error = {{ crate_name }}::error::KafkaError::TopicNotFound(
+            "nonexistent-topic".to_string()
+        );
+
+        let (error_type, error_context) = error.context();
+        assert_eq!(error_type, "topic_not_found");
+        assert_eq!(error_context, "nonexistent-topic");
+    }
+
+    /// Test broker unavailability error creation helper
+    #[tokio::test]
+    async fn test_broker_unreachable_error_creation() {
+        let broker = "localhost:9092";
+        let reason = "All brokers are down";
+        
+        let error = {{ crate_name }}::error::KafkaError::broker_unreachable(broker, reason);
+
+        match error {
+            {{ crate_name }}::error::KafkaError::BrokerUnreachable { broker: b, reason: r } => {
+                assert_eq!(b, broker);
+                assert_eq!(r, reason);
+            }
+            _ => panic!("Expected BrokerUnreachable variant"),
+        }
+    }
+
+    /// Test KafkaError cloning for async task propagation
+    #[tokio::test]
+    async fn test_kafka_error_clone() {
+        let original = {{ crate_name }}::error::KafkaError::broker_unreachable(
+            "broker:9092",
+            "timeout"
+        );
+
+        let cloned = original.clone();
+        let (t1, c1) = original.context();
+        let (t2, c2) = cloned.context();
+
+        assert_eq!(t1, t2);
+        assert_eq!(c1, c2);
+    }
 }
 {%- endif %}

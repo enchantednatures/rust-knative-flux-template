@@ -48,24 +48,34 @@ pub async fn hello(
     // Publish event to Kafka asynchronously (non-blocking)
     if let Some(publisher) = &_state.kafka_publisher {
         let publisher = Arc::clone(publisher);
+        let broker_url = publisher.config.broker_url.clone();
+        let topic = publisher.config.topic.clone();
+        
         tokio::spawn(async move {
             let event = crate::handlers::kafka::create_dummy_event(
                 &publisher.config,
                 "/api/v1/hello"
             );
+            let event_id = event.id().to_string();
+            
             match publisher.publish(&event).await {
                 Ok((partition, offset)) => {
                     tracing::debug!(
-                        event_id = %event.id(),
+                        event_id = %event_id,
                         partition = partition,
                         offset = offset,
                         "Event published to Kafka"
                     );
                 }
                 Err(e) => {
+                    let (error_type, error_context) = e.context();
                     tracing::error!(
                         error = %e,
-                        event_id = %event.id(),
+                        error_type = %error_type,
+                        error_context = %error_context,
+                        event_id = %event_id,
+                        broker = %broker_url,
+                        topic = %topic,
                         "Failed to publish event to Kafka"
                     );
                 }

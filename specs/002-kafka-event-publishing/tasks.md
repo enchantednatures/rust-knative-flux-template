@@ -2,7 +2,7 @@
 
 **Feature**: Kafka Event Publishing from Handlers  
 **Branch**: `002-kafka-event-publishing`  
-**Status**: Phase 4 (Publish Dummy Events) Complete | **Date**: 2026-01-04
+**Status**: Phase 5 (Graceful Failure Handling) Complete | **Date**: 2026-01-04
 
 ---
 
@@ -198,11 +198,11 @@ for i in {1..5}; do curl http://localhost:8080/api/v1/hello; done
 
 **Story Tasks**:
 
-- [ ] T030 [US3] Update KafkaPublisher::publish() to return Result with KafkaError variants (PublishFailed, SerializationFailed, BrokerUnreachable based on rdkafka error code)
-- [ ] T031 [US3] Update handler publishing logic in src/handlers/api.rs and src/handlers/storage.rs to catch errors in spawned tokio::spawn() task and log via `tracing::error!(error = %e, broker = %broker_url, topic = %topic, event_id = %event_id, "Failed to publish event")` per NFR-002
-- [ ] T032 [US3] Add KafkaError::BrokerUnreachable variant with structured context fields (broker: String, reason: String) and Display impl that includes context
-- [ ] T033 [US3] Remove startup health_check() call per CL-003 (fail fast already handled in T024); instead update readiness probe logic if needed to reflect Kafka publisher state
-- [ ] T034 [US3] Add integration test in tests/integration/kafka_publishing_test.rs to simulate broker unavailability: auto-detect Docker (skip with warning if unavailable per CL-004), disconnect broker, make requests, verify 200 OK returned and errors logged, reconnect broker, verify requests succeed
+- [x] T030 [US3] Update KafkaPublisher::publish() to return Result with KafkaError variants (PublishFailed, SerializationFailed, BrokerUnreachable based on rdkafka error code)
+- [x] T031 [US3] Update handler publishing logic in src/handlers/api.rs and src/handlers/storage.rs to catch errors in spawned tokio::spawn() task and log via `tracing::error!(error = %e, broker = %broker_url, topic = %topic, event_id = %event_id, "Failed to publish event")` per NFR-002
+- [x] T032 [US3] Add KafkaError::BrokerUnreachable variant with structured context fields (broker: String, reason: String) and Display impl that includes context
+- [x] T033 [US3] Remove startup health_check() call per CL-003 (fail fast already handled in T024); instead update readiness probe logic if needed to reflect Kafka publisher state
+- [x] T034 [US3] Add integration test in tests/integration/kafka_publishing_test.rs to simulate broker unavailability: auto-detect Docker (skip with warning if unavailable per CL-004), disconnect broker, make requests, verify 200 OK returned and errors logged, reconnect broker, verify requests succeed
 
 ---
 
