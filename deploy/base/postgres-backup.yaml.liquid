@@ -1,0 +1,27 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ project_name }}-postgres-daily-backup
+  namespace: {{ target_namespace }}
+spec:
+  # Backup schedule (cron format, UTC timezone)
+  schedule: "{{ backup_schedule }}"  # Customizable via template
+  
+  # Backup method - MUST use plugin for Barman Cloud Plugin
+  method: plugin
+  
+  # Plugin configuration - explicit reference required
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: {{ project_name }}-postgres-backup-store  # References ObjectStore CRD
+  
+  # Target cluster
+  cluster:
+    name: {{ project_name }}-postgres
+  
+  # Backup target selection (prefer standby to reduce load on primary)
+  target: prefer-standby
+  
+  # Backup retention is managed by ObjectStore CRD retentionPolicy
+  # This schedule only controls when backups are triggered

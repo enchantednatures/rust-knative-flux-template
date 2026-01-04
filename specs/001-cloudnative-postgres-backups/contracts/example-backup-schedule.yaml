@@ -1,0 +1,69 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-app-daily-backup
+  namespace: default
+spec:
+  # Backup schedule (cron format)
+  schedule: "0 2 * * *"  # Daily at 2:00 AM UTC
+  
+  # Backup method - MUST use plugin for Barman Cloud Plugin
+  method: plugin
+  
+  # Plugin configuration - explicit reference required
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: minio-dev  # References ObjectStore CRD
+  
+  # Target cluster
+  cluster:
+    name: postgres-app
+  
+  # Backup retention is managed by ObjectStore CRD retentionPolicy
+  # This backup schedule only controls when backups are triggered
+
+---
+# Example for production with different schedule
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-app-backup-prod
+  namespace: production
+spec:
+  # Multiple backups per day for production
+  schedule: "0 */6 * * *"  # Every 6 hours
+  
+  method: plugin
+  
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: s3-prod  # References production ObjectStore CRD
+  
+  cluster:
+    name: postgres-app
+  
+  # Immediate backup after creation (optional)
+  immediate: true
+
+---
+# Example for on-demand backup (not scheduled)
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: postgres-app-manual-backup-20260103
+  namespace: default
+spec:
+  # Backup method - MUST use plugin for Barman Cloud Plugin
+  method: plugin
+  
+  # Plugin configuration
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: minio-dev
+  
+  # Target cluster
+  cluster:
+    name: postgres-app

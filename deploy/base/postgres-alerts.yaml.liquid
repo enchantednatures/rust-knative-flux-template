@@ -1,0 +1,152 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ project_name }}-postgres-alerts
+  namespace: {{ target_namespace }}
+  labels:
+    app: {{ project_name }}-postgres
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: postgres.rules
+      interval: 30s
+      rules:
+        # ====================================================================
+        # Backup Health Alerts
+        # ====================================================================
+        - alert: PostgreSQLBackupFailed
+          expr: |
+            (
+              cnpg_collector_backup_last_failed_timestamp > 0
+              and
+              (time() - cnpg_collector_backup_last_failed_timestamp) < 600
+            )
+          for: 5m
+          labels:
+            severity: critical
+            component: postgres
+          annotations:
+            summary: "PostgreSQL backup failed ({% raw %}{{ $labels.cluster }}) {% endraw %}"
+            description: "Backup for PostgreSQL cluster {% raw %}{{ $labels.cluster }}{% endraw %} failed within the last 5 minutes. This requires immediate attention."
+        
+        - alert: PostgreSQLBackupMissing
+          expr: |
+            (
+              (time() - cnpg_collector_last_failed_backup_timestamp) > 86400
+            )
+          for: 1h
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL backup missing ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "No successful backup for PostgreSQL cluster {% raw %}{{ $labels.cluster }}{% endraw %} in the last 24 hours. Please investigate."
+        
+        # ====================================================================
+        # Replication Alerts
+        # ====================================================================
+        - alert: PostgreSQLReplicationLag
+          expr: |
+            cnpg_pg_replication_lag{cluster="{{ project_name }}-postgres"} > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL replication lag detected ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "Replication lag is {% raw %}{{ $value }}{% endraw %}s for cluster {% raw %}{{ $labels.cluster }}{% endraw %}, expected < 10s. Check replica availability."
+        
+        - alert: PostgreSQLHighReplicationLag
+          expr: |
+            cnpg_pg_replication_lag{cluster="{{ project_name }}-postgres"} > 60
+          for: 2m
+          labels:
+            severity: critical
+            component: postgres
+          annotations:
+            summary: "PostgreSQL high replication lag ({% raw %}{{ $labels.cluster }}{% endraw %})"
+            description: "Replication lag is {% raw %}{{ $value }}{% endraw %}s for cluster {% raw %}{{ $labels.cluster }}{% endraw %}. Immediate action required."
+        
+        # ====================================================================
+        # Instance Health Alerts
+        # ====================================================================
+        - alert: PostgreSQLInstanceDown
+          expr: |
+            up{job="postgres-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: postgres
+          annotations:
+            summary: "PostgreSQL instance down ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL pod {% raw %}{{ $labels.pod }}{% endraw %} is not responding to metrics scrape for 1 minute."
+        
+        - alert: PostgreSQLNotReady
+          expr: |
+            pg_setting_server_version_num == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL not ready ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL instance {% raw %}{{ $labels.pod }}{% endraw %} is not reporting version information. It may still be starting up."
+        
+        # ====================================================================
+        # Storage Alerts
+        # ====================================================================
+        - alert: PostgreSQLDiskLow
+          expr: |
+            (
+              node_filesystem_avail_bytes{fstype=~"ext4|xfs"} 
+              / 
+              node_filesystem_size_bytes{fstype=~"ext4|xfs"}
+            ) < 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL disk space low ({% raw %}{{ $labels.device }}{% endraw %})"
+            description: "Disk space on {% raw %}{{ $labels.device }}{% endraw %} is below 10%. Estimated time remaining: {% raw %}{{ $value }}{% endraw %}."
+        
+        # ====================================================================
+        # WAL Archiving Alerts
+        # ====================================================================
+        - alert: PostgreSQLWALArchivingFailed
+          expr: |
+            pg_stat_archiver_failed_count > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL WAL archiving failed ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "WAL archiving has failed {% raw %}{{ $value }}{% endraw %} times on {% raw %}{{ $labels.pod }}{% endraw %}. Check connectivity to backup storage."
+        
+        # ====================================================================
+        # Connection Alerts
+        # ====================================================================
+        - alert: PostgreSQLHighConnections
+          expr: |
+            pg_stat_activity_count > 50
+          for: 5m
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL high connection count ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL has {% raw %}{{ $value }}{% endraw %} active connections, approaching typical limits. Consider investigating application behavior."
+        
+        # ====================================================================
+        # Recovery/Failover Alerts
+        # ====================================================================
+        - alert: PostgreSQLRecoveryInProgress
+          expr: |
+            pg_is_in_recovery == 1
+          labels:
+            severity: warning
+            component: postgres
+          annotations:
+            summary: "PostgreSQL in recovery mode ({% raw %}{{ $labels.pod }}{% endraw %})"
+            description: "PostgreSQL instance {% raw %}{{ $labels.pod }}{% endraw %} is in recovery mode. It may be a replica or recovering from failure."

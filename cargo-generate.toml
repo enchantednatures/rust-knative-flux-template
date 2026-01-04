@@ -3,6 +3,8 @@ cargo_generate_version = ">=0.23.0"
 ignore = [
   ".git",
   "tests/e2e",
+  ".opencode",
+  ".specify",
   "target",
   "Cargo.lock",
   "crates/axum-cloudevents/target",
@@ -19,6 +21,7 @@ project_name = { prompt = "Project name", type = "string", default = "example-ap
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
 features = { prompt = "Select default features", type = "array", choices = [
   "s3",
+  "postgres",
 ], default = [
 ] }
 event_sources = { prompt = "Select event sources", type = "array", choices = [
@@ -84,4 +87,44 @@ ignore = [
   "scripts/dev/create-kafka-topic.sh",
   "docs/KAFKA_EVENTING.md.liquid",
   "tests/e2e/fixtures/kafka",
+]
+
+[conditional.'if features contains "postgres"'.placeholders]
+postgres_version = { prompt = "PostgreSQL version", type = "string", default = "16" }
+postgres_instances_dev = { prompt = "Dev PostgreSQL replicas", type = "string", default = "1" }
+postgres_instances_staging = { prompt = "Staging PostgreSQL replicas", type = "string", default = "2" }
+postgres_instances_prod = { prompt = "Prod PostgreSQL replicas", type = "string", default = "3" }
+postgres_storage_class = { prompt = "StorageClass for PostgreSQL PVCs", type = "string", default = "standard" }
+backup_schedule = { prompt = "Backup schedule (cron expression)", type = "string", default = "0 2 * * *" }
+backup_retention_dev = { prompt = "Dev backup retention (days)", type = "string", default = "7" }
+backup_retention_staging = { prompt = "Staging backup retention (days)", type = "string", default = "14" }
+backup_retention_prod = { prompt = "Prod backup retention (days)", type = "string", default = "30" }
+
+[conditional.'!if features contains "postgres"']
+ignore = [
+  "deploy/base/postgres-cluster.yaml.liquid",
+  "deploy/base/postgres-backup.yaml.liquid",
+  "deploy/base/postgres-pooler.yaml.liquid",
+  "deploy/base/postgres-objectstore.yaml.liquid",
+  "deploy/base/postgres-podmonitor.yaml.liquid",
+  "deploy/base/postgres-alerts.yaml.liquid",
+  "deploy/flux/postgres-kustomization.yaml.liquid",
+  "deploy/overlays/dev/postgres-cluster-patch.yaml.liquid",
+  "deploy/overlays/dev/postgres-backup-patch.yaml.liquid",
+  "deploy/overlays/staging/postgres-cluster-patch.yaml.liquid",
+  "deploy/overlays/staging/postgres-backup-patch.yaml.liquid",
+  "deploy/overlays/prod/postgres-cluster-patch.yaml.liquid",
+  "deploy/overlays/prod/postgres-backup-patch.yaml.liquid",
+  "scripts/dev/deploy-postgres.sh.liquid",
+  "scripts/dev/check-postgres-status.sh.liquid",
+  "scripts/dev/port-forward-postgres.sh.liquid",
+  "scripts/dev/create-backup.sh.liquid",
+  "scripts/dev/check-backup-status.sh.liquid",
+  "scripts/dev/list-backups.sh.liquid",
+  "scripts/dev/restore-from-backup.sh.liquid",
+  "scripts/validate-postgres-manifests.sh.liquid",
+  "docs/POSTGRES.md.liquid",
+  "docs/POSTGRES_BACKUP_RESTORE.md.liquid",
+  "docs/POSTGRES_MONITORING.md.liquid",
+  "specs/001-cloudnative-postgres-backups",
 ]

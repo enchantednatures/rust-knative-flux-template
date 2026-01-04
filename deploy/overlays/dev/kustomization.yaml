@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+  - infrastructure/minio.yaml
+
+patchesStrategicMerge:
+  - postgres-cluster-patch.yaml.liquid
+  - postgres-backup-patch.yaml.liquid
+
+# Note: Create and encrypt object-storage-secret.yaml with SOPS:
+# 1. cp ../../base/object-storage-secret.yaml.example object-storage-secret.yaml
+# 2. Edit with MinIO credentials (minioadmin/minioadmin for dev)
+# 3. sops -e -i object-storage-secret.yaml
+# 4. Add to resources above

@@ -1,0 +1,52 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-test-backup
+  namespace: default
+spec:
+  # E2E test: immediate schedule for faster test execution
+  # (run every 10 minutes instead of daily)
+  schedule: "*/10 * * * *"
+  
+  # Backup method
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: postgres-backup-store-test
+  
+  # Target cluster for E2E tests
+  cluster:
+    name: postgres-test
+  
+  # Prefer standby to reduce load on primary during tests
+  target: prefer-standby
+
+---
+apiVersion: objectstorage.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-backup-store-test
+  namespace: default
+spec:
+  configuration:
+    destinationPath: s3://postgres-backups/test/
+    s3:
+      endpointURL: http://minio.minio.svc.cluster.local:9000
+      region: us-east-1
+      s3Credentials:
+        accessKeyId:
+          name: object-storage-secret
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: object-storage-secret
+          key: SECRET_ACCESS_KEY
+  
+  # E2E test: shorter retention for faster cleanup
+  retentionPolicy:
+    base: 3      # Keep base backups for 3 days
+    wal: 1       # Keep WAL files for 1 day
+  
+  # E2E test: faster compression (gzip)
+  compressionAlgorithm: gzip
+  walCompressionAlgorithm: gzip

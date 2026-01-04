@@ -2,6 +2,50 @@
 
 This is a `cargo-generate` template. It supports conditional features that are applied during project generation.
 
+## Features
+
+This template includes:
+
+- **Rust Axum Web Framework**: High-performance async web service
+- **Knative Serverless**: Cloud-native serverless deployment
+- **Kafka Event Streaming**: Event-driven architectures
+- **CloudNativePG Database**: Production-grade PostgreSQL with HA, backups, and PITR
+- **FluxCD GitOps**: Infrastructure as code with Kubernetes
+- **OpenTelemetry Observability**: Distributed tracing and metrics
+
+## PostgreSQL Support
+
+This template includes comprehensive PostgreSQL database support with:
+
+- **High Availability**: Multi-instance clusters with automatic failover
+- **Automated Backups**: Scheduled backups to S3/MinIO with retention policies
+- **Point-in-Time Recovery**: Restore to any moment within retention window
+- **Monitoring & Alerting**: Prometheus metrics and alert rules for backup/replication
+- **Disaster Recovery**: Complete procedures and testing
+
+### PostgreSQL Quick Start
+
+```bash
+# Deploy PostgreSQL cluster with HA
+make dev-up
+
+# Connect to database
+./scripts/dev/port-forward-postgres.sh
+psql postgresql://app:PASSWORD@localhost:5432/app
+
+# Create backup
+./scripts/dev/create-backup.sh
+
+# Restore from backup
+./scripts/dev/restore-from-backup.sh
+```
+
+### PostgreSQL Documentation
+
+- [Operations Guide](docs/POSTGRES.md) - Deployment, configuration, scaling
+- [Backup & Restore Guide](docs/POSTGRES_BACKUP_RESTORE.md) - Backup procedures, PITR, disaster recovery
+- [Monitoring Guide](docs/POSTGRES_MONITORING.md) - Metrics, alerts, Grafana setup
+
 ## Template Structure
 
 All files with `.liquid` extension are template files using Shopify Liquid syntax. They are automatically renamed (`.liquid` removed) during generation.
@@ -51,3 +95,7 @@ Cargo-generate:
 
 - [cargo-generate docs](https://cargo-generate.github.io/cargo-generate/)
 - [Liquid template language](https://shopify.github.io/liquid/)
+- [CloudNativePG Documentation](https://cloudnative-pg.io/)
+- [Knative Documentation](https://knative.dev/)
+- [FluxCD Documentation](https://fluxcd.io/)
+

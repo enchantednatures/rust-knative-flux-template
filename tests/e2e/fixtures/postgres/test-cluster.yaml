@@ -1,0 +1,36 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-test
+  namespace: default
+spec:
+  instances: 2  # E2E test: 2 instances to test replication
+  imageName: "ghcr.io/cloudnative-pg/postgresql:16.4-1"
+  
+  # PostgreSQL configuration
+  postgresql:
+    parameters:
+      # Test configuration - lightweight but still tests HA
+      shared_buffers: "256MB"
+      max_connections: "100"
+      synchronous_commit: "on"  # Test replication
+  
+  # Minimal resource allocation for E2E tests
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  
+  # Small storage for E2E tests
+  storage:
+    size: "2Gi"
+  
+  # Bootstrap configuration
+  bootstrap:
+    initdb:
+      postInitApplicationSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+
