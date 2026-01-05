@@ -22,13 +22,12 @@ project_author = { prompt = "Project authors", type = "string", default = "Your 
 features = { prompt = "Select default features", type = "array", choices = [
   "s3",
   "postgres",
-], default = [
-] }
-event_sources = { prompt = "Select event sources", type = "array", choices = [
   "kafka",
 ], default = [
 ] }
-enable_kafka_publishing = { prompt = "Enable Kafka event publishing from handlers?", type = "bool", default = false }
+event_sources = { prompt = "Select event sources", type = "array", choices = [
+], default = [
+] }
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
 github_org = { prompt = "GitHub organization or username", type = "string", default = "your-org" }
@@ -130,12 +129,12 @@ ignore = [
   "specs/001-cloudnative-postgres-backups",
 ]
 
-[conditional.'if enable_kafka_publishing'.placeholders]
+[conditional.'if features contains "kafka"'.placeholders]
 kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
 kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
 kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
 
-[conditional.'!if enable_kafka_publishing']
+[conditional.'!if features contains "kafka"']
 ignore = [
   "src/handlers/kafka.rs.liquid",
   "tests/integration/kafka_publishing_test.rs.liquid",

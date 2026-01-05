@@ -20,7 +20,7 @@ bucket = "data"
 region = "us-east-1"
 {% endif %}
 
-{% if enable_kafka_publishing %}
+{% if "kafka" in features %}
 [kafka]
 broker_url = "{{ kafka_broker_url }}"
 topic = "{{ kafka_topic }}"

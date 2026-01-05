@@ -12,7 +12,7 @@ bucket = "{{ s3_bucket }}"
 region = "{{ s3_region }}"
 {% endif %}
 
-{% if enable_kafka_publishing %}
+{% if "kafka" in features %}
 [kafka]
 broker_url = "{{ kafka_broker_url }}"
 topic = "{{ kafka_topic }}"

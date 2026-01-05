@@ -1,4 +1,4 @@
-{% if enable_kafka_publishing -%}
+{% if "kafka" in features -%}
 # Kafka Event Publishing from Handlers
 
 This document provides comprehensive guidance for using Kafka event publishing in your {{ project_name }} service.
@@ -535,7 +535,8 @@ Kafka event publishing is not enabled for this service. To enable it:
    - Provide broker URL, topic name, and event name
 
 2. Or add manually:
-   - Set `enable_kafka_publishing = true` in `cargo-generate.toml`
+   - Include "kafka" in the `features` array in `cargo-generate.toml`
+   - Provide broker URL, topic, and event name when prompted
    - Update configuration templates with Kafka settings
 
 See [KAFKA_EVENTING.md](./KAFKA_EVENTING.md) for event source (Knative Eventing) documentation.

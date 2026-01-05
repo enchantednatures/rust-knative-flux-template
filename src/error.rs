@@ -18,7 +18,7 @@ pub enum AppError {
     #[error("Internal server error: {0}")]
     Internal(String),
 
-    {%- if enable_kafka_publishing %}
+    {%- if "kafka" in features %}
     #[error("Kafka error: {0}")]
     Kafka(#[from] KafkaError),
     {%- endif %}
@@ -45,7 +45,7 @@ impl IntoResponse for AppError {
                 tracing::error!(error = %e, "Internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
-            {%- if enable_kafka_publishing %}
+            {%- if "kafka" in features %}
             AppError::Kafka(ref e) => {
                 tracing::error!(error = %e, "Kafka error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Event publishing failed")
@@ -62,7 +62,7 @@ impl IntoResponse for AppError {
     }
 }
 
-{%- if enable_kafka_publishing %}
+{%- if "kafka" in features %}
 /// Kafka-specific error type with structured context for observability
 #[derive(Error, Debug, Clone)]
 pub enum KafkaError {

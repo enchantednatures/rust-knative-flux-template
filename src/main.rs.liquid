@@ -1,6 +1,6 @@
 use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
-{%- if enable_kafka_publishing %}
+{%- if "kafka" in features %}
 use std::sync::Arc;
 {%- endif %}
 
@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!("S3-compatible storage initialized");
     {%- endif %}
-    {%- if enable_kafka_publishing %}
+    {%- if "kafka" in features %}
 
     // =========================================================================
     // 3c. Initialize Kafka Publisher (Event Publishing)
@@ -95,13 +95,13 @@ async fn main() -> anyhow::Result<()> {
     // 4. Build Application State
     // =========================================================================
     {%- if features contains "s3" %}
-    {%- if enable_kafka_publishing %}
+    {%- if "kafka" in features %}
     let state = AppState::new(redis_conn, storage, kafka_publisher);
     {%- else %}
     let state = AppState::new(redis_conn, storage);
     {%- endif %}
     {%- else %}
-    {%- if enable_kafka_publishing %}
+    {%- if "kafka" in features %}
     let state = AppState::new(redis_conn, kafka_publisher);
     {%- else %}
     let state = AppState::new(redis_conn);

@@ -17,7 +17,7 @@ use crate::config::TelemetryConfig;
 /// - kafka_events_failed_total: Counter for failed publish attempts
 /// - kafka_publish_latency_ms: Histogram for publishing latency
 /// - HTTP request metrics (via tower-http)
-{%- if enable_kafka_publishing %}
+{%- if "kafka" in features %}
 ///
 /// Kafka metrics are tagged with:
 /// - topic: The Kafka topic where events are published
