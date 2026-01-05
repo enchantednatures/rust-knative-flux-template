@@ -208,7 +208,7 @@ impl KafkaPublisher {
                 let partition = delivery.partition;
                 let offset = delivery.offset;
                 
-                metrics::counter!("kafka_events_published_total", 1, "topic" => topic);
+                metrics::counter!("kafka_events_published_total", 1, "topic" => topic.clone());
                 metrics::histogram!("kafka_publish_latency_ms", latency_ms, "topic" => topic);
                 tracing::Span::current().record("partition", partition);
                 tracing::Span::current().record("offset", offset);
