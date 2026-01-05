@@ -75,11 +75,41 @@ echo -e "${YELLOW}→${NC} Waiting for Knative to be ready (this may take a few 
 if ! kubectl wait --for=condition=Ready pods --all -n knative-serving --timeout=5m; then
   echo -e "${RED}✗ Error: Knative failed to become ready${NC}"
   echo ""
-  echo "Pod status:"
+  echo "=== Pod Status ==="
   kubectl get pods -n knative-serving
   echo ""
-  echo "Recent events:"
+  echo "=== Recent Events ==="
   kubectl get events -n knative-serving --sort-by='.lastTimestamp' | tail -20
+  echo ""
+  echo "=== Pod Logs (All Failed/Not Ready Pods) ==="
+  
+  # Get all pods that are not Running or not Ready
+  FAILED_PODS=$(kubectl get pods -n knative-serving -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.name}')
+  NOT_READY_PODS=$(kubectl get pods -n knative-serving -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status=="False")].metadata.name}')
+  
+  ALL_PODS="$FAILED_PODS $NOT_READY_PODS"
+  
+  if [[ -n "$ALL_PODS" ]]; then
+    for POD in $ALL_PODS; do
+      echo ""
+      echo "--- Logs for pod: $POD ---"
+      kubectl logs -n knative-serving "$POD" --all-containers=true --timestamps=true 2>&1 | tail -50 || true
+      echo "--- Previous logs for pod: $POD ---"
+      kubectl logs -n knative-serving "$POD" --previous --all-containers=true --timestamps=true 2>&1 | tail -30 || true
+    done
+  else
+    echo "No failed pods found but readiness check timed out. Pod descriptions:"
+    kubectl describe pods -n knative-serving | head -100
+  fi
+  
+  echo ""
+  echo "=== Node Status ==="
+  kubectl get nodes -o wide
+  
+  echo ""
+  echo "=== Cluster Info ==="
+  kubectl cluster-info
+  
   exit 1
 fi
 
