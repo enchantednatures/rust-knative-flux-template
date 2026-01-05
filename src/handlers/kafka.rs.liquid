@@ -206,8 +206,8 @@ impl KafkaPublisher {
                 let partition = delivery.partition;
                 let offset = delivery.offset;
                 
-                metrics::counter!("kafka_events_published_total", "topic" = self.config.topic.as_str()).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.as_str()).record(latency_ms);
+                metrics::counter!("kafka_events_published_total", 1, "topic" => self.config.topic.as_str());
+                metrics::histogram!("kafka_publish_latency_ms", latency_ms, "topic" => self.config.topic.as_str());
                 tracing::Span::current().record("partition", partition);
                 tracing::Span::current().record("offset", offset);
                 
@@ -217,8 +217,8 @@ impl KafkaPublisher {
                 let error = KafkaError::PublishFailed(err.to_string());
                 let (error_type, _) = error.context();
                 
-                metrics::counter!("kafka_events_failed_total", "topic" = self.config.topic.as_str(), "error_type" = error_type.as_str()).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.as_str(), "error" = "true").record(latency_ms);
+                metrics::counter!("kafka_events_failed_total", 1, "topic" => self.config.topic.as_str(), "error_type" => error_type.as_str());
+                metrics::histogram!("kafka_publish_latency_ms", latency_ms, "topic" => self.config.topic.as_str(), "error" => "true");
                 
                 Err(error)
             }
