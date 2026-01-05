@@ -1,4 +1,4 @@
-{% if "kafka" in features -%}
+{% if features contains "kafka" -%}
 //! Kafka event publishing integration tests
 //!
 //! Tests for CloudEvent generation and Kafka publishing functionality.

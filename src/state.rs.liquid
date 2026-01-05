@@ -4,7 +4,7 @@ use redis::aio::MultiplexedConnection;
 {%- else %}
 use redis::aio::MultiplexedConnection;
 {%- endif %}
-{%- if "kafka" in features %}
+{%- if features contains "kafka" %}
 use crate::handlers::kafka::KafkaPublisher;
 use std::sync::Arc;
 {%- endif %}
@@ -19,7 +19,7 @@ pub struct AppState {
     /// S3-compatible storage operator (MinIO/S3 via OpenDAL)
     pub storage: Operator,
     {%- endif %}
-    {%- if "kafka" in features %}
+    {%- if features contains "kafka" %}
     /// Kafka publisher for event publishing
     pub kafka_publisher: Option<Arc<KafkaPublisher>>,
     {%- endif %}
@@ -37,12 +37,12 @@ impl AppState {
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = Client::open("redis://localhost:6379")?;
     ///     let conn = client.get_multiplexed_async_connection().await?;
-    ///     let state = AppState::new(conn{%- if features contains "s3" %}, storage{%- endif %}{%- if "kafka" in features %}, kafka_publisher{%- endif %});
+    ///     let state = AppState::new(conn{%- if features contains "s3" %}, storage{%- endif %}{%- if features contains "kafka" %}, kafka_publisher{%- endif %});
     ///     Ok(())
     /// }
     /// ```
     {%- if features contains "s3" %}
-    {%- if "kafka" in features %}
+    {%- if features contains "kafka" %}
     pub fn new(redis: MultiplexedConnection, storage: Operator, kafka_publisher: Option<Arc<KafkaPublisher>>) -> Self {
         Self { redis, storage, kafka_publisher }
     }
@@ -52,7 +52,7 @@ impl AppState {
     }
     {%- endif %}
     {%- else %}
-    {%- if "kafka" in features %}
+    {%- if features contains "kafka" %}
     pub fn new(redis: MultiplexedConnection, kafka_publisher: Option<Arc<KafkaPublisher>>) -> Self {
         Self { redis, kafka_publisher }
     }

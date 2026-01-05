@@ -55,7 +55,7 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
-{% if enable_kafka %}
+{% if features contains "kafka" %}
 # Kafka Event Publishing
 rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
 
@@ -73,13 +73,13 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # Object Storage (S3-compatible via OpenDAL)
 opendal = { version = "0.55", default-features = false, features = ["services-s3"] }
 
-{%- if not enable_kafka %}
+{%- unless features contains "kafka" %}
 # Time handling (for S3)
 chrono = { version = "0.4", features = ["serde"] }
 
 # UUID generation (for S3)
 uuid = { version = "1.0", features = ["v4", "serde"] }
-{%- endif %}
+{%- endunless %}
 {% endif %}
 
 # Utilities
