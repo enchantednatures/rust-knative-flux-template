@@ -11,7 +11,7 @@ on:
 jobs:
   generate-and-validate:
     name: Generate & Validate (s3=${{ matrix.include_s3 }}, updates=${{ matrix.enable_image_updates }})
-    runs-on: [gha-runner-scale-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false

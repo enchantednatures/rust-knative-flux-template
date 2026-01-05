@@ -3,11 +3,11 @@ name: Validate Dev Setup
 on:
   pull_request:
     paths:
-      - 'Makefile'
-      - 'scripts/dev/**'
-      - 'deploy/dev/**'
-      - 'deploy/overlays/dev/**'
-      - '.github/workflows/dev-setup-validation.yaml'
+      - "Makefile"
+      - "scripts/dev/**"
+      - "deploy/dev/**"
+      - "deploy/overlays/dev/**"
+      - ".github/workflows/dev-setup-validation.yaml"
 
 jobs:
   validate-dev-setup:

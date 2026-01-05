@@ -13,7 +13,7 @@ env:
 jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
-    runs-on: [gha-runner-scale-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     permissions:
@@ -83,7 +83,7 @@ jobs:
           kind version
           kind delete cluster --name e2e-${{ matrix.scenario }} || true
           kind create cluster --name e2e-${{ matrix.scenario }} --wait 5m
-          
+
           # Export Kind kubeconfig for subsequent steps
           kind get kubeconfig --name e2e-${{ matrix.scenario }} > /tmp/kind-kubeconfig-${{ matrix.scenario }}
           echo "KUBECONFIG=/tmp/kind-kubeconfig-${{ matrix.scenario }}" >> $GITHUB_ENV

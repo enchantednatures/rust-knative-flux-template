@@ -26,6 +26,7 @@ features = { prompt = "Select default features", type = "array", choices = [
 ], default = [
 ] }
 event_sources = { prompt = "Select event sources", type = "array", choices = [
+  "kafka",
 ], default = [
 ] }
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
