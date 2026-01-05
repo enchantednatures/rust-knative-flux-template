@@ -190,45 +190,31 @@ impl KafkaPublisher {
         let start = Instant::now();
         let json = event.to_json_bytes()?;
 
+        let event_id = event.id().to_string();
         let record = FutureRecord::to(&self.config.topic)
-            .key(&event.id())
+            .key(&event_id)
             .payload(&json);
 
         let result = self.producer
-            .send_result(record)
+            .send(record, std::time::Duration::from_millis(self.config.timeout_ms))
             .await
-            .map_err(|e| {
-                let (_, err) = e;
-                match err {
-                    rdkafka::error::KafkaError::NoOperation => {
-                        KafkaError::PublishFailed("No operation".to_string())
-                    }
-                    rdkafka::error::KafkaError::UnknownTopic => {
-                        KafkaError::TopicNotFound(self.config.topic.clone())
-                    }
-                    rdkafka::error::KafkaError::AllBrokersDown => {
-                        KafkaError::broker_unreachable(
-                            self.config.broker_url.clone(),
-                            err.to_string(),
-                        )
-                    }
-                    _ => KafkaError::PublishFailed(err.to_string()),
-                }
+            .map_err(|(err, _)| {
+                KafkaError::PublishFailed(err.to_string())
             });
 
         // Record metrics
         let latency_ms = start.elapsed().as_millis() as f64;
         match &result {
             Ok((partition, offset)) => {
-                metrics::counter!("kafka_events_published_total", "topic" => self.config.topic.clone()).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone()).record(latency_ms);
+                metrics::counter!("kafka_events_published_total", "topic" = self.config.topic.clone()).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.clone()).record(latency_ms);
                 tracing::Span::current().record("partition", *partition);
                 tracing::Span::current().record("offset", *offset);
             }
             Err(e) => {
                 let (error_type, _) = e.context();
-                metrics::counter!("kafka_events_failed_total", "topic" => self.config.topic.clone(), "error_type" => error_type).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone(), "error" => "true").record(latency_ms);
+                metrics::counter!("kafka_events_failed_total", "topic" = self.config.topic.clone(), "error_type" = error_type).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.clone(), "error" = "true").record(latency_ms);
             }
         }
 
@@ -241,14 +227,14 @@ impl KafkaPublisher {
     ///
     /// Result indicating broker is reachable or error
     pub async fn health_check(&self) -> Result<(), KafkaError> {
-        use rdkafka::statistics::Statistics;
+        use rdkafka::producer::Producer;
 
         // Send a simple metadata request to verify connectivity
         self.producer
             .client()
             .fetch_metadata(None, std::time::Duration::from_secs(5))
             .map_err(|e| {
-                KafkaError::BrokerUnreachable(
+                KafkaError::broker_unreachable(
                     self.config.broker_url.clone(),
                     e.to_string(),
                 )
