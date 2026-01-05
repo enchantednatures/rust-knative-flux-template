@@ -1,5 +1,6 @@
 [template]
 cargo_generate_version = ">=0.23.0"
+subfolder = "."
 ignore = [
   ".git",
   "tests/e2e",
@@ -7,6 +8,8 @@ ignore = [
   ".specify",
   "target",
   "Cargo.lock",
+  "specs",
+  "audio-stream-exporter",
   "crates/axum-cloudevents/target",
   "crates/axum-cloudevents-macros/target",
   ".github/workflows/template-e2e-test.yaml",
