@@ -117,7 +117,8 @@ jobs:
           TEMPLATE_EOF
 
           cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
-            --template-values-file template-values.toml
+            --template-values-file template-values.toml \
+            --allow-commands
 
           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
           cd "$GENERATED_DIR"

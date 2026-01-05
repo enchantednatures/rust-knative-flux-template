@@ -70,8 +70,10 @@ The template supports these variables:
 When you run:
 
 ```bash
-cargo generate --git https://github.com/your-org/rust-knative-flux-template
+cargo generate --git https://github.com/your-org/rust-knative-flux-template --allow-commands
 ```
+
+> **Note**: The `--allow-commands` flag allows the template to automatically run `cargo clippy --fix` and `cargo fmt` on the generated code, ensuring your project starts with properly formatted and linted code.
 
 Cargo-generate:
 
@@ -89,7 +91,11 @@ Cargo-generate:
    - Renames files (removes `.liquid` extension)
    - Removes conditionally excluded content
 
-3. **Non-liquid files** are copied as-is
+3. **Runs post-generation hooks**:
+   - Automatically fixes common linting issues with `cargo clippy --fix`
+   - Formats all code with `cargo fmt`
+
+4. **Non-liquid files** are copied as-is
 
 ## References
 
