@@ -1,10 +1,10 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-# Use Kubernetes 1.32+ for Knative v1.20.0 compatibility
-# Knative v1.20.0 requires Kubernetes 1.32.0 or higher
-image: kindest/node:v1.32.0
 nodes:
   - role: control-plane
+    # Use Kubernetes 1.32+ for Knative v1.20.0 compatibility
+    # Knative v1.20.0 requires Kubernetes 1.32.0 or higher
+    image: kindest/node:v1.32.0
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
