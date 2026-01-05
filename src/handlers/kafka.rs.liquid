@@ -196,29 +196,33 @@ impl KafkaPublisher {
             .payload(&json);
 
         let result = self.producer
-            .send(record, std::time::Duration::from_millis(self.config.timeout_ms))
-            .await
-            .map_err(|(err, _)| {
-                KafkaError::PublishFailed(err.to_string())
-            });
+            .send(record, std::time::Duration::from_millis(self.config.timeout_ms.into()))
+            .await;
 
         // Record metrics
         let latency_ms = start.elapsed().as_millis() as f64;
         match &result {
-            Ok((partition, offset)) => {
-                metrics::counter!("kafka_events_published_total", "topic" = self.config.topic.clone()).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.clone()).record(latency_ms);
-                tracing::Span::current().record("partition", *partition);
-                tracing::Span::current().record("offset", *offset);
+            Ok(delivery) => {
+                let partition = delivery.partition();
+                let offset = delivery.offset();
+                
+                metrics::counter!("kafka_events_published_total", "topic" => self.config.topic.clone()).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone()).record(latency_ms);
+                tracing::Span::current().record("partition", partition);
+                tracing::Span::current().record("offset", offset);
+                
+                Ok((partition, offset))
             }
-            Err(e) => {
-                let (error_type, _) = e.context();
-                metrics::counter!("kafka_events_failed_total", "topic" = self.config.topic.clone(), "error_type" = error_type).increment(1);
-                metrics::histogram!("kafka_publish_latency_ms", "topic" = self.config.topic.clone(), "error" = "true").record(latency_ms);
+            Err((err, _)) => {
+                let error = KafkaError::PublishFailed(err.to_string());
+                let (error_type, _) = error.context();
+                
+                metrics::counter!("kafka_events_failed_total", "topic" => self.config.topic.clone(), "error_type" => error_type).increment(1);
+                metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone(), "error" => "true").record(latency_ms);
+                
+                Err(error)
             }
         }
-
-        result.map(|(p, o)| (p, o))
     }
 
     /// Health check for Kafka broker connectivity
