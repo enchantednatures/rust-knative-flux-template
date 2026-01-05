@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
 
 # Colors
 GREEN='\033[0;32m'
@@ -11,13 +10,16 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+# Use existing KUBECONFIG if set, otherwise use local dev config
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+  if [[ ! -f "$KUBECONFIG_PATH" ]]; then
+    echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
+    echo "Run 'make dev-cluster' first"
+    exit 1
+  fi
+  export KUBECONFIG="$KUBECONFIG_PATH"
 fi
-
-export KUBECONFIG="$KUBECONFIG_PATH"
 
 echo "Deploying infrastructure services..."
 echo ""
