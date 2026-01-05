@@ -19,6 +19,9 @@ ignore = [
   "docs/TESTING.md.liquid",
 ]
 
+[hooks]
+post = ["post-generate.rhai"]
+
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
