@@ -59,9 +59,6 @@ redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 # Kafka Event Publishing
 rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
 
-# CloudEvents schema validation (optional, for future use)
-cloudevents = { version = "0.6", optional = true }
-
 # Time handling (for Kafka event timestamps)
 chrono = { version = "0.4", features = ["serde"] }
 
