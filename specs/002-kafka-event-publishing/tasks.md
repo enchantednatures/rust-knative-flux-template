@@ -251,17 +251,17 @@ curl http://localhost:8080/api/v1/hello
 
 ### Tasks
 
-- [ ] T038 Verify Docker build works with Kafka enabled: run `docker build -t template:latest .` on generated project with kafka_enabled=true, verify image builds successfully (per CL-001)
-- [ ] T039 Run full test suite: `cargo test --all-features -- --ignored` (includes unit, integration, E2E from previous phases)
-- [ ] T040 Run linting and formatting checks: `cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings`
-- [ ] T041 Update docs/KAFKA_EVENTING.md with publishing patterns section: add examples of KafkaPublisher usage, non-blocking pattern, error handling, configuration, reference to this feature implementation
-- [ ] T042 Update AGENTS.md with Kafka publishing patterns: add examples of publish from handlers, explain #[instrument] usage for Kafka operations, cold start impact notes
-- [ ] T043 Create CLOUDEVENTS_KAFKA_PUBLISHING.md reference guide with complete examples: simple handler publishing, batch-like scenario (multiple handlers), testing with testcontainers, production deployment checklist
-- [ ] T044 Update README.md section on Kafka to mention publishing support: link to quickstart.md and reference documentation
-- [ ] T045 Verify git status clean except for generated files, run `git diff` to review all changes against spec
-- [ ] T046 Create commit message per Conventional Commits: `feat(kafka): add event publishing from handlers with Liquid template conditionals`
-- [ ] T047 Update CHANGELOG.md with feature summary, related PRs, breaking changes (none), migration guide (none, backward compatible with default disabled)
-- [ ] T048 Tag for release or squash commits for PR (dependent on workflow preference)
+- [x] T038 Verify Docker build works with Kafka enabled: run `docker build -t template:latest .` on generated project with kafka_enabled=true, verify image builds successfully (per CL-001)
+- [x] T039 Run full test suite: `cargo test --all-features -- --ignored` (includes unit, integration, E2E from previous phases)
+- [x] T040 Run linting and formatting checks: `cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings`
+- [x] T041 Update docs/KAFKA_EVENTING.md with publishing patterns section: add examples of KafkaPublisher usage, non-blocking pattern, error handling, configuration, reference to this feature implementation
+- [x] T042 Update AGENTS.md with Kafka publishing patterns: add examples of publish from handlers, explain #[instrument] usage for Kafka operations, cold start impact notes
+- [x] T043 Create CLOUDEVENTS_KAFKA_PUBLISHING.md reference guide with complete examples: simple handler publishing, batch-like scenario (multiple handlers), testing with testcontainers, production deployment checklist
+- [x] T044 Update README.md section on Kafka to mention publishing support: link to quickstart.md and reference documentation
+- [x] T045 Verify git status clean except for generated files, run `git diff` to review all changes against spec
+- [x] T046 Create commit message per Conventional Commits: `feat(kafka): add event publishing from handlers with Liquid template conditionals`
+- [x] T047 Update CHANGELOG.md with feature summary, related PRs, breaking changes (none), migration guide (none, backward compatible with default disabled)
+- [x] T048 Tag for release or squash commits for PR (dependent on workflow preference)
 
 ---
 
