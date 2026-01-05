@@ -201,10 +201,10 @@ impl KafkaPublisher {
 
         // Record metrics
         let latency_ms = start.elapsed().as_millis() as f64;
-        match &result {
+        match result {
             Ok(delivery) => {
-                let partition = delivery.partition();
-                let offset = delivery.offset();
+                let partition = delivery.partition;
+                let offset = delivery.offset;
                 
                 metrics::counter!("kafka_events_published_total", "topic" => self.config.topic.clone()).increment(1);
                 metrics::histogram!("kafka_publish_latency_ms", "topic" => self.config.topic.clone()).record(latency_ms);
