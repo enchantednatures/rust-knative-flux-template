@@ -60,12 +60,26 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           cd "$TEMP_DIR"
 
-          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
-          cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
-            --define "enable_image_updates=${{ matrix.enable_image_updates }}" \
-            --define "target_namespace=default" \
-            --silent
+           echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+           
+           # Create template values file
+           cat > template-values.toml <<EOF
+           [values]
+           project_name = "example-app"
+           project_author = "CI Bot <ci@github.com>"
+           features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
+           event_sources = []
+           enable_image_updates = ${{ matrix.enable_image_updates }}
+           target_namespace = "default"
+           github_org = "enchantednatures"
+           github_repo = "rust-knative-flux-template"
+           default_branch = "main"
+           image_registry = "ghcr.io"
+           use_default_scaling = true
+           EOF
+           
+           cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
+             --template-values-file template-values.toml
 
           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
           cd "$GENERATED_DIR"
