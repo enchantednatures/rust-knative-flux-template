@@ -58,12 +58,12 @@ jobs:
         run: |
           set -euo pipefail
           TEMP_DIR=$(mktemp -d)
-          cd "$TEMP_DIR"
+           cd "$TEMP_DIR"
 
            echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
            
            # Create template values file
-           cat > template-values.toml <<EOF
+           cat > template-values.toml << 'EOF'
            [values]
            project_name = "example-app"
            project_author = "CI Bot <ci@github.com>"
@@ -81,10 +81,10 @@ jobs:
            cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
              --template-values-file template-values.toml
 
-          GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
-          cd "$GENERATED_DIR"
+           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
+           cd "$GENERATED_DIR"
 
-          echo "Running formatting check"
+           echo "Running formatting check"
           cargo fmt --all -- --check
 
           echo "Running Clippy"
