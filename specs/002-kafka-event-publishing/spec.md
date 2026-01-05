@@ -109,6 +109,7 @@ As an operator, I need visibility into event publishing operations through distr
 - **NFR-007**: Error handling MUST use `thiserror` and `IntoResponse` patterns consistent with existing codebase.
 - **NFR-008**: Kafka publisher MUST support connection pooling/multiplexing similar to Redis for efficient resource usage.
 - **NFR-009**: Service startup time SHOULD not increase by more than 500ms when Kafka publishing is enabled (Knative cold start constraint).
+- **NFR-010**: GitHub Actions workflow `template-generate-and-validate.yaml` MUST test all permutations of feature combinations: S3 (enabled/disabled) × ImageUpdates (enabled/disabled) × Kafka (enabled/disabled) = 8 matrix jobs, validating that generated projects compile and validate correctly across all configuration combinations.
 
 ### Key Entities
 
@@ -170,6 +171,14 @@ As an operator, I need visibility into event publishing operations through distr
 ### CL-005: Feature Selection Mechanism (2026-01-05)
 **Question**: How should Kafka be selected during template generation - as a separate boolean prompt or as part of a features array?  
 **Answer**: Use **features array pattern** (`features = ["s3", "postgres", "kafka"]`). Kafka should be included in the existing `features` multi-select prompt in `cargo-generate.toml`, aligned with how S3 and PostgreSQL are already handled. Liquid template conditionals should check `{% if "kafka" in features %}` instead of `{% if enable_kafka_publishing %}`. This provides consistent UX, single prompt for all optional features, and aligns with existing template patterns.
+
+### Session 2026-01-05 - GitHub Workflow Matrix Expansion
+
+- Q: What permutations should the GitHub workflow test? → A: All permutations (S3 enabled/disabled × ImageUpdates enabled/disabled × Kafka enabled/disabled = 8 total matrix jobs)
+- Q: Should the workflow test Kafka with a real broker or mock/stub it? → A: Use Docker Compose to start a real Kafka broker
+- Q: What validation should occur for each Kafka-enabled matrix job? → A: Keep current behavior unchanged (cargo fmt, cargo clippy, cargo build, cargo test --no-run)
+- Q: For Kafka-enabled jobs, should we set up a real Kafka broker in the CI environment? → A: No broker setup needed now; keep compile-only validation. Future iteration should reconsider adding real broker + integration tests
+- Q: How should the matrix variable names and job naming reflect the Kafka dimension? → A: Add Kafka to job name and use `include_kafka` matrix variable (e.g., `s3=${{ matrix.include_s3 }}, kafka=${{ matrix.include_kafka }}, updates=${{ matrix.enable_image_updates }}`)
 
 ## Related Documentation
 
