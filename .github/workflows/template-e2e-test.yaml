@@ -88,18 +88,31 @@ jobs:
           kind get kubeconfig --name e2e-${{ matrix.scenario }} > /tmp/kind-kubeconfig-${{ matrix.scenario }}
           echo "KUBECONFIG=/tmp/kind-kubeconfig-${{ matrix.scenario }}" >> $GITHUB_ENV
 
-      - name: Generate project from template
-        run: |
-          cargo generate --path . \
-            --name "test-app-${{ matrix.scenario }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
-            --define "project_name=test-app" \
-            --define "target_namespace=default" \
-            --define "github_org=test-org" \
-            --define "github_repo=test-repo" \
-            --define "default_branch=main" \
-            --define "enable_image_updates=false" \
-            -o ./generated
+       - name: Generate project from template
+         run: |
+           # Create template values file
+           cat > template-values.toml <<EOF
+           [values]
+           project_name = "test-app"
+           project_author = "E2E Bot <e2e@github.com>"
+           features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
+           event_sources = []
+           enable_image_updates = false
+           target_namespace = "default"
+           github_org = "test-org"
+           github_repo = "test-repo"
+           default_branch = "main"
+           image_registry = "ghcr.io"
+           use_default_scaling = true
+           EOF
+           
+           cargo generate --path . \
+             --name "test-app-${{ matrix.scenario }}" \
+             --template-values-file template-values.toml
+           
+           # Move generated project to expected location
+           mkdir -p ./generated
+           mv test-app-${{ matrix.scenario }} ./generated/
 
       - name: Validate generated project structure
         run: |
