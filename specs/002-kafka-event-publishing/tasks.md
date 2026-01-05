@@ -119,8 +119,8 @@ EOF
 
 **Story Tasks**:
 
-- [x] T014 [US1] Update cargo-generate.toml with three new prompts: enable_kafka_publishing (bool, default false), kafka_broker_url (string with conditional when enable_kafka_publishing==true), kafka_topic, kafka_event_name
-- [x] T015 [US1] Add Liquid template conditionals to config/default.toml.liquid, config/development.toml.liquid, config/production.toml.liquid to conditionally include [kafka] sections using `{% if enable_kafka_publishing %}...{% endif %}` with {{kafka_broker_url}}, {{kafka_topic}}, {{kafka_event_name}} placeholders
+- [x] T014 [US1] Update cargo-generate.toml to add "kafka" to the `features` multi-select array (alongside "s3", "postgres"). When "kafka" is selected, add prompts for: kafka_broker_url (string), kafka_topic, kafka_event_name
+- [x] T015 [US1] Add Liquid template conditionals to config/default.toml.liquid, config/development.toml.liquid, config/production.toml.liquid to conditionally include [kafka] sections using `{% if "kafka" in features %}...{% endif %}` with {{kafka_broker_url}}, {{kafka_topic}}, {{kafka_event_name}} placeholders
 
 ---
 
@@ -164,9 +164,9 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic my-events --fro
 - [x] T020 [P] [US2] Implement KafkaPublisher::new() async constructor that initializes rdkafka FutureProducer with config settings (bootstrap_servers, compression, linger_ms, request_timeout_ms) using ClientConfig, return Result<Self, KafkaError>
 - [x] T021 [P] [US2] Implement KafkaPublisher::publish() async method that: serializes CloudEvent to JSON, creates FutureRecord with event.id() as partition key, calls producer.send_result().await, returns Result<(i32, i64), KafkaError> with partition and offset
 - [x] T022 [US2] Implement KafkaPublisher::health_check() async method that verifies broker connectivity (simple metadata fetch), return Result<(), KafkaError>
-- [x] T023 [US2] Update AppState in src/state.rs.liquid to add kafka_publisher field: `pub kafka_publisher: Option<Arc<KafkaPublisher>>` using Liquid template conditional `{% if enable_kafka_publishing %}...{% endif %}`
+- [x] T023 [US2] Update AppState in src/state.rs.liquid to add kafka_publisher field: `pub kafka_publisher: Option<Arc<KafkaPublisher>>` using Liquid template conditional `{% if "kafka" in features %}...{% endif %}`
 - [x] T024 [US2] Update app initialization in src/main.rs.liquid to create KafkaPublisher from AppConfig::kafka if Some, call validate(), verify broker connectivity (fail fast if unreachable per CL-003), initialize publisher, add to AppState
-- [x] T025 [US2] Update src/handlers/mod.rs.liquid to conditionally export kafka module using Liquid template: `{% if enable_kafka_publishing %}pub mod kafka;{% endif %}` (no Cargo feature flags)
+- [x] T025 [US2] Update src/handlers/mod.rs.liquid to conditionally export kafka module using Liquid template: `{% if "kafka" in features %}pub mod kafka;{% endif %}` (no Cargo feature flags)
 - [x] T026 [US2] Update existing handler (src/handlers/api.rs - hello endpoint) to publish dummy event when Kafka enabled: extract publisher from State, call create_dummy_event(), spawn async task with tokio::spawn() to call publisher.publish(), return 200 OK immediately
 - [x] T027 [US2] Update existing handler (src/handlers/storage.rs if S3 enabled) to publish dummy event on successful storage operation using same pattern as T026
 - [x] T028 [US2] Create integration test in tests/integration/kafka_publishing_test.rs.liquid using testcontainers for embedded Kafka broker: auto-detect Docker availability and skip with warning if unavailable (per CL-004), start broker, initialize service with config, call handler, verify event in topic, verify event structure
