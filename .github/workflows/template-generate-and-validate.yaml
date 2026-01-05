@@ -68,6 +68,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install system dependencies for Kafka
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev pkg-config
+        shell: bash
+
       - name: Cache Cargo registry
         uses: actions/cache@v5
         with:
