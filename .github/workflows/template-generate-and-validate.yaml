@@ -80,7 +80,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.include_kafka }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
