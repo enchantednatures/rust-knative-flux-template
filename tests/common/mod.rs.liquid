@@ -16,9 +16,14 @@ pub async fn create_test_state() -> AppState {
         .await
         .expect("Failed to connect to Redis");
 
-{%- if features contains "s3" %}
+{%- if features contains "s3" and features contains "kafka" %}
+    let storage = create_test_storage();
+    AppState::new(conn, storage, None)
+{%- elif features contains "s3" %}
     let storage = create_test_storage();
     AppState::new(conn, storage)
+{%- elif features contains "kafka" %}
+    AppState::new(conn, None)
 {%- else %}
     AppState::new(conn)
 {%- endif %}
