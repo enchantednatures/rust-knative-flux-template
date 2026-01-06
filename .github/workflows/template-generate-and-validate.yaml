@@ -128,6 +128,9 @@ jobs:
           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
           cd "$GENERATED_DIR"
 
+          echo "Cleaning build artifacts from post-generate hook"
+          cargo clean
+
           echo "Running formatting check"
           cargo fmt --all -- --check
 
