@@ -19,10 +19,10 @@ pub async fn create_test_state() -> AppState {
 {%- if features contains "s3" and features contains "kafka" %}
     let storage = create_test_storage();
     AppState::new(conn, storage, None)
-{%- elif features contains "s3" %}
+{%- elsif features contains "s3" %}
     let storage = create_test_storage();
     AppState::new(conn, storage)
-{%- elif features contains "kafka" %}
+{%- elsif features contains "kafka" %}
     AppState::new(conn, None)
 {%- else %}
     AppState::new(conn)
