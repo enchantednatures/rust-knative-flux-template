@@ -107,7 +107,8 @@ jobs:
           EOF
                      cargo generate --path . \
             --name "test-app-${{ matrix.scenario }}" \
-            --template-values-file template-values.toml
+            --template-values-file template-values.toml \
+            --allow-commands
                      # Move generated project to expected location
           mkdir -p ./generated
           mv test-app-${{ matrix.scenario }} ./generated/
