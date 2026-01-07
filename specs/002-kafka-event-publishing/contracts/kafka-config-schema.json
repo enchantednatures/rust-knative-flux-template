@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KafkaConfig",
+  "description": "Configuration for Kafka event publishing",
+  "type": "object",
+  "properties": {
+    "broker_url": {
+      "type": "string",
+      "description": "Kafka broker bootstrap servers (comma-separated for multiple brokers)",
+      "examples": [
+        "kafka.kafka.svc.cluster.local:9092",
+        "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+      ],
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9.-]+:[0-9]{1,5}(,[a-zA-Z0-9.-]+:[0-9]{1,5})*$"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Kafka topic name for publishing events",
+      "examples": ["events", "prod-events"],
+      "minLength": 1,
+      "maxLength": 249,
+      "pattern": "^[a-zA-Z0-9._-]+$"
+    },
+    "event_name": {
+      "type": "string",
+      "description": "CloudEvents 1.0 type field value for published events",
+      "examples": [
+        "com.example.service.event.published",
+        "com.company.my-service.order.created"
+      ],
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+    },
+    "compression": {
+      "type": "string",
+      "description": "Compression algorithm for Kafka messages",
+      "enum": ["snappy", "gzip", "lz4", "zstd"],
+      "default": "snappy"
+    },
+    "linger_ms": {
+      "type": "integer",
+      "description": "Time to wait for batching messages (ms)",
+      "minimum": 0,
+      "maximum": 60000,
+      "default": 5,
+      "examples": [1, 5, 10, 50]
+    },
+    "retries": {
+      "type": "integer",
+      "description": "Number of retries on transient errors",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 3
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "description": "Broker request timeout (ms)",
+      "minimum": 1000,
+      "maximum": 300000,
+      "default": 10000,
+      "examples": [5000, 10000, 15000]
+    }
+  },
+  "required": ["broker_url", "topic", "event_name"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "broker_url": "kafka.kafka.svc.cluster.local:9092",
+      "topic": "events",
+      "event_name": "com.example.service.event.published",
+      "compression": "snappy",
+      "linger_ms": 5,
+      "retries": 3,
+      "timeout_ms": 10000
+    }
+  ]
+}

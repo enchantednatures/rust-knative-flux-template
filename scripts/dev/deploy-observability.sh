@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
 
 # Colors
 GREEN='\033[0;32m'
@@ -11,13 +10,16 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+# Use existing KUBECONFIG if set, otherwise use local dev config
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+  if [[ ! -f "$KUBECONFIG_PATH" ]]; then
+    echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
+    echo "Run 'make dev-cluster' first"
+    exit 1
+  fi
+  export KUBECONFIG="$KUBECONFIG_PATH"
 fi
-
-export KUBECONFIG="$KUBECONFIG_PATH"
 
 echo "Deploying observability stack (required)..."
 echo ""
@@ -38,11 +40,17 @@ echo -e "${YELLOW}→${NC} Waiting for Jaeger to be ready..."
 if ! kubectl wait --for=condition=Ready pod -l app=jaeger -n observability --timeout=5m; then
   echo -e "${RED}✗ Error: Jaeger failed to become ready${NC}"
   echo ""
-  echo "Pod status:"
+  echo "=== Pod Status ==="
   kubectl get pods -n observability -l app=jaeger
   echo ""
-  echo "Recent logs:"
-  kubectl logs -l app=jaeger -n observability --tail=50
+  echo "=== Pod Logs ==="
+  kubectl logs -l app=jaeger -n observability --tail=100 --all-containers=true 2>&1 || true
+  echo ""
+  echo "=== Pod Descriptions ==="
+  kubectl describe pods -l app=jaeger -n observability | head -100
+  echo ""
+  echo "=== Events ==="
+  kubectl get events -n observability --sort-by='.lastTimestamp' | tail -20
   exit 1
 fi
 
@@ -57,11 +65,17 @@ if ! kubectl wait --for=condition=Ready pod -l app=otel-collector -n observabili
     echo -e "${YELLOW}⚠ OTel Collector is Running (no health checks configured)${NC}"
   else
     echo ""
-    echo "Pod status:"
+    echo "=== Pod Status ==="
     kubectl get pods -n observability -l app=otel-collector
     echo ""
-    echo "Recent logs:"
-    kubectl logs -l app=otel-collector -n observability --tail=100
+    echo "=== Pod Logs ==="
+    kubectl logs -l app=otel-collector -n observability --tail=100 --all-containers=true 2>&1 || true
+    echo ""
+    echo "=== Pod Descriptions ==="
+    kubectl describe pods -l app=otel-collector -n observability | head -100
+    echo ""
+    echo "=== Events ==="
+    kubectl get events -n observability --sort-by='.lastTimestamp' | tail -20
     exit 1
   fi
 fi
@@ -71,11 +85,17 @@ echo -e "${YELLOW}→${NC} Waiting for Prometheus to be ready..."
 if ! kubectl wait --for=condition=Ready pod -l app=prometheus -n observability --timeout=5m; then
   echo -e "${RED}✗ Error: Prometheus failed to become ready${NC}"
   echo ""
-  echo "Pod status:"
+  echo "=== Pod Status ==="
   kubectl get pods -n observability -l app=prometheus
   echo ""
-  echo "Recent logs:"
-  kubectl logs -l app=prometheus -n observability --tail=50
+  echo "=== Pod Logs ==="
+  kubectl logs -l app=prometheus -n observability --tail=100 --all-containers=true 2>&1 || true
+  echo ""
+  echo "=== Pod Descriptions ==="
+  kubectl describe pods -l app=prometheus -n observability | head -100
+  echo ""
+  echo "=== Events ==="
+  kubectl get events -n observability --sort-by='.lastTimestamp' | tail -20
   exit 1
 fi
 

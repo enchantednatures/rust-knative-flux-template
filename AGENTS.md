@@ -333,6 +333,181 @@ async fn test_endpoint() {
 }
 ```
 
+## Kafka Event Publishing Patterns
+
+When Kafka event publishing is enabled (`enable_kafka_publishing = true`), use these patterns:
+
+### Non-Blocking Event Publishing from Handlers
+
+Publish events asynchronously without blocking HTTP responses:
+
+```rust
+use std::sync::Arc;
+
+pub async fn my_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<MyRequest>,
+) -> Json<MyResponse> {
+    // Handle the request
+    let response = MyResponse { /* ... */ };
+
+    // Publish event to Kafka (non-blocking via tokio::spawn)
+    if let Some(publisher) = &state.kafka_publisher {
+        let publisher = Arc::clone(publisher);
+        let broker_url = publisher.config.broker_url.clone();
+        let topic = publisher.config.topic.clone();
+
+        tokio::spawn(async move {
+            let event = crate::handlers::kafka::create_dummy_event(
+                &publisher.config,
+                "/api/v1/my-handler"
+            );
+            let event_id = event.id().to_string();
+
+            match publisher.publish(&event).await {
+                Ok((partition, offset)) => {
+                    tracing::debug!(
+                        event_id = %event_id,
+                        partition = partition,
+                        offset = offset,
+                        "Event published"
+                    );
+                }
+                Err(e) => {
+                    let (error_type, error_context) = e.context();
+                    tracing::error!(
+                        error = %e,
+                        error_type = %error_type,
+                        error_context = %error_context,
+                        event_id = %event_id,
+                        broker = %broker_url,
+                        topic = %topic,
+                        "Failed to publish event"
+                    );
+                    // Note: HTTP response already sent, error logged for monitoring
+                }
+            }
+        });
+    }
+
+    // Return 200 OK immediately, regardless of event publishing result
+    Json(response)
+}
+```
+
+### Distributed Tracing for Event Publishing
+
+The `KafkaPublisher::publish()` method is instrumented with:
+
+```rust
+#[tracing::instrument(
+    skip(self, event),
+    fields(
+        event_id = %event.id(),
+        topic = %self.config.topic,
+        event_type = %event.type_(),
+        source = %event.source()
+    ),
+    err(Debug)
+)]
+pub async fn publish(&self, event: &CloudEvent) -> Result<(i32, i64), KafkaError> {
+    // Implementation...
+}
+```
+
+This automatically creates spans with:
+- **event_id**: Unique event identifier (searchable in Jaeger)
+- **topic**: Kafka topic name
+- **event_type**: CloudEvents type
+- **source**: Handler path or source
+- **partition** & **offset**: Added on success for audit trails
+- **error details**: Captured on failure for debugging
+
+View in Jaeger by searching for operation name `KafkaPublisher::publish`.
+
+### Error Handling Patterns
+
+Always handle publishing errors gracefully:
+
+```rust
+// Pattern 1: Log and ignore (safe for non-critical events)
+match publisher.publish(&event).await {
+    Ok(_) => tracing::info!("Event published"),
+    Err(e) => {
+        let (error_type, ctx) = e.context();
+        tracing::warn!(error_type, error_context = ctx, "Event publish failed");
+        // Handler continues normally - user gets 200 OK
+    }
+}
+
+// Pattern 2: Log with context for monitoring
+if let Err(e) = publisher.publish(&event).await {
+    let (error_type, ctx) = e.context();
+    tracing::error!(
+        error = %e,
+        error_type = %error_type,
+        error_context = %ctx,
+        event_id = %event.id(),
+        broker = %publisher.config.broker_url,
+        "Critical event publish failed"
+    );
+    // Alert on repeated failures via metrics
+}
+
+// Never block handler on publishing errors
+// Handler always returns 200 OK (event delivery is best-effort)
+```
+
+### Prometheus Metrics for Event Publishing
+
+Metrics are automatically recorded by `KafkaPublisher`:
+
+```rust
+// Query success rate
+rate(kafka_events_published_total{topic="your-topic"}[5m])
+
+// Query failure rate by type
+rate(kafka_events_failed_total{topic="your-topic", error_type="broker_unreachable"}[5m])
+
+// Query latency percentiles
+histogram_quantile(0.99, kafka_publish_latency_ms{topic="your-topic"})
+
+// Alert on high failure rate
+(rate(kafka_events_failed_total[5m]) / rate(kafka_events_published_total[5m])) > 0.01
+```
+
+### Cold Start Impact
+
+Event publishing adds minimal cold start overhead:
+
+- **Kafka producer initialization**: ~100-200ms (happens once at startup)
+- **Per-publish latency**: ~10-50ms typical (non-blocking, does not affect HTTP response)
+- **Memory overhead**: ~5-10 MB for rdkafka producer
+
+Optimization tips:
+- Keep Kafka broker accessible with low latency (<50ms)
+- Use SNI/TLS caching for broker connections
+- Monitor cold start times in production (`container_runtime_duration_seconds` metric)
+
+### Configuration for Publishing
+
+When generating project, provide:
+
+```
+Enable Kafka event publishing? yes
+Kafka broker URL: kafka.example.com:9092
+Kafka topic name: my-service-events
+CloudEvents event name: com.example.myservice.event.published
+```
+
+These configure:
+- `broker_url`: Kafka broker address for publishing
+- `topic`: Kafka topic where events are sent
+- `event_name`: CloudEvents type field for your events
+- `compression`: Snappy (default, adjustable)
+- `linger_ms`: 5ms default (batch small messages)
+- `timeout_ms`: 10s default (fail-fast on unreachable broker)
+
 ## Knative-Specific Constraints
 
 - **Port 8080**: Always use port 8080 (required by Knative)

@@ -1,5 +1,6 @@
 [template]
 cargo_generate_version = ">=0.23.0"
+subfolder = "."
 ignore = [
   ".git",
   "tests/e2e",
@@ -7,6 +8,8 @@ ignore = [
   ".specify",
   "target",
   "Cargo.lock",
+  "specs",
+  "audio-stream-exporter",
   "crates/axum-cloudevents/target",
   "crates/axum-cloudevents-macros/target",
   ".github/workflows/template-e2e-test.yaml",
@@ -16,12 +19,16 @@ ignore = [
   "docs/TESTING.md.liquid",
 ]
 
+[hooks]
+post = ["post-generate.rhai"]
+
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
 features = { prompt = "Select default features", type = "array", choices = [
   "s3",
   "postgres",
+  "kafka",
 ], default = [
 ] }
 event_sources = { prompt = "Select event sources", type = "array", choices = [
@@ -127,4 +134,15 @@ ignore = [
   "docs/POSTGRES_BACKUP_RESTORE.md.liquid",
   "docs/POSTGRES_MONITORING.md.liquid",
   "specs/001-cloudnative-postgres-backups",
+]
+
+[conditional.'if features contains "kafka"'.placeholders]
+kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
+kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
+kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
+
+[conditional.'!if features contains "kafka"']
+ignore = [
+  "src/handlers/kafka.rs.liquid",
+  "tests/integration/kafka_publishing_test.rs.liquid",
 ]

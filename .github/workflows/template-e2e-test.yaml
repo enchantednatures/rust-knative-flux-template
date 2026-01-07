@@ -13,7 +13,7 @@ env:
 jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
-    runs-on: [gha-runner-scale-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     permissions:
@@ -83,23 +83,35 @@ jobs:
           kind version
           kind delete cluster --name e2e-${{ matrix.scenario }} || true
           kind create cluster --name e2e-${{ matrix.scenario }} --wait 5m
-          
+
           # Export Kind kubeconfig for subsequent steps
           kind get kubeconfig --name e2e-${{ matrix.scenario }} > /tmp/kind-kubeconfig-${{ matrix.scenario }}
           echo "KUBECONFIG=/tmp/kind-kubeconfig-${{ matrix.scenario }}" >> $GITHUB_ENV
 
       - name: Generate project from template
         run: |
-          cargo generate --path . \
+          # Create template values file
+          cat > template-values.toml <<EOF
+          [values]
+          project_name = "test-app"
+          project_author = "E2E Bot <e2e@github.com>"
+          features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
+          event_sources = []
+          enable_image_updates = false
+          target_namespace = "default"
+          github_org = "test-org"
+          github_repo = "test-repo"
+          default_branch = "main"
+          image_registry = "ghcr.io"
+          use_default_scaling = true
+          EOF
+                     cargo generate --path . \
             --name "test-app-${{ matrix.scenario }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
-            --define "project_name=test-app" \
-            --define "target_namespace=default" \
-            --define "github_org=test-org" \
-            --define "github_repo=test-repo" \
-            --define "default_branch=main" \
-            --define "enable_image_updates=false" \
-            -o ./generated
+            --template-values-file template-values.toml \
+            --allow-commands
+                     # Move generated project to expected location
+          mkdir -p ./generated
+          mv test-app-${{ matrix.scenario }} ./generated/
 
       - name: Validate generated project structure
         run: |
@@ -124,11 +136,14 @@ jobs:
           done
 
           echo ""
-          echo "Validating Kubernetes manifests..."
-          kubectl apply --dry-run=client -k "${GENERATED_DIR}/deploy/base/" 2>&1 || {
-            echo "❌ Kubernetes manifest validation failed"
+          echo "Validating YAML syntax..."
+          # Note: We can't use kubectl apply --dry-run here because Knative CRDs aren't installed yet
+          # The manifests will be validated when actually applied to the cluster later
+          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/knative-service.yaml" > /dev/null 2>&1; then
+            echo "❌ YAML syntax validation failed"
             exit 1
-          }
+          fi
+          echo "  ✓ YAML syntax is valid"
 
           echo "✅ Checkpoint 1 passed: Template generation valid"
 

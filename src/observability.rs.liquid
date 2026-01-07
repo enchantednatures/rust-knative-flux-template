@@ -10,6 +10,29 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::config::TelemetryConfig;
 
+/// Initialize metrics collection with Prometheus export
+///
+/// Sets up Prometheus metrics for:
+/// - kafka_events_published_total: Counter for successfully published events
+/// - kafka_events_failed_total: Counter for failed publish attempts
+/// - kafka_publish_latency_ms: Histogram for publishing latency
+/// - HTTP request metrics (via tower-http)
+{%- if features contains "kafka" %}
+///
+/// Kafka metrics are tagged with:
+/// - topic: The Kafka topic where events are published
+/// - error_type: Type of error (broker_unreachable, publish_failed, etc.)
+{%- endif %}
+pub fn init_metrics() -> anyhow::Result<()> {
+    // Initialize the metrics-exporter-prometheus with default configuration
+    // Metrics will be available at GET /metrics endpoint (added by tower-http integration)
+    metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()?;
+
+    tracing::info!("Prometheus metrics exporter initialized");
+    Ok(())
+}
+
 /// Initialize OpenTelemetry with B3 propagation for Knative compatibility
 ///
 /// # Critical: Knative Trace Propagation

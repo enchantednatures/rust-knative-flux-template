@@ -4,3 +4,6 @@ pub mod health;
 {%- if features contains "s3" %}
 pub mod storage;
 {%- endif %}
+{%- if features contains "kafka" %}
+pub mod kafka;
+{%- endif %}

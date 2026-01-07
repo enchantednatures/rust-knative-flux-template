@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
 
 # Colors
 GREEN='\033[0;32m'
@@ -11,13 +10,16 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+# Use existing KUBECONFIG if set, otherwise use local dev config
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+  if [[ ! -f "$KUBECONFIG_PATH" ]]; then
+    echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
+    echo "Run 'make dev-cluster' first"
+    exit 1
+  fi
+  export KUBECONFIG="$KUBECONFIG_PATH"
 fi
-
-export KUBECONFIG="$KUBECONFIG_PATH"
 
 KNATIVE_VERSION="1.20.0"
 
@@ -73,11 +75,38 @@ echo -e "${YELLOW}→${NC} Waiting for Knative to be ready (this may take a few 
 if ! kubectl wait --for=condition=Ready pods --all -n knative-serving --timeout=5m; then
   echo -e "${RED}✗ Error: Knative failed to become ready${NC}"
   echo ""
-  echo "Pod status:"
+  echo "=== Pod Status ==="
   kubectl get pods -n knative-serving
   echo ""
-  echo "Recent events:"
+  echo "=== Recent Events ==="
   kubectl get events -n knative-serving --sort-by='.lastTimestamp' | tail -20
+  echo ""
+  echo "=== Pod Logs (All Pods) ==="
+  
+  # Get all pod names in knative-serving namespace
+  ALL_PODS=$(kubectl get pods -n knative-serving -o jsonpath='{.items[*].metadata.name}')
+  
+  if [[ -n "$ALL_PODS" ]]; then
+    for POD in $ALL_PODS; do
+      echo ""
+      echo "--- Logs for pod: $POD ---"
+      kubectl logs -n knative-serving "$POD" --all-containers=true --timestamps=true 2>&1 | tail -50 || true
+      echo "--- Previous logs for pod: $POD ---"
+      kubectl logs -n knative-serving "$POD" --previous --all-containers=true --timestamps=true 2>&1 | tail -30 || true
+    done
+  else
+    echo "No pods found. Getting pod descriptions:"
+    kubectl describe pods -n knative-serving | head -100
+  fi
+  
+  echo ""
+  echo "=== Node Status ==="
+  kubectl get nodes -o wide
+  
+  echo ""
+  echo "=== Cluster Info ==="
+  kubectl cluster-info
+  
   exit 1
 fi
 

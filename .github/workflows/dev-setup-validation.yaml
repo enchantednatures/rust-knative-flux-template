@@ -3,11 +3,11 @@ name: Validate Dev Setup
 on:
   pull_request:
     paths:
-      - 'Makefile'
-      - 'scripts/dev/**'
-      - 'deploy/dev/**'
-      - 'deploy/overlays/dev/**'
-      - '.github/workflows/dev-setup-validation.yaml'
+      - "Makefile"
+      - "scripts/dev/**"
+      - "deploy/dev/**"
+      - "deploy/overlays/dev/**"
+      - ".github/workflows/dev-setup-validation.yaml"
 
 jobs:
   validate-dev-setup:
@@ -52,8 +52,8 @@ jobs:
 
       - name: Verify infrastructure
         run: |
-          kubectl get pods -n services
-          kubectl wait --for=condition=Ready pod -l app=redis -n services --timeout=3m
+          kubectl get pods -n redis
+          kubectl wait --for=condition=Ready pod -l app=redis -n redis --timeout=3m
         env:
           KUBECONFIG: /home/runner/.kube/config
 
@@ -82,7 +82,9 @@ jobs:
           kubectl get pods -n knative-serving
           echo ""
           echo "=== Infrastructure Status ==="
-          kubectl get pods -n services
+          kubectl get pods -n redis
+          kubectl get pods -n kafka 2>/dev/null || true
+          kubectl get pods -n minio 2>/dev/null || true
           echo ""
           echo "=== Observability Status ==="
           kubectl get pods -n observability
