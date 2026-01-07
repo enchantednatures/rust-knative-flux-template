@@ -26,6 +26,8 @@
 - **Docker daemon check** - Script now validates Docker is running before attempting cluster creation
 - **Template exclusions** - Added E2E scripts and docs to `cargo-generate.toml` ignore list to prevent template processing
 - **Apple Silicon build support** - Added `--platform linux/amd64` flag to Docker build to fix cargo-chef failures on arm64 Macs
+- **Flux OCIRepository connectivity** - Fixed registry URL to use `kind-registry-e2e:5000` (cluster-internal) instead of `localhost:5001` for Flux access
+- **OCIRepository API version** - Updated from deprecated v1beta2 to v1
 
 ### Features
 - **Smart dependency checking** - Validates all required tools are installed

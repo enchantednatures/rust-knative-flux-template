@@ -3,6 +3,7 @@ use axum::{
     routing::{get, post},
     middleware::Next,
     http::Request,
+    body::Body,
 };
 use tower_http::trace::TraceLayer;
 use tower::ServiceBuilder;
@@ -51,8 +52,8 @@ use crate::state::AppState;
 struct ApiDoc;
 
 /// Simple metrics middleware that records HTTP request counts
-async fn metrics_middleware<B>(req: Request<B>, next: Next) -> axum::response::Response {
-    counter!("http_requests_total").increment(1);
+async fn metrics_middleware(req: Request<Body>, next: Next) -> axum::response::Response {
+    counter!("http_requests_total", 1);
     next.run(req).await
 }
 

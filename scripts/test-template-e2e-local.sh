@@ -107,6 +107,9 @@ run_scenario() {
     local image_tag="local-${RUN_ID}-${SHORT_SHA}"
     local app_image="${LOCAL_REGISTRY}/test-app-${scenario}:${image_tag}"
     local manifest_image="${LOCAL_REGISTRY}/manifests-${scenario}:${image_tag}"
+    # Registry URL accessible from inside the cluster
+    local cluster_registry="kind-registry-e2e:5000"
+    local cluster_manifest_image="${cluster_registry}/manifests-${scenario}:${image_tag}"
     local generated_dir="./generated/test-app-${scenario}"
     
     export KUBECONFIG="${kubeconfig}"
@@ -367,14 +370,14 @@ EOF
     
     cat <<EOF | kubectl apply -f -
 ---
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
   name: test-app-${scenario}
   namespace: flux-system
 spec:
   interval: 1m
-  url: oci://${manifest_image%:*}
+  url: oci://${cluster_manifest_image%:*}
   ref:
     tag: "${image_tag}"
   insecure: true
