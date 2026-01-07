@@ -500,8 +500,9 @@ jobs:
           echo "Running E2E tests against: ${SERVICE_URL}"
 
           # Helper function to run curl inside the cluster
+          # Uses grep -v to filter out kubectl's pod deletion message
           kubectl_curl() {
-            kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never -- "$@"
+            kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never -- "$@" 2>&1 | grep -v "pod.*deleted"
           }
 
           FAILED=0
@@ -526,7 +527,7 @@ jobs:
 
           echo ""
           echo "Test: Prometheus metrics..."
-          METRICS_OUTPUT=$(kubectl_curl -f -s "${SERVICE_URL}/metrics" 2>/dev/null)
+          METRICS_OUTPUT=$(kubectl_curl -f -s "${SERVICE_URL}/metrics")
           if echo "$METRICS_OUTPUT" | grep -q '# HELP' && echo "$METRICS_OUTPUT" | grep -q '# TYPE'; then
             echo "  ✓ Metrics endpoint PASSED (Prometheus format detected)"
           else
@@ -537,7 +538,7 @@ jobs:
 
           echo ""
           echo "Test: Hello API..."
-          RESPONSE=$(kubectl_curl -f -s "${SERVICE_URL}/api/v1/hello" 2>/dev/null)
+          RESPONSE=$(kubectl_curl -f -s "${SERVICE_URL}/api/v1/hello")
           if echo "$RESPONSE" | grep -q '"message"'; then
             echo "  ✓ Hello API PASSED"
           else
@@ -548,7 +549,7 @@ jobs:
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
             echo ""
             echo "Test: S3 storage example..."
-            RESPONSE=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example" 2>/dev/null)
+            RESPONSE=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")
 
             if echo "$RESPONSE" | grep -q '"success":true' && \
                echo "$RESPONSE" | grep -q '"read_verified":true'; then
