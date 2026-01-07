@@ -27,8 +27,8 @@ async fn main() -> anyhow::Result<()> {
         "Telemetry initialized"
     );
 
-    // Initialize Prometheus metrics
-    observability::init_metrics()?;
+    // Initialize Prometheus metrics and get handle for /metrics endpoint
+    let metrics_handle = observability::init_metrics()?;
     tracing::info!("Metrics initialized (Prometheus available at GET /metrics)");
 
     // =========================================================================
@@ -96,15 +96,15 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     {%- if features contains "s3" %}
     {%- if features contains "kafka" %}
-    let state = AppState::new(redis_conn, storage, kafka_publisher);
+    let state = AppState::new(redis_conn, storage, kafka_publisher, metrics_handle);
     {%- else %}
-    let state = AppState::new(redis_conn, storage);
+    let state = AppState::new(redis_conn, storage, metrics_handle);
     {%- endif %}
     {%- else %}
     {%- if features contains "kafka" %}
-    let state = AppState::new(redis_conn, kafka_publisher);
+    let state = AppState::new(redis_conn, kafka_publisher, metrics_handle);
     {%- else %}
-    let state = AppState::new(redis_conn);
+    let state = AppState::new(redis_conn, metrics_handle);
     {%- endif %}
     {%- endif %}
 

@@ -14,6 +14,7 @@ use crate::state::AppState;
     paths(
         health::liveness,
         health::readiness,
+        health::metrics,
         api::hello,
         {%- if features contains "s3" %}
         crate::handlers::storage::storage_example,
@@ -52,6 +53,8 @@ pub fn create_router(state: AppState) -> Router {
         // Health endpoints (not versioned)
         .route("/health/live", get(health::liveness))
         .route("/health/ready", get(health::readiness))
+        // Metrics endpoint (Prometheus scraping)
+        .route("/metrics", get(health::metrics))
         // Versioned API
         .nest("/api/v1", api_v1_routes())
         // OpenAPI documentation

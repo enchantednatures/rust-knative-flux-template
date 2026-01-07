@@ -1,0 +1,317 @@
+openapi: 3.0.3
+info:
+  title: Idempotency Guard API Contract
+  description: |
+    OpenAPI specification fragment for idempotency guard error responses and headers.
+    This contract defines the HTTP interface for duplicate event detection.
+  version: 1.0.0
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Unique identifier for event deduplication. This key is used to track whether
+        an event has been processed before. If an event with the same key is received
+        within the TTL window, it will be rejected as a duplicate.
+        
+        **Guidelines**:
+        - Use event ID from CloudEvents `ce-id` header if available
+        - Otherwise, generate a unique identifier (UUID v4 recommended)
+        - Key must be deterministic for the same logical event (for retry scenarios)
+        - Maximum length: 255 characters
+        - Character set: UTF-8 printable characters (alphanumeric + hyphens/underscores recommended)
+        
+        **Examples**:
+        - `event-2026-01-06-abc123`
+        - `order-payment-550e8400-e29b-41d4-a716-446655440000`
+        - `user-signup-12345`
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: '^[a-zA-Z0-9_-]+$'
+        example: "event-12345-abc"
+
+  responses:
+    DuplicateEventProcessing:
+      description: |
+        Event with this idempotency key is currently being processed by another instance.
+        The client should NOT retry immediately. The original processing instance will
+        complete the event handling.
+        
+        **Client Action**: 
+        - Return 409 Conflict to the event producer
+        - Do NOT retry (original processing in progress)
+        - If using Kafka/event stream, commit offset (event is being handled)
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+              - idempotency_key
+              - status
+            properties:
+              error:
+                type: string
+                enum: ["Duplicate event"]
+                description: Human-readable error message
+                example: "Duplicate event"
+              idempotency_key:
+                type: string
+                description: The duplicate idempotency key
+                example: "event-12345-abc"
+              status:
+                type: string
+                enum: ["processing"]
+                description: Current status of the event
+                example: "processing"
+              acquired_at:
+                type: string
+                format: date-time
+                description: When the lock was first acquired (ISO 8601)
+                example: "2026-01-06T12:00:00Z"
+              instance_id:
+                type: string
+                description: Instance that acquired the lock (for debugging)
+                example: "pod-abc-123"
+                nullable: true
+          example:
+            error: "Duplicate event"
+            idempotency_key: "event-12345-abc"
+            status: "processing"
+            acquired_at: "2026-01-06T12:00:00Z"
+            instance_id: "pod-abc-123"
+
+    DuplicateEventCompleted:
+      description: |
+        Event with this idempotency key was already processed successfully.
+        The client should NOT retry. The event has already been handled.
+        
+        **Client Action**: 
+        - Return 409 Conflict to the event producer
+        - Do NOT retry (event already completed)
+        - If using Kafka/event stream, commit offset (event already handled)
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+              - idempotency_key
+              - status
+            properties:
+              error:
+                type: string
+                enum: ["Duplicate event"]
+                description: Human-readable error message
+                example: "Duplicate event"
+              idempotency_key:
+                type: string
+                description: The duplicate idempotency key
+                example: "event-12345-abc"
+              status:
+                type: string
+                enum: ["completed"]
+                description: Current status of the event
+                example: "completed"
+              completed_at:
+                type: string
+                format: date-time
+                description: When processing was completed (ISO 8601)
+                example: "2026-01-06T12:05:00Z"
+                nullable: true
+          example:
+            error: "Duplicate event"
+            idempotency_key: "event-12345-abc"
+            status: "completed"
+            completed_at: "2026-01-06T12:05:00Z"
+
+    IdempotencyStorageUnavailable:
+      description: |
+        Idempotency storage backend (Redis or PostgreSQL) is unavailable or timed out.
+        The client SHOULD retry with exponential backoff.
+        
+        **Client Action**: 
+        - Return 503 Service Unavailable to the event producer
+        - Retry with exponential backoff (see Retry-After header)
+        - If using Kafka/event stream, do NOT commit offset (allow retry)
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying
+          schema:
+            type: integer
+            example: 60
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+              - error_type
+            properties:
+              error:
+                type: string
+                description: Human-readable error message
+                example: "Idempotency storage unavailable"
+              error_type:
+                type: string
+                enum: ["storage_unavailable", "timeout", "connection_failed"]
+                description: Specific error type for client logic
+                example: "storage_unavailable"
+              backend:
+                type: string
+                enum: ["redis", "postgres"]
+                description: Which backend failed (for debugging)
+                example: "redis"
+              retry_after:
+                type: integer
+                description: Recommended retry delay in seconds
+                example: 60
+          example:
+            error: "Idempotency storage unavailable"
+            error_type: "storage_unavailable"
+            backend: "redis"
+            retry_after: 60
+
+    IdempotencyKeyInvalid:
+      description: |
+        The provided idempotency key is invalid (empty, too long, or contains invalid characters).
+        
+        **Client Action**: 
+        - Return 400 Bad Request to the event producer
+        - Fix the idempotency key generation logic
+        - Do NOT retry with the same key
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+              - validation_error
+            properties:
+              error:
+                type: string
+                description: Human-readable error message
+                example: "Invalid idempotency key"
+              validation_error:
+                type: string
+                enum: ["empty", "too_long", "invalid_characters"]
+                description: Specific validation failure
+                example: "too_long"
+              max_length:
+                type: integer
+                description: Maximum allowed length (only for too_long error)
+                example: 255
+              actual_length:
+                type: integer
+                description: Actual length provided (only for too_long error)
+                example: 300
+          example:
+            error: "Invalid idempotency key"
+            validation_error: "too_long"
+            max_length: 255
+            actual_length: 300
+
+  schemas:
+    IdempotencyError:
+      description: Base error schema for idempotency-related failures
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        idempotency_key:
+          type: string
+          description: The idempotency key that caused the error
+          nullable: true
+      discriminator:
+        propertyName: error_type
+        mapping:
+          duplicate: '#/components/schemas/DuplicateError'
+          storage_unavailable: '#/components/schemas/StorageUnavailableError'
+          validation: '#/components/schemas/ValidationError'
+
+    DuplicateError:
+      allOf:
+        - $ref: '#/components/schemas/IdempotencyError'
+        - type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum: ["processing", "completed"]
+              description: Current status of the duplicate event
+
+    StorageUnavailableError:
+      allOf:
+        - $ref: '#/components/schemas/IdempotencyError'
+        - type: object
+          properties:
+            backend:
+              type: string
+              enum: ["redis", "postgres"]
+            retry_after:
+              type: integer
+
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/IdempotencyError'
+        - type: object
+          required:
+            - validation_error
+          properties:
+            validation_error:
+              type: string
+              enum: ["empty", "too_long", "invalid_characters"]
+
+# Example usage in an endpoint
+paths:
+  /api/v1/events:
+    post:
+      summary: Process CloudEvent with idempotency
+      description: |
+        Example endpoint demonstrating idempotency guard usage.
+        All events must include an Idempotency-Key header.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/cloudevents+json:
+            schema:
+              type: object
+              description: CloudEvent payload
+      responses:
+        '200':
+          description: Event processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "processed"
+        '400':
+          $ref: '#/components/responses/IdempotencyKeyInvalid'
+        '409':
+          description: Duplicate event (processing or completed)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DuplicateError'
+              examples:
+                processing:
+                  $ref: '#/components/responses/DuplicateEventProcessing/content/application~1json/example'
+                completed:
+                  $ref: '#/components/responses/DuplicateEventCompleted/content/application~1json/example'
+        '503':
+          $ref: '#/components/responses/IdempotencyStorageUnavailable'

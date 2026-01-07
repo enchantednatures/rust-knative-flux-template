@@ -526,10 +526,12 @@ jobs:
 
           echo ""
           echo "Test: Prometheus metrics..."
-          if kubectl_curl -f -s "${SERVICE_URL}/metrics" 2>/dev/null | grep -q 'rust_'; then
-            echo "  ✓ Metrics endpoint PASSED"
+          METRICS_OUTPUT=$(kubectl_curl -f -s "${SERVICE_URL}/metrics" 2>/dev/null)
+          if echo "$METRICS_OUTPUT" | grep -q '# HELP' && echo "$METRICS_OUTPUT" | grep -q '# TYPE'; then
+            echo "  ✓ Metrics endpoint PASSED (Prometheus format detected)"
           else
-            echo "  ✗ Metrics endpoint FAILED"
+            echo "  ✗ Metrics endpoint FAILED (no Prometheus metrics found)"
+            echo "  Output preview: $(echo "$METRICS_OUTPUT" | head -5)"
             ((FAILED++))
           fi
 

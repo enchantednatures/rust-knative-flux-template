@@ -16,16 +16,21 @@ pub async fn create_test_state() -> AppState {
         .await
         .expect("Failed to connect to Redis");
 
+    // Create a mock metrics handle for testing
+    let metrics_handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()
+        .expect("Failed to install metrics recorder");
+
 {%- if features contains "s3" and features contains "kafka" %}
     let storage = create_test_storage();
-    AppState::new(conn, storage, None)
+    AppState::new(conn, storage, None, metrics_handle)
 {%- elsif features contains "s3" %}
     let storage = create_test_storage();
-    AppState::new(conn, storage)
+    AppState::new(conn, storage, metrics_handle)
 {%- elsif features contains "kafka" %}
-    AppState::new(conn, None)
+    AppState::new(conn, None, metrics_handle)
 {%- else %}
-    AppState::new(conn)
+    AppState::new(conn, metrics_handle)
 {%- endif %}
 }
 {%- if features contains "s3" %}

@@ -1,4 +1,4 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 use tracing::instrument;
 use utoipa::ToSchema;
@@ -101,4 +101,28 @@ pub async fn readiness(
             ))
         }
     }
+}
+
+/// Prometheus metrics endpoint
+///
+/// Returns Prometheus metrics in text format for scraping.
+/// Metrics include:
+/// - HTTP request metrics (via tower-http)
+/// - Custom application metrics
+/// {%- if features contains "kafka" %}
+/// - kafka_events_published_total: Counter for successfully published events
+/// - kafka_events_failed_total: Counter for failed publish attempts  
+/// - kafka_publish_latency_ms: Histogram for publishing latency
+/// {%- endif %}
+#[utoipa::path(
+    get,
+    path = "/metrics",
+    tag = "Health",
+    responses(
+        (status = 200, description = "Prometheus metrics", content_type = "text/plain; version=0.0.4")
+    )
+)]
+#[instrument(level = "debug", skip(state))]
+pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    state.metrics_handle.render()
 }

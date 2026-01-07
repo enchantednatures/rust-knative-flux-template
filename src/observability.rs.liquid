@@ -7,10 +7,13 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use metrics_exporter_prometheus::PrometheusHandle;
 
 use crate::config::TelemetryConfig;
 
 /// Initialize metrics collection with Prometheus export
+///
+/// Returns a PrometheusHandle that can be used to render metrics at the /metrics endpoint.
 ///
 /// Sets up Prometheus metrics for:
 /// - kafka_events_published_total: Counter for successfully published events
@@ -23,14 +26,13 @@ use crate::config::TelemetryConfig;
 /// - topic: The Kafka topic where events are published
 /// - error_type: Type of error (broker_unreachable, publish_failed, etc.)
 {%- endif %}
-pub fn init_metrics() -> anyhow::Result<()> {
-    // Initialize the metrics-exporter-prometheus with default configuration
-    // Metrics will be available at GET /metrics endpoint (added by tower-http integration)
-    metrics_exporter_prometheus::PrometheusBuilder::new()
+pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
+    // Initialize the metrics-exporter-prometheus and get the handle for rendering
+    let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
         .install_recorder()?;
 
     tracing::info!("Prometheus metrics exporter initialized");
-    Ok(())
+    Ok(handle)
 }
 
 /// Initialize OpenTelemetry with B3 propagation for Knative compatibility
