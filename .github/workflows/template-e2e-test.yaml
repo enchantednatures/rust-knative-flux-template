@@ -234,7 +234,8 @@ jobs:
 
           cd "${GENERATED_DIR}/deploy/base"
 
-          cat > kustomization-patch.yaml <<EOF
+          # Replace kustomization.yaml with one that includes image transformation
+          cat > kustomization.yaml <<EOF
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
 
