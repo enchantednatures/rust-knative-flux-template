@@ -499,10 +499,15 @@ jobs:
         run: |
           echo "Running E2E tests against: ${SERVICE_URL}"
 
-          # Helper function to run curl inside the cluster
-          # Uses grep -v to filter out kubectl's pod deletion message
+          # Helper function to run curl inside the cluster  
+          # Filters kubectl pod messages while preserving curl exit code
           kubectl_curl() {
-            kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never -- "$@" 2>&1 | grep -v "pod.*deleted"
+            local output
+            local exit_code
+            output=$(kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never -- "$@" 2>&1)
+            exit_code=$?
+            echo "$output" | grep -v "pod.*deleted" | grep -v "pod.*created"
+            return $exit_code
           }
 
           FAILED=0
