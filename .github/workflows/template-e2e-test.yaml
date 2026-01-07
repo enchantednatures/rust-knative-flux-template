@@ -242,7 +242,7 @@ jobs:
             - knative-service.yaml
 
           images:
-            - name: rust-service
+            - name: ghcr.io/test-org/test-app
               newName: ${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}
               newTag: ${{ steps.image-meta.outputs.image_tag }}
 
