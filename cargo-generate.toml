@@ -43,6 +43,35 @@ default_branch = { prompt = "Default git branch for Flux", type = "string", defa
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
 use_default_scaling = { prompt = "Use the default scaling parameters", type = "bool", default = true }
 
+# Default scaling parameters (used when use_default_scaling = true)
+[conditional.'use_default_scaling'.placeholders]
+base_min_scale = { type = "string", default = "1" }
+base_max_scale = { type = "string", default = "10" }
+base_target = { type = "string", default = "100" }
+base_cpu_request = { type = "string", default = "100m" }
+base_cpu_limit = { type = "string", default = "500m" }
+base_memory_request = { type = "string", default = "64Mi" }
+base_memory_limit = { type = "string", default = "256Mi" }
+dev_min_scale = { type = "string", default = "0" }
+dev_max_scale = { type = "string", default = "3" }
+dev_cpu_request = { type = "string", default = "100m" }
+dev_cpu_limit = { type = "string", default = "500m" }
+dev_memory_request = { type = "string", default = "64Mi" }
+dev_memory_limit = { type = "string", default = "256Mi" }
+staging_min_scale = { type = "string", default = "1" }
+staging_max_scale = { type = "string", default = "5" }
+staging_cpu_request = { type = "string", default = "200m" }
+staging_cpu_limit = { type = "string", default = "800m" }
+staging_memory_request = { type = "string", default = "128Mi" }
+staging_memory_limit = { type = "string", default = "384Mi" }
+prod_min_scale = { type = "string", default = "2" }
+prod_max_scale = { type = "string", default = "20" }
+prod_cpu_request = { type = "string", default = "250m" }
+prod_cpu_limit = { type = "string", default = "1000m" }
+prod_memory_request = { type = "string", default = "256Mi" }
+prod_memory_limit = { type = "string", default = "512Mi" }
+
+# Custom scaling parameters (used when use_default_scaling = false)
 [conditional.'!use_default_scaling'.placeholders]
 base_min_scale = { prompt = "Base minimum scale", type = "string", default = "1" }
 base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
