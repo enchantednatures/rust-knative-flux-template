@@ -499,11 +499,16 @@ jobs:
         run: |
           echo "Running E2E tests against: ${SERVICE_URL}"
 
+          # Helper function to run curl inside the cluster
+          kubectl_curl() {
+            kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never -- "$@"
+          }
+
           FAILED=0
 
           echo ""
           echo "Test: Liveness probe..."
-          if curl -f -s "${SERVICE_URL}/health/live" > /dev/null; then
+          if kubectl_curl -f -s "${SERVICE_URL}/health/live" > /dev/null 2>&1; then
             echo "  ✓ Liveness probe PASSED"
           else
             echo "  ✗ Liveness probe FAILED"
@@ -512,7 +517,7 @@ jobs:
 
           echo ""
           echo "Test: Readiness probe..."
-          if curl -f -s "${SERVICE_URL}/health/ready" > /dev/null; then
+          if kubectl_curl -f -s "${SERVICE_URL}/health/ready" > /dev/null 2>&1; then
             echo "  ✓ Readiness probe PASSED"
           else
             echo "  ✗ Readiness probe FAILED"
@@ -521,7 +526,7 @@ jobs:
 
           echo ""
           echo "Test: Prometheus metrics..."
-          if curl -f -s "${SERVICE_URL}/metrics" | grep -q 'rust_'; then
+          if kubectl_curl -f -s "${SERVICE_URL}/metrics" 2>/dev/null | grep -q 'rust_'; then
             echo "  ✓ Metrics endpoint PASSED"
           else
             echo "  ✗ Metrics endpoint FAILED"
@@ -530,7 +535,8 @@ jobs:
 
           echo ""
           echo "Test: Hello API..."
-          if curl -f -s "${SERVICE_URL}/api/v1/hello" | jq -e '.message' > /dev/null; then
+          RESPONSE=$(kubectl_curl -f -s "${SERVICE_URL}/api/v1/hello" 2>/dev/null)
+          if echo "$RESPONSE" | grep -q '"message"'; then
             echo "  ✓ Hello API PASSED"
           else
             echo "  ✗ Hello API FAILED"
@@ -540,10 +546,10 @@ jobs:
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
             echo ""
             echo "Test: S3 storage example..."
-            RESPONSE=$(curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+            RESPONSE=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example" 2>/dev/null)
 
-            if echo "$RESPONSE" | jq -e '.success == true' > /dev/null && \
-               echo "$RESPONSE" | jq -e '.read_verified == true' > /dev/null; then
+            if echo "$RESPONSE" | grep -q '"success":true' && \
+               echo "$RESPONSE" | grep -q '"read_verified":true'; then
               echo "  ✓ S3 storage PASSED"
             else
               echo "  ✗ S3 storage FAILED"
