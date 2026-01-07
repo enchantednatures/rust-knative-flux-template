@@ -1,0 +1,10 @@
+# Development environment configuration
+
+[telemetry]
+service_name = "test-app-dev"
+log_level = "debug"
+otlp_endpoint = "http://localhost:4317"
+
+
+
+

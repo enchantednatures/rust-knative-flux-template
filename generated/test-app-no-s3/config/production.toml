@@ -1,0 +1,10 @@
+# Production environment configuration
+
+[telemetry]
+service_name = "test-app-prod"
+log_level = "info"
+otlp_endpoint = "http://otel-collector.observability.svc.cluster.local:4317"
+
+
+
+

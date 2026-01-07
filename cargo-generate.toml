@@ -14,9 +14,17 @@ ignore = [
   "crates/axum-cloudevents-macros/target",
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
+  ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
   ".github/workflows/ci.yaml.liquid",
   "docs/MONITORING.md.liquid",
   "docs/TESTING.md.liquid",
+  "docs/LOCAL_E2E_TESTING.md",
+  "docs/E2E_TROUBLESHOOTING.md",
+  "docs/VERSION_COMPATIBILITY.md",
+  "scripts/test-template-e2e-local.sh",
+  "scripts/cleanup-e2e-local.sh",
+  "scripts/README.md",
+  "CHANGELOG-LOCAL-E2E.md",
 ]
 
 [hooks]

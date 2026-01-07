@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+
+
+patches:
+  - target:
+      kind: Service
+      name: test-app
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "1"
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "3"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "100m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+           - name: APP__REDIS__URL
+             value: "redis://redis.redis.svc.cluster.local:6379"
+           
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "http://otel-collector.observability.svc.cluster.local:4317"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "test-app-dev"
+          - name: APP__TELEMETRY__LOG_LEVEL
+            value: "debug"
+          - name: RUST_LOG
+            value: "debug,hyper=info,tower=info"

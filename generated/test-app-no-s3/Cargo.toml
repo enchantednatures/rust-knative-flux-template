@@ -1,14 +1,14 @@
 [package]
-name = "{{ crate_name }}"
+name = "test_app_no_s3"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.92"
-authors = [" {{project_author}}" ]
+authors = [" E2E Bot <e2e@local.dev>" ]
 description = "Rust microservice template for Knative + FluxCD"
 license = "MIT"
 
 [[bin]]
-name = "{{ crate_name }}"
+name = "test_app_no_s3"
 path = "src/main.rs"
 
 [dependencies]
@@ -55,29 +55,9 @@ metrics-exporter-prometheus = "0.13"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
-{% if features contains "kafka" %}
-# Kafka Event Publishing
-rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
 
-# Time handling (for Kafka event timestamps)
-chrono = { version = "0.4", features = ["serde"] }
 
-# UUID generation (for Kafka event IDs)
-uuid = { version = "1.0", features = ["v4", "serde"] }
-{% endif %}
 
-{% if features contains "s3" %}
-# Object Storage (S3-compatible via OpenDAL)
-opendal = { version = "0.55", default-features = false, features = ["services-s3"] }
-
-{%- unless features contains "kafka" %}
-# Time handling (for S3)
-chrono = { version = "0.4", features = ["serde"] }
-
-# UUID generation (for S3)
-uuid = { version = "1.0", features = ["v4", "serde"] }
-{%- endunless %}
-{% endif %}
 
 # Utilities
 thiserror = "1.0"
@@ -88,9 +68,6 @@ axum-test = "17"
 tokio-test = "0.4"
 # PostgreSQL integration testing
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json"] }
-{%- if features contains "s3" %}
-figment = { version = "0.10", features = ["test"] }
-{%- endif %}
 
 # Build dependencies
 [build-dependencies]

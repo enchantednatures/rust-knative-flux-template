@@ -1,0 +1,30 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: postgres-infrastructure
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./deploy/overlays/dev
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: test-repo-postgres
+  wait: true
+  timeout: 10m
+  # Wait for CloudNativePG operator to be ready
+  dependsOn:
+    - name: cnpg-operator
+  # SOPS decryption for secrets
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: test-app-postgres
+      namespace: default
+  postBuild:
+    substitute:
+      POSTGRES_APP_NAME: "test-app-postgres"

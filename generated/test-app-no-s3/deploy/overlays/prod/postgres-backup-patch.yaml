@@ -1,0 +1,38 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: test-app-postgres-daily-backup
+  namespace: default
+spec:
+  # Production backup schedule - configurable via template variable
+  schedule: ""
+
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: test-app-postgres-backup-store
+  namespace: default
+spec:
+  configuration:
+    destinationPath: s3://test-app-postgres-backups/prod/
+    endpointURL: http://minio.minio.svc.cluster.local:9000
+    s3Credentials:
+      accessKeyId:
+        name: postgres-backup-storage
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: postgres-backup-storage
+        key: ACCESS_SECRET_KEY
+  
+  # Production: extended retention (configurable via template)
+  retentionPolicy: "d"
+  
+  # Production: maximum compression (zstd)
+  configuration:
+    data:
+      compression: zstd
+      jobs: 4
+    wal:
+      compression: zstd
+      maxParallel: 8

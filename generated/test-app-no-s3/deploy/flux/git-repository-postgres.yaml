@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: rust-service-postgres
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/test-org/test-repo
+  ref:
+    branch: 001-cloudnative-postgres-backups
+  # Optional: For private repositories
+  # secretRef:
+  #   name: github-deploy-key
