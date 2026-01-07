@@ -33,6 +33,9 @@ WORKDIR /app
 # Copy the recipe from chef stage
 COPY --from=chef /app/recipe.json recipe.json
 
+# Copy local crate dependencies (required for path dependencies)
+COPY crates ./crates
+
 # Build dependencies using the recipe (cached layer)
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 
