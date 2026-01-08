@@ -27,9 +27,8 @@ ignore = [
   "CHANGELOG-LOCAL-E2E.md",
 ]
 
-# [hooks]
-# post = ["post-generate.rhai"]
-# Disabled for CI - causes "not a terminal" errors in GitHub Actions
+[hooks]
+post = ["post-generate.rhai"]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
