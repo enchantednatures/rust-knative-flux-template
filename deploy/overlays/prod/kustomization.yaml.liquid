@@ -13,22 +13,22 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "{{ prod_min_scale }}"
+        value: "{% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "{{ prod_max_scale }}"
+        value: "{% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "{{ prod_cpu_request }}"
+        value: "{% if use_default_scaling %}250m{% else %}{{ prod_cpu_request }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "{{ prod_memory_request }}"
+        value: "{% if use_default_scaling %}256Mi{% else %}{{ prod_memory_request }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "{{ prod_cpu_limit }}"
+        value: "{% if use_default_scaling %}1000m{% else %}{{ prod_cpu_limit }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "{{ prod_memory_limit }}"
+        value: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
 
  {% if features contains "s3" %}
 # Production S3 configuration (typically AWS S3 or managed MinIO)

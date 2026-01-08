@@ -18,22 +18,22 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "1"
+        value: "{% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}"
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "3"
+        value: "{% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "100m"
+        value: "{% if use_default_scaling %}100m{% else %}{{ dev_cpu_request }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "128Mi"
+        value: "{% if use_default_scaling %}64Mi{% else %}{{ dev_memory_request }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "1000m"
+        value: "{% if use_default_scaling %}500m{% else %}{{ dev_cpu_limit }}{% endif %}"
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "512Mi"
+        value: "{% if use_default_scaling %}256Mi{% else %}{{ dev_memory_limit }}{% endif %}"
       - op: add
         path: /spec/template/spec/containers/0/env
         value:

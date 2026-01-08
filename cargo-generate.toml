@@ -54,32 +54,32 @@ image_registry = { prompt = "Container image registry", type = "string", default
 use_default_scaling = { prompt = "Use default scaling parameters?", type = "bool", default = true }
 
 [conditional.'!use_default_scaling'.placeholders]
-# Scaling parameters with sensible defaults
+# Scaling parameters (only prompted when use_default_scaling = false)
 base_min_scale = { prompt = "Base minimum scale", type = "string" }
-base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
-base_target = { prompt = "Base autoscaling target (concurrency)", type = "string", default = "100" }
-base_cpu_request = { prompt = "Base CPU request", type = "string", default = "100m" }
-base_cpu_limit = { prompt = "Base CPU limit", type = "string", default = "500m" }
-base_memory_request = { prompt = "Base memory request", type = "string", default = "64Mi" }
-base_memory_limit = { prompt = "Base memory limit", type = "string", default = "256Mi" }
-dev_min_scale = { prompt = "Dev minimum scale", type = "string", default = "0" }
-dev_max_scale = { prompt = "Dev maximum scale", type = "string", default = "3" }
-dev_cpu_request = { prompt = "Dev CPU request", type = "string", default = "100m" }
-dev_cpu_limit = { prompt = "Dev CPU limit", type = "string", default = "500m" }
-dev_memory_request = { prompt = "Dev memory request", type = "string", default = "64Mi" }
-dev_memory_limit = { prompt = "Dev memory limit", type = "string", default = "256Mi" }
-staging_min_scale = { prompt = "Staging minimum scale", type = "string", default = "1" }
-staging_max_scale = { prompt = "Staging maximum scale", type = "string", default = "5" }
-staging_cpu_request = { prompt = "Staging CPU request", type = "string", default = "200m" }
-staging_cpu_limit = { prompt = "Staging CPU limit", type = "string", default = "800m" }
-staging_memory_request = { prompt = "Staging memory request", type = "string", default = "128Mi" }
-staging_memory_limit = { prompt = "Staging memory limit", type = "string", default = "384Mi" }
-prod_min_scale = { prompt = "Prod minimum scale", type = "string", default = "2" }
-prod_max_scale = { prompt = "Prod maximum scale", type = "string", default = "20" }
-prod_cpu_request = { prompt = "Prod CPU request", type = "string", default = "250m" }
-prod_cpu_limit = { prompt = "Prod CPU limit", type = "string", default = "1000m" }
-prod_memory_request = { prompt = "Prod memory request", type = "string", default = "256Mi" }
-prod_memory_limit = { prompt = "Prod memory limit", type = "string", default = "512Mi" }
+base_max_scale = { prompt = "Base maximum scale", type = "string" }
+base_target = { prompt = "Base autoscaling target (concurrency)", type = "string" }
+base_cpu_request = { prompt = "Base CPU request", type = "string" }
+base_cpu_limit = { prompt = "Base CPU limit", type = "string" }
+base_memory_request = { prompt = "Base memory request", type = "string" }
+base_memory_limit = { prompt = "Base memory limit", type = "string" }
+dev_min_scale = { prompt = "Dev minimum scale", type = "string" }
+dev_max_scale = { prompt = "Dev maximum scale", type = "string" }
+dev_cpu_request = { prompt = "Dev CPU request", type = "string" }
+dev_cpu_limit = { prompt = "Dev CPU limit", type = "string" }
+dev_memory_request = { prompt = "Dev memory request", type = "string" }
+dev_memory_limit = { prompt = "Dev memory limit", type = "string" }
+staging_min_scale = { prompt = "Staging minimum scale", type = "string" }
+staging_max_scale = { prompt = "Staging maximum scale", type = "string" }
+staging_cpu_request = { prompt = "Staging CPU request", type = "string" }
+staging_cpu_limit = { prompt = "Staging CPU limit", type = "string" }
+staging_memory_request = { prompt = "Staging memory request", type = "string" }
+staging_memory_limit = { prompt = "Staging memory limit", type = "string" }
+prod_min_scale = { prompt = "Prod minimum scale", type = "string" }
+prod_max_scale = { prompt = "Prod maximum scale", type = "string" }
+prod_cpu_request = { prompt = "Prod CPU request", type = "string" }
+prod_cpu_limit = { prompt = "Prod CPU limit", type = "string" }
+prod_memory_request = { prompt = "Prod memory request", type = "string" }
+prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
 
 [conditional.'!if features contains "s3"']
 ignore = [
