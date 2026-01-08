@@ -29,7 +29,17 @@ use crate::config::TelemetryConfig;
 pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     // Initialize the metrics-exporter-prometheus and get the handle for rendering
     let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .add_global_label("service", env!("CARGO_PKG_NAME"))
         .install_recorder()?;
+
+    // Pre-register metrics with descriptions to ensure Prometheus format is emitted
+    // even before any requests are made
+    metrics::describe_counter!("http_requests_total", "Total number of HTTP requests");
+    {%- if features contains "kafka" %}
+    metrics::describe_counter!("kafka_events_published_total", "Total number of Kafka events published successfully");
+    metrics::describe_counter!("kafka_events_failed_total", "Total number of Kafka event publish failures");
+    metrics::describe_histogram!("kafka_publish_latency_ms", "Kafka event publishing latency in milliseconds");
+    {%- endif %}
 
     tracing::info!("Prometheus metrics exporter initialized");
     Ok(handle)
