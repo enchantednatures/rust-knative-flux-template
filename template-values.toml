@@ -1,0 +1,12 @@
+[values]
+project_name = "example-app"
+project_author = "CI Bot <ci@github.com>"
+features = ["s3"]
+event_sources = []
+enable_image_updates = true
+target_namespace = "default"
+github_org = "enchantednatures"
+github_repo = "rust-knative-flux-template"
+default_branch = "main"
+image_registry = "ghcr.io"
+use_default_scaling = true
