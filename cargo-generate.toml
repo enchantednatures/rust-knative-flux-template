@@ -50,8 +50,12 @@ github_repo = { prompt = "GitHub repository name", type = "string", default = "y
 default_branch = { prompt = "Default git branch for Flux", type = "string", default = "main" }
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
 
+# Scaling configuration
+use_default_scaling = { prompt = "Use default scaling parameters?", type = "bool", default = true }
+
+[conditional.'!use_default_scaling'.placeholders]
 # Scaling parameters with sensible defaults
-base_min_scale = { prompt = "Base minimum scale", type = "string", default = "1" }
+base_min_scale = { prompt = "Base minimum scale", type = "string" }
 base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
 base_target = { prompt = "Base autoscaling target (concurrency)", type = "string", default = "100" }
 base_cpu_request = { prompt = "Base CPU request", type = "string", default = "100m" }
