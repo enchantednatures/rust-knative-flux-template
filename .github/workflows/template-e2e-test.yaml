@@ -132,6 +132,7 @@ jobs:
                      cargo generate --path . \
             --name "test-app-${{ matrix.scenario }}" \
             --template-values-file template-values.toml \
+            --silent \
             --allow-commands
                      # Move generated project to expected location
           mkdir -p ./generated
