@@ -22,7 +22,9 @@ RUN apk add --no-cache \
     openssl-dev \
     openssl-libs-static \
     pkgconfig \
-    curl
+    curl \
+    gcc \
+    g++
 
 # Install cargo-chef and musl target
 RUN cargo install cargo-chef && \
@@ -39,7 +41,10 @@ COPY crates ./crates
 # Set OpenSSL environment variables for musl target
 ENV OPENSSL_DIR=/usr \
     OPENSSL_STATIC=1 \
-    PKG_CONFIG_ALLOW_CROSS=1
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    CC_x86_64_unknown_linux_musl=musl-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_CC=musl-gcc
 
 # Build dependencies using the recipe (cached layer)
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
