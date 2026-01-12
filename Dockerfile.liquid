@@ -1,8 +1,12 @@
 # ==============================================================================
 # Stage 1: Chef - Prepare dependency recipe
 # ==============================================================================
-FROM rust:1.92-alpine AS chef
-RUN apk add --no-cache musl-dev openssl-dev pkgconfig curl
+FROM rust:1.92-slim AS chef
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install cargo-chef
 RUN cargo install cargo-chef
@@ -16,19 +20,16 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ==============================================================================
 # Stage 2: Build dependencies using chef recipe
 # ==============================================================================
-FROM rust:1.92-alpine AS builder
-RUN apk add --no-cache \
-    musl-dev \
-    openssl-dev \
-    openssl-libs-static \
-    pkgconfig \
+FROM rust:1.92-slim AS builder
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
     curl \
-    gcc \
-    g++
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install cargo-chef and musl target
-RUN cargo install cargo-chef && \
-    rustup target add x86_64-unknown-linux-musl
+# Install cargo-chef
+RUN cargo install cargo-chef
 
 WORKDIR /app
 
@@ -38,34 +39,29 @@ COPY --from=chef /app/recipe.json recipe.json
 # Copy local crate dependencies (required for path dependencies)
 COPY crates ./crates
 
-# Set OpenSSL environment variables for musl target
-ENV OPENSSL_DIR=/usr \
-    OPENSSL_STATIC=1 \
-    PKG_CONFIG_ALLOW_CROSS=1 \
-    CC_x86_64_unknown_linux_musl=musl-gcc \
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_CC=musl-gcc
-
 # Build dependencies using the recipe (cached layer)
-RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build the application
 COPY . .
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release
 
 # ==============================================================================
-# Stage 3: Runtime (Minimal Alpine)
+# Stage 3: Runtime (Debian Slim)
 # ==============================================================================
-FROM alpine:3.23 AS runtime
+FROM debian:bookworm-slim AS runtime
 
 # Install CA certificates for TLS connections (Redis TLS, OTLP, etc.)
-RUN apk add --no-cache ca-certificates tzdata && \
-    adduser -D -u 10001 appuser
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* && \
+    useradd -m -u 10001 appuser
 
 WORKDIR /app
 
-# Copy the statically-linked binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/{{ crate_name }} ./{{ crate_name }}
+# Copy the binary
+COPY --from=builder /app/target/release/{{ crate_name }} ./{{ crate_name }}
 
 # Copy default config (can be overridden via env vars in K8s)
 COPY --from=builder /app/config ./config
