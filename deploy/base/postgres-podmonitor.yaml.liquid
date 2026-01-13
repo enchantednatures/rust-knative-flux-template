@@ -1,16 +1,16 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: {{ project_name }}-postgres-metrics
+  name: {{ project_name | replace: "_", "-" }}-postgres-metrics
   namespace: {{ target_namespace }}
   labels:
-    app: {{ project_name }}-postgres
+    app: {{ project_name | replace: "_", "-" }}-postgres
     release: prometheus  # For Prometheus Operator ServiceMonitor selection
 spec:
   # Select PostgreSQL pods
   selector:
     matchLabels:
-      postgresql: {{ project_name }}-postgres  # Matches pods from CloudNativePG cluster
+      postgresql: {{ project_name | replace: "_", "-" }}-postgres  # Matches pods from CloudNativePG cluster
   
   # Pod port configuration
   podMetricsEndpoints:

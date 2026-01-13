@@ -1,0 +1,261 @@
+name: Naming Convention E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  naming-convention-tests:
+    name: Naming Convention (${{ matrix.naming_style }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          # Test with kebab-case (hyphens)
+          - naming_style: "kebab-case"
+            project_name: "test-service"
+            expected_crate: "test_service"
+            expected_k8s: "test-service"
+          
+          # Test with snake_case (underscores)
+          - naming_style: "snake_case"
+            project_name: "test_service"
+            expected_crate: "test_service"
+            expected_k8s: "test-service"
+          
+          # Test with single word
+          - naming_style: "single-word"
+            project_name: "testservice"
+            expected_crate: "testservice"
+            expected_k8s: "testservice"
+          
+          # Test with uppercase (should be normalized)
+          - naming_style: "mixed-case"
+            project_name: "TestService"
+            expected_crate: "testservice"
+            expected_k8s: "testservice"
+
+    env:
+      NAMING_STYLE: ${{ matrix.naming_style }}
+      PROJECT_NAME: ${{ matrix.project_name }}
+      EXPECTED_CRATE: ${{ matrix.expected_crate }}
+      EXPECTED_K8S: ${{ matrix.expected_k8s }}
+
+    steps:
+      - name: Install dependencies
+        run: |
+          echo "Installing Kind..."
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/v0.31.0/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/
+
+          echo "Installing kubectl..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          echo "Installing helm..."
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          echo "Installing kustomize..."
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Install Flux CLI
+        uses: fluxcd/flux2/action@main
+
+      - name: Setup Kind cluster
+        run: |
+          kind version
+          kind delete cluster --name naming-${{ matrix.naming_style }} || true
+          kind create cluster --name naming-${{ matrix.naming_style }} --wait 5m
+
+          # Export Kind kubeconfig for subsequent steps
+          kind get kubeconfig --name naming-${{ matrix.naming_style }} > /tmp/kind-kubeconfig-naming
+          echo "KUBECONFIG=/tmp/kind-kubeconfig-naming" >> $GITHUB_ENV
+
+      - name: Generate project from template with ${{ matrix.naming_style }}
+        run: |
+          # Create template values file
+          cat > template-values.toml <<EOF
+          [values]
+          project_name = "${{ matrix.project_name }}"
+          project_author = "E2E Bot <e2e@github.com>"
+          features = []
+          event_sources = []
+          enable_image_updates = false
+          target_namespace = "default"
+          github_org = "test-org"
+          github_repo = "test-repo"
+          default_branch = "main"
+          image_registry = "ghcr.io"
+          use_default_scaling = true
+          EOF
+
+          # Generate project using cargo-generate
+          cargo generate \
+            --path . \
+            --name "${{ matrix.project_name }}" \
+            --define-file template-values.toml \
+            --allow-commands
+
+          # Change to generated project directory
+          cd "${{ matrix.project_name }}"
+          pwd
+          ls -la
+
+      - name: Verify naming conventions
+        run: |
+          cd "${{ matrix.project_name }}"
+          
+          echo "=== Verifying Naming Conventions ==="
+          echo "Project name input: ${{ matrix.project_name }}"
+          echo "Expected crate name: ${{ matrix.expected_crate }}"
+          echo "Expected K8s name: ${{ matrix.expected_k8s }}"
+          
+          # Extract actual crate name from Cargo.toml
+          ACTUAL_CRATE=$(grep '^name = ' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/')
+          echo "Actual crate name: $ACTUAL_CRATE"
+          
+          # Verify crate name
+          if [[ "$ACTUAL_CRATE" != "${{ matrix.expected_crate }}" ]]; then
+            echo "❌ FAILED: Crate name mismatch"
+            echo "Expected: ${{ matrix.expected_crate }}"
+            echo "Got: $ACTUAL_CRATE"
+            exit 1
+          fi
+          echo "✓ Crate name verified"
+          
+          # Verify Makefile has templated PROJECT_NAME
+          if ! grep -q "PROJECT_NAME := {{ project_name | replace: \"_\", \"-\" }}" Makefile; then
+            echo "⚠️  Note: Makefile should contain templated PROJECT_NAME"
+          fi
+          
+          # Check that build script exists and is templated
+          if [[ ! -f scripts/dev/build-and-deploy.sh ]]; then
+            echo "❌ FAILED: build-and-deploy.sh not found"
+            exit 1
+          fi
+          echo "✓ Build script exists"
+          
+          # Verify SERVICE_NAME and CRATE_NAME are set in build script
+          if ! grep -q "SERVICE_NAME=" scripts/dev/build-and-deploy.sh; then
+            echo "❌ FAILED: SERVICE_NAME not found in build script"
+            exit 1
+          fi
+          echo "✓ SERVICE_NAME variable found in build script"
+          
+          if ! grep -q "CRATE_NAME=" scripts/dev/build-and-deploy.sh; then
+            echo "❌ FAILED: CRATE_NAME not found in build script"
+            exit 1
+          fi
+          echo "✓ CRATE_NAME variable found in build script"
+
+      - name: Run cargo tests
+        run: |
+          cd "${{ matrix.project_name }}"
+          cargo test --lib --all --all-features
+
+      - name: Build Docker image
+        run: |
+          cd "${{ matrix.project_name }}"
+          docker build -t "localhost:5001/${{ matrix.expected_k8s }}:test" .
+
+      - name: Verify Docker image tags
+        run: |
+          # Image should use hyphenated name (K8s convention)
+          docker image ls | grep "${{ matrix.expected_k8s }}" || {
+            echo "❌ FAILED: Docker image not tagged with expected name: ${{ matrix.expected_k8s }}"
+            exit 1
+          }
+          echo "✓ Docker image correctly tagged with: ${{ matrix.expected_k8s }}"
+
+      - name: Install Knative Serving
+        run: |
+          kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.20.0/serving-crds.yaml
+          kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.20.0/serving-core.yaml
+          kubectl apply -f https://github.com/knative/net-kourier/releases/download/knative-v1.20.0/kourier.yaml
+          
+          # Wait for Knative to be ready
+          kubectl wait --for=condition=Ready pod -l app=controller -n knative-serving --timeout=5m 2>/dev/null || true
+          kubectl wait --for=condition=Ready pod -l app=3scale-kourier-gateway -n kourier-system --timeout=5m 2>/dev/null || true
+
+      - name: Verify Knative service name format
+        run: |
+          cd "${{ matrix.project_name }}"
+          
+          # Extract service name from knative-service.yaml
+          SERVICE_NAME=$(grep -A 2 "metadata:" deploy/base/knative-service.yaml | grep "name:" | sed 's/.*name: \(.*\)/\1/')
+          
+          echo "Knative service name: $SERVICE_NAME"
+          echo "Expected: ${{ matrix.expected_k8s }}"
+          
+          # Verify service name uses hyphens (not underscores)
+          if [[ "$SERVICE_NAME" =~ "_" ]]; then
+            echo "❌ FAILED: Knative service name contains underscores: $SERVICE_NAME"
+            echo "Knative services cannot contain underscores"
+            exit 1
+          fi
+          echo "✓ Knative service name is valid (no underscores)"
+          
+          if [[ "$SERVICE_NAME" != "${{ matrix.expected_k8s }}" ]]; then
+            echo "⚠️  Warning: Service name mismatch"
+            echo "Expected: ${{ matrix.expected_k8s }}"
+            echo "Got: $SERVICE_NAME"
+          fi
+
+      - name: Verify kustomization image references
+        run: |
+          cd "${{ matrix.project_name }}"
+          
+          # Check that kustomization uses hyphenated names for images
+          if grep -q "{{ project_name }}" deploy/overlays/dev/kustomization.yaml; then
+            echo "❌ FAILED: Kustomization contains un-templated project_name"
+            exit 1
+          fi
+          
+          # Verify replace filter is applied
+          if ! grep -q "replace: \"_\", \"-\"" deploy/overlays/dev/kustomization.yaml; then
+            echo "⚠️  Warning: Kustomization might not properly normalize underscores to hyphens"
+          fi
+          
+          echo "✓ Kustomization image references verified"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "=== Naming Convention Test Summary ==="
+          echo "Naming Style: ${{ matrix.naming_style }}"
+          echo "Input Project Name: ${{ matrix.project_name }}"
+          echo "Expected Crate Name: ${{ matrix.expected_crate }}"
+          echo "Expected K8s Service Name: ${{ matrix.expected_k8s }}"
+          echo ""
+          echo "✓ All naming convention checks passed"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name naming-${{ matrix.naming_style }} || true

@@ -14,13 +14,13 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageUpdateAutomation
 metadata:
-  name: rust-service
+  name: {{ project_name | replace: "_", "-" }}
   namespace: flux-system
 spec:
   interval: 5m
   sourceRef:
     kind: GitRepository
-    name: rust-service
+    name: {{ project_name | replace: "_", "-" }}
   git:
     checkout:
       ref:

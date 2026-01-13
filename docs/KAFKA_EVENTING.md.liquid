@@ -312,7 +312,7 @@ spec:
     ref:
       apiVersion: serving.knative.dev/v1
       kind: Service
-      name: rust-service  # Same service
+      name: {{ project_name | replace: "_", "-" }}  # Same service
   delivery:
     retry: 5
     backoffPolicy: exponential

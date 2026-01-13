@@ -1,5 +1,12 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."kind-registry-dev:5000"]
+      endpoint = ["http://kind-registry-dev:5000"]
+    [plugins."io.containerd.grpc.v1.cri".registry.configs."kind-registry-dev:5000"]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."kind-registry-dev:5000".tls]
+        insecure_skip_verify = true
 nodes:
   - role: control-plane
     # Use Kubernetes 1.32+ for Knative v1.20.0 compatibility

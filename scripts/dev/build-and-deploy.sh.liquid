@@ -39,21 +39,28 @@ if [[ -f "${PROJECT_ROOT}/Cargo.toml.liquid" ]] && grep -q {% raw %} "{{ crate_n
 	exit 0
 fi
 
-# Extract project name from Cargo.toml
+# Project names are normalized at template generation time
+# SERVICE_NAME uses hyphens (Kubernetes convention)
+SERVICE_NAME="{{ project_name | replace: "_", "-" }}"
+# CRATE_NAME uses underscores (Rust convention)  
+CRATE_NAME="{{ crate_name }}"
+
+# Verify Cargo.toml exists
 if [[ ! -f "${PROJECT_ROOT}/Cargo.toml" ]]; then
 	echo -e "${RED}✗ Error: Cargo.toml not found${NC}"
-	echo "This is a template project. Please generate a project using cargo-generate first."
 	exit 1
 fi
 
-PROJECT_NAME=$(grep '^name = ' "${PROJECT_ROOT}/Cargo.toml" | head -1 | sed 's/name = "\(.*\)"/\1/')
-
-if [[ -z "$PROJECT_NAME" ]]; then
-	echo -e "${RED}✗ Error: Could not determine project name${NC}"
+# Verify the crate name matches what we expect
+ACTUAL_CRATE=$(grep '^name = ' "${PROJECT_ROOT}/Cargo.toml" | head -1 | sed 's/name = "\(.*\)"/\1/')
+if [[ "${ACTUAL_CRATE}" != "${CRATE_NAME}" ]]; then
+	echo -e "${RED}✗ Error: Crate name mismatch${NC}"
+	echo "Expected: ${CRATE_NAME}"
+	echo "Found: ${ACTUAL_CRATE}"
 	exit 1
 fi
 
-IMAGE="localhost:${REGISTRY_PORT}/${PROJECT_NAME}:dev"
+IMAGE="localhost:${REGISTRY_PORT}/${SERVICE_NAME}:dev"
 
 # Build Docker image
 echo -e "${YELLOW}→${NC} Building Docker image: ${IMAGE}"
@@ -78,17 +85,17 @@ fi
 
 # Wait for service to be ready
 echo -e "${YELLOW}→${NC} Waiting for Knative service to be ready..."
-if ! kubectl wait --for=condition=Ready ksvc/"${PROJECT_NAME}" -n default --timeout=5m; then
+if ! kubectl wait --for=condition=Ready ksvc/"${SERVICE_NAME}" -n default --timeout=5m; then
 	echo -e "${RED}✗ Error: Knative service failed to become ready${NC}"
 	echo ""
 	echo "Service status:"
-	kubectl get ksvc "${PROJECT_NAME}" -n default -o yaml
+	kubectl get ksvc "${SERVICE_NAME}" -n default -o yaml
 	echo ""
 	echo "Pod status:"
 	kubectl get pods -n default
 	echo ""
 	echo "Recent logs:"
-	kubectl logs -l serving.knative.dev/service="${PROJECT_NAME}" -c user-container -n default --tail=50 2>/dev/null || echo "No logs available"
+	kubectl logs -l serving.knative.dev/service="${SERVICE_NAME}" -c user-container -n default --tail=50 2>/dev/null || echo "No logs available"
 	exit 1
 fi
 
@@ -97,12 +104,12 @@ echo -e "${GREEN}✓ Application deployed successfully${NC}"
 echo ""
 
 # Get service URL
-SERVICE_URL=$(kubectl get ksvc "${PROJECT_NAME}" -n default -o jsonpath='{.status.url}' 2>/dev/null || echo "")
+SERVICE_URL=$(kubectl get ksvc "${SERVICE_NAME}" -n default -o jsonpath='{.status.url}' 2>/dev/null || echo "")
 if [[ -n "$SERVICE_URL" ]]; then
 	echo -e "Service URL: ${GREEN}${SERVICE_URL}${NC}"
 else
 	echo "Service URL: (pending)"
 fi
 
-kubectl get ksvc "${PROJECT_NAME}" -n default
+kubectl get ksvc "${SERVICE_NAME}" -n default
 echo ""

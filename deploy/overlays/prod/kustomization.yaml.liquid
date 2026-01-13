@@ -9,7 +9,7 @@ resources:
 patches:
   - target:
       kind: Service
-      name: rust-service
+      name: {{ project_name | replace: "_", "-" }}
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale

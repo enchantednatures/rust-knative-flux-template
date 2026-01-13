@@ -1,11 +1,11 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler
 metadata:
-  name: {{ project_name }}-postgres-pooler
+  name: {{ project_name | replace: "_", "-" }}-postgres-pooler
   namespace: {{ target_namespace }}
 spec:
   cluster:
-    name: {{ project_name }}-postgres
+    name: {{ project_name | replace: "_", "-" }}-postgres
   
   instances: 3  # Number of PgBouncer replicas for HA
   

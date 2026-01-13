@@ -1,7 +1,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: {{ project_name }}-postgres
+  name: {{ project_name | replace: "_", "-" }}-postgres
   namespace: {{ target_namespace }}
 spec:
   instances: 3  # Production: 3 instances (1 primary + 2 standby) - matches base

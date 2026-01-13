@@ -251,11 +251,11 @@ cargo run
 Create secret with S3 credentials:
 
 ```bash
-kubectl create secret generic rust-service-secrets \
+kubectl create secret generic {{ project_name | replace: "_", "-" }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
   --from-literal=aws-access-key-id='your-key' \
   --from-literal=aws-secret-access-key='your-secret' \
-  -n default
+  -n {{ target_namespace }}
 ```
 
 Or use ExternalSecrets Operator to sync from AWS Secrets Manager:
@@ -264,20 +264,20 @@ Or use ExternalSecrets Operator to sync from AWS Secrets Manager:
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: rust-service-secrets
+  name: {{ project_name | replace: "_", "-" }}-secrets
 spec:
   refreshInterval: 1h
   secretStoreRef:
     name: aws-secrets-manager
   target:
-    name: rust-service-secrets
+    name: {{ project_name | replace: "_", "-" }}-secrets
   data:
     - secretKey: aws-access-key-id
       remoteRef:
-        key: /prod/rust-service/aws-access-key-id
+        key: /prod/{{ project_name }}/aws-access-key-id
     - secretKey: aws-secret-access-key
       remoteRef:
-        key: /prod/rust-service/aws-secret-access-key
+        key: /prod/{{ project_name }}/aws-secret-access-key
 ```
 
 ### MinIO in Kubernetes

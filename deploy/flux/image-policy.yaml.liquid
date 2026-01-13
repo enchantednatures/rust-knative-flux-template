@@ -6,11 +6,11 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: rust-service
+  name: {{ project_name | replace: "_", "-" }}
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: rust-service
+    name: {{ project_name | replace: "_", "-" }}
   filterTags:
     pattern: '^sha-[a-f0-9]{7}$'
   policy:
@@ -27,11 +27,11 @@ spec:
 # apiVersion: image.toolkit.fluxcd.io/v1beta2
 # kind: ImagePolicy
 # metadata:
-#   name: rust-service-semver
+#   name: {{ project_name | replace: "_", "-" }}-semver
 #   namespace: flux-system
 # spec:
 #   imageRepositoryRef:
-#     name: rust-service
+#     name: {{ project_name | replace: "_", "-" }}
 #   policy:
 #     semver:
 #       range: ">=1.0.0"

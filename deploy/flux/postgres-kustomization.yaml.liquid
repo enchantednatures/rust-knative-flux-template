@@ -23,8 +23,8 @@ spec:
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
-      name: {{ project_name }}-postgres
+      name: {{ project_name | replace: "_", "-" }}-postgres
       namespace: {{ target_namespace }}
   postBuild:
     substitute:
-      POSTGRES_APP_NAME: "{{ project_name }}-postgres"
+      POSTGRES_APP_NAME: "{{ project_name | replace: "_", "-" }}-postgres"

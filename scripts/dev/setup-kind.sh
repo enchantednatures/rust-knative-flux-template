@@ -54,39 +54,24 @@ if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
 	kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
 fi
 
-# Create Kind config
-TEMP_CONFIG=$(mktemp)
-cat >"${TEMP_CONFIG}" <<'EOF'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-    extraPortMappings:
-      # Map Kourier ingress to host for Knative services
-      - containerPort: 31080
-        hostPort: 8080
-        protocol: TCP
-EOF
+# Use Kind config file instead of inline config
+KIND_CONFIG="${PROJECT_ROOT}/deploy/dev/kind-config.yaml"
+
+if [[ ! -f "$KIND_CONFIG" ]]; then
+	echo -e "${RED}✗ Error: Kind config not found at ${KIND_CONFIG}${NC}"
+	exit 1
+fi
 
 # Create Kind cluster
 echo -e "${YELLOW}→${NC} Creating Kind cluster (${CLUSTER_NAME})..."
 kind create cluster \
 	--name "${CLUSTER_NAME}" \
-	--config "${TEMP_CONFIG}" \
+	--config "${KIND_CONFIG}" \
 	--kubeconfig "${KUBECONFIG_PATH}" \
 	--wait 5m || {
 	echo -e "${RED}✗ Error: Failed to create Kind cluster${NC}"
-	rm -f "${TEMP_CONFIG}"
 	exit 1
 }
-
-rm -f "${TEMP_CONFIG}"
 
 # Connect registry to Kind network
 echo -e "${YELLOW}→${NC} Connecting registry to Kind network..."

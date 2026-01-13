@@ -1,13 +1,13 @@
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
-  name: {{ project_name }}-postgres-backup-store
+  name: {{ project_name | replace: "_", "-" }}-postgres-backup-store
   namespace: {{ target_namespace }}
 spec:
   # Configuration for Barman Cloud Plugin backup storage
   configuration:
     # S3-compatible endpoint and bucket
-    destinationPath: s3://{{ project_name }}-postgres-backups/
+    destinationPath: s3://{{ project_name | replace: "_", "-" }}-postgres-backups/
     endpointURL: http://minio.minio.svc.cluster.local:9000
     
     # Credentials reference (from Kubernetes Secret)

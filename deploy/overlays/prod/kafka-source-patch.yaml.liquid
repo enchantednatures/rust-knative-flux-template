@@ -2,7 +2,7 @@
 apiVersion: sources.knative.dev/v1beta1
 kind: KafkaSource
 metadata:
-  name: {{ project_name }}-kafka-source
+  name: {{ project_name | replace: "_", "-" }}-kafka-source
   namespace: {{ target_namespace }}
 spec:
   bootstrapServers:
@@ -18,5 +18,5 @@ spec:
       ref:
         apiVersion: serving.knative.dev/v1
         kind: Service
-        name: {{ project_name }}-dlq
+        name: {{ project_name | replace: "_", "-" }}-dlq
 {% endif %}

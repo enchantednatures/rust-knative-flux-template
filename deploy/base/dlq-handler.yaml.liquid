@@ -5,10 +5,10 @@
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: {{ project_name }}-dlq
+  name: {{ project_name | replace: "_", "-" }}-dlq
   namespace: {{ target_namespace }}
   labels:
-    app.kubernetes.io/name: {{ project_name }}-dlq
+    app.kubernetes.io/name: {{ project_name | replace: "_", "-" }}-dlq
     app.kubernetes.io/component: dlq-handler
     app.kubernetes.io/managed-by: flux
 spec:

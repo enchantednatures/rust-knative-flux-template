@@ -109,7 +109,7 @@ impl Default for Config {
             },
             telemetry: TelemetryConfig {
                 otlp_endpoint: None,
-                service_name: "rust-service".into(),
+                service_name: "{{ project_name }}".into(),
                 log_level: "info".into(),
             },
             {%- if features contains "s3" %}

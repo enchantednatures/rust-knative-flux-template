@@ -1,10 +1,10 @@
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: rust-service
+  name: {{ project_name | replace: "_", "-" }}
   namespace: {{ target_namespace }}
   labels:
-    app.kubernetes.io/name: rust-service
+    app.kubernetes.io/name: {{ project_name | replace: "_", "-" }}
     app.kubernetes.io/component: api
     app.kubernetes.io/managed-by: flux
   annotations:
@@ -29,7 +29,7 @@ spec:
       containers:
         - name: service
           # Image will be updated by Flux ImageUpdateAutomation
-          image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest # {"$imagepolicy": "flux-system:rust-service"}
+          image: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: "_", "-" }}:latest # {"$imagepolicy": "flux-system:{{ project_name | replace: "_", "-" }}"}
           ports:
             - containerPort: 8080
               protocol: TCP
@@ -41,18 +41,18 @@ spec:
             - name: APP__REDIS__URL
               valueFrom:
                 secretKeyRef:
-                  name: rust-service-secrets
+                  name: {{ project_name | replace: "_", "-" }}-secrets
                   key: redis-url
             {% if features contains "s3" %}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: rust-service-secrets
+                  name: {{ project_name | replace: "_", "-" }}-secrets
                   key: aws-access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rust-service-secrets
+                  name: {{ project_name | replace: "_", "-" }}-secrets
                   key: aws-secret-access-key
             - name: APP__S3__ENDPOINT
               value: "http://minio:9000"  # Update for your environment
@@ -64,7 +64,7 @@ spec:
             - name: APP__TELEMETRY__OTLP_ENDPOINT
               value: "http://otel-collector.observability.svc.cluster.local:4317"
             - name: APP__TELEMETRY__SERVICE_NAME
-              value: "rust-service"
+              value: "{{ project_name | replace: "_", "-" }}"
           resources:
             requests:
               cpu: "{% if use_default_scaling %}100m{% else %}{{ base_cpu_request }}{% endif %}"

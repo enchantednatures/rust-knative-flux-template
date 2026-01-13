@@ -79,6 +79,95 @@ make dev-logs
 make dev-down
 ```
 
+## Naming Conventions
+
+### Project Name Handling
+
+The template uses consistent naming conventions across Rust code, Kubernetes resources, and Docker images:
+
+**Key Principle**: Kubernetes and Docker require hyphens, Rust prefers underscores. The template normalizes this during generation.
+
+#### Template Generation (cargo-generate)
+
+When generating a project, the template automatically handles naming:
+
+- **User input** (project_name): Can use any format
+  - `"my-service"` (hyphens)
+  - `"my_service"` (underscores)
+  - `"myservice"` (single word)
+
+- **Generated names**:
+  - **Cargo.toml crate name** (`crate_name`): Automatically converted to snake_case (underscores)
+    - Example: `"my_service"`, `"myservice"`
+    - Used in: Binary names, Rust module paths, internal code
+  
+  - **Kubernetes service name** (`project_name | replace: "_", "-"`): Normalized to kebab-case (hyphens)
+    - Example: `"my-service"`, `"myservice"`
+    - Used in: Knative service names, Docker image tags, K8s resource labels
+    - **Critical**: Knative services CANNOT contain underscores - violations cause `ImagePullBackOff` errors
+
+#### Template Files
+
+Files that handle name normalization:
+
+- **Makefile.liquid**: Templated with `PROJECT_NAME` (hyphens) and `CRATE_NAME` (underscores)
+  - `PROJECT_NAME := {{ project_name | replace: "_", "-" }}`
+  - `CRATE_NAME := {{ crate_name }}`
+
+- **scripts/dev/build-and-deploy.sh.liquid**: Hardcoded service and binary names at generation time
+  - `SERVICE_NAME="{{ project_name | replace: "_", "-" }}"`  (for Docker tags, Kubernetes)
+  - `CRATE_NAME="{{ crate_name }}"`  (for binary verification)
+
+- **deploy/base/knative-service.yaml.liquid**: Uses `{{ project_name | replace: "_", "-" }}` for service name
+  - `name: {{ project_name | replace: "_", "-" }}`
+
+#### Common Issues and Solutions
+
+**Issue**: `ImagePullBackOff` when deploying to Knative
+- **Cause**: Image tag name doesn't match Knative service name (usually underscores vs hyphens)
+- **Solution**: Ensure templated scripts use `PROJECT_NAME` for Kubernetes and `CRATE_NAME` for Rust
+
+**Issue**: Docker image tag doesn't match Kustomization reference
+- **Cause**: Build script extracts name from Cargo.toml at runtime (gets underscores), but Kustomization expects hyphens
+- **Solution**: Use templated build script that has names baked in at generation time
+
+**Issue**: Knative service won't start with name containing underscores
+- **Cause**: Knative spec forbids underscores in service names
+- **Solution**: Always use hyphens in Kubernetes resource names (automatic with this template)
+
+#### Testing Naming Conventions
+
+Run the naming convention e2e tests to verify correct behavior:
+
+```bash
+# GitHub Actions workflow tests all naming styles:
+# - kebab-case: test-service
+# - snake_case: test_service
+# - single-word: testservice
+
+# Tests verify:
+# ✓ Crate name matches Cargo.toml
+# ✓ Knative service name uses hyphens (no underscores)
+# ✓ Docker image tag uses hyphens
+# ✓ Makefile PROJECT_NAME uses hyphens
+# ✓ Build script correctly handles SERVICE_NAME and CRATE_NAME
+```
+
+#### Why This Matters
+
+This naming normalization prevents a critical class of deployment failures:
+
+1. **Kubernetes Constraint**: Service names must match DNS subdomain rules (`[a-z0-9]([-a-z0-9]*[a-z0-9])?`)
+   - Hyphens are allowed, underscores are NOT
+
+2. **Docker Convention**: Image tags should use hyphens for consistency
+   - Underscores work but violate conventions
+
+3. **Rust Convention**: Crate names use underscores in Cargo.toml
+   - This is the Rust package naming standard
+
+The template bridges these conventions so generated projects work seamlessly across all layers.
+
 ## Code Style Guidelines
 
 ### File Organization
@@ -515,6 +604,43 @@ These configure:
 - **Graceful shutdown**: Handle SIGTERM for zero-downtime deployments
 - **Fast startup**: Optimize cold start time (<2 seconds preferred)
 - **B3 propagation**: Use B3 headers for distributed tracing (via opentelemetry-zipkin)
+
+## Local Development Image Override
+
+When working with the local development environment, images are built and pushed to a local Docker registry running at `localhost:5001`.
+
+### Image Tagging Convention
+
+- **Development builds**: Use `dev` tag (e.g., `localhost:5001/my-service:dev`)
+- **Production builds**: Use `latest` or semantic version tags (e.g., `ghcr.io/org/my-service:1.0.0`)
+
+### Kustomize Image Override Pattern
+
+The dev overlay automatically overrides the GHCR image reference with the local registry:
+
+```yaml
+# deploy/overlays/dev/kustomization.yaml
+images:
+  - name: ghcr.io/org/my-service      # Base image reference
+    newName: localhost:5001/my-service # Local registry
+    newTag: dev                         # Development tag
+```
+
+This allows:
+- Base manifests reference production registry (GHCR)
+- Dev overlay automatically uses local registry (no GHCR auth needed)
+- Staging/prod overlays use production images unchanged
+- `make dev-restart` rebuilds and deploys with local image
+
+### Build Process
+
+The `scripts/dev/build-and-deploy.sh` script:
+1. Builds Docker image: `docker build -t localhost:5001/my-service:dev .`
+2. Pushes to local registry: `docker push localhost:5001/my-service:dev`
+3. Applies Kustomize overlay: `kubectl apply -k deploy/overlays/dev`
+4. Kustomize substitutes image → Knative pulls from local registry
+
+**No imagePullSecrets needed** for local development!
 
 ## Configuration
 

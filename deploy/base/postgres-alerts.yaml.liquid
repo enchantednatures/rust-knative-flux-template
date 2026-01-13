@@ -1,10 +1,10 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ project_name }}-postgres-alerts
+  name: {{ project_name | replace: "_", "-" }}-postgres-alerts
   namespace: {{ target_namespace }}
   labels:
-    app: {{ project_name }}-postgres
+    app: {{ project_name | replace: "_", "-" }}-postgres
     prometheus: kube-prometheus
 spec:
   groups:
@@ -47,7 +47,7 @@ spec:
         # ====================================================================
         - alert: PostgreSQLReplicationLag
           expr: |
-            cnpg_pg_replication_lag{cluster="{{ project_name }}-postgres"} > 10
+            cnpg_pg_replication_lag{cluster="{{ project_name | replace: "_", "-" }}-postgres"} > 10
           for: 5m
           labels:
             severity: warning
@@ -58,7 +58,7 @@ spec:
         
         - alert: PostgreSQLHighReplicationLag
           expr: |
-            cnpg_pg_replication_lag{cluster="{{ project_name }}-postgres"} > 60
+            cnpg_pg_replication_lag{cluster="{{ project_name | replace: "_", "-" }}-postgres"} > 60
           for: 2m
           labels:
             severity: critical

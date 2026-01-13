@@ -6,6 +6,12 @@ namespace: default
 resources:
   - ../../base
 
+# Override image for local development with local registry
+images:
+  - name: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: "_", "-" }}
+    newName: kind-registry-dev:5000/{{ project_name | replace: "_", "-" }}
+    newTag: dev
+
 {% if event_sources contains "kafka" %}
 patchesStrategicMerge:
   - kafka-source-patch.yaml
@@ -14,7 +20,7 @@ patchesStrategicMerge:
 patches:
   - target:
       kind: Service
-      name: {{ project_name }}
+      name: {{ project_name | replace: "_", "-" }}
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
@@ -54,7 +60,7 @@ patches:
           - name: APP__TELEMETRY__OTLP_ENDPOINT
             value: "http://otel-collector.observability.svc.cluster.local:4317"
           - name: APP__TELEMETRY__SERVICE_NAME
-            value: "{{ project_name }}-dev"
+            value: "{{ project_name | replace: "_", "-" }}-dev"
           - name: APP__TELEMETRY__LOG_LEVEL
             value: "debug"
           - name: RUST_LOG

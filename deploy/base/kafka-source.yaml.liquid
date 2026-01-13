@@ -2,10 +2,10 @@
 apiVersion: sources.knative.dev/v1beta1
 kind: KafkaSource
 metadata:
-  name: {{ project_name }}-kafka-source
+  name: {{ project_name | replace: "_", "-" }}-kafka-source
   namespace: {{ target_namespace }}
   labels:
-    app.kubernetes.io/name: {{ project_name }}-kafka-source
+    app.kubernetes.io/name: {{ project_name | replace: "_", "-" }}-kafka-source
     app.kubernetes.io/component: event-source
     app.kubernetes.io/managed-by: flux
 spec:
@@ -22,7 +22,7 @@ spec:
     ref:
       apiVersion: serving.knative.dev/v1
       kind: Service
-      name: rust-service
+      name: {{ project_name | replace: "_", "-" }}
   
   delivery:
     retry: 5
@@ -32,7 +32,7 @@ spec:
       ref:
         apiVersion: serving.knative.dev/v1
         kind: Service
-        name: {{ project_name }}-dlq
+        name: {{ project_name | replace: "_", "-" }}-dlq
   
   initialOffset: latest
 {% endif %}
