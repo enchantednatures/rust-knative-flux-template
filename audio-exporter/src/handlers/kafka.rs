@@ -1,0 +1,348 @@
+//! Kafka event publishing handler module
+//!
+//! Provides CloudEvent generation and Kafka publishing capabilities for HTTP handlers.
+//! Includes comprehensive observability through distributed tracing and Prometheus metrics.
+
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::Instant;
+use uuid::Uuid;
+
+use crate::config::KafkaConfig;
+use crate::error::KafkaError;
+
+/// CloudEvent structure for Kafka publishing
+/// Implements CloudEvents v1.0 specification (https://cloudevents.io/)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudEvent {
+    /// CloudEvents specification version (always "1.0")
+    pub specversion: String,
+
+    /// Event type (e.g., "com.example.service.event.published")
+    #[serde(rename = "type")]
+    pub type_: String,
+
+    /// Origin of the event (e.g., "/api/v1/hello")
+    pub source: String,
+
+    /// Unique identifier for the event
+    pub id: String,
+
+    /// RFC3339 timestamp of event generation
+    pub time: String,
+
+    /// Data content type (optional, e.g., "application/json")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub datacontenttype: Option<String>,
+
+    /// Event data payload (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+
+    /// Traceparent for distributed tracing (optional, W3C Trace Context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub traceparent: Option<String>,
+}
+
+impl CloudEvent {
+    /// Creates a new CloudEvent for Kafka publishing
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - Event type from configuration
+    /// * `source` - Source path (e.g., handler path)
+    /// * `data` - Optional event payload
+    ///
+    /// # Returns
+    ///
+    /// A new CloudEvent with auto-generated ID and current timestamp
+    pub fn new(type_: String, source: String, data: Option<serde_json::Value>) -> Self {
+        let now = chrono::Utc::now();
+        let time = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+        Self {
+            specversion: "1.0".to_string(),
+            type_,
+            source,
+            id: Uuid::new_v4().to_string(),
+            time,
+            datacontenttype: Some("application/json".to_string()),
+            data,
+            traceparent: None,
+        }
+    }
+
+    /// Returns the event ID
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Returns the event type
+    pub fn type_(&self) -> &str {
+        &self.type_
+    }
+
+    /// Returns the event source
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Serializes the CloudEvent to JSON
+    pub fn to_json(&self) -> Result<String, KafkaError> {
+        serde_json::to_string(self)
+            .map_err(|e| KafkaError::SerializationFailed(e.to_string()))
+    }
+
+    /// Serializes the CloudEvent to JSON bytes
+    pub fn to_json_bytes(&self) -> Result<Vec<u8>, KafkaError> {
+        serde_json::to_vec(self)
+            .map_err(|e| KafkaError::SerializationFailed(e.to_string()))
+    }
+}
+
+/// Creates a dummy CloudEvent for testing and basic usage
+///
+/// # Arguments
+///
+/// * `config` - Kafka configuration containing event_name
+/// * `source` - Source path (e.g., handler path)
+///
+/// # Returns
+///
+/// A CloudEvent with minimal dummy data
+pub fn create_dummy_event(config: &KafkaConfig, source: impl Into<String>) -> CloudEvent {
+    let dummy_data = serde_json::json!({
+        "message": "Event published from handler",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    });
+
+    CloudEvent::new(
+        config.event_name.clone(),
+        source.into(),
+        Some(dummy_data),
+    )
+}
+
+/// Kafka publisher for sending CloudEvents
+pub struct KafkaPublisher {
+    /// Kafka producer
+    producer: Arc<rdkafka::producer::FutureProducer>,
+
+    /// Kafka configuration (publicly accessible for handler use)
+    pub config: Arc<KafkaConfig>,
+}
+
+impl KafkaPublisher {
+    /// Creates a new KafkaPublisher
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Kafka configuration
+    ///
+    /// # Returns
+    ///
+    /// Result containing the initialized publisher or error
+    pub async fn new(config: KafkaConfig) -> Result<Self, KafkaError> {
+        use rdkafka::config::ClientConfig;
+
+        let mut client_config = ClientConfig::new();
+        client_config.set("bootstrap.servers", &config.broker_url);
+        client_config.set("compression.type", &config.compression);
+        client_config.set("linger.ms", config.linger_ms.to_string());
+        client_config.set("request.timeout.ms", config.timeout_ms.to_string());
+        client_config.set("retries", config.retries.to_string());
+
+        let producer = client_config
+            .create::<rdkafka::producer::FutureProducer>()
+            .map_err(|e| KafkaError::InitializationFailed(e.to_string()))?;
+
+        Ok(Self {
+            producer: Arc::new(producer),
+            config: Arc::new(config),
+        })
+    }
+
+    /// Publishes a CloudEvent to Kafka
+    ///
+    /// Records distributed tracing span and Prometheus metrics for observability.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - CloudEvent to publish
+    ///
+    /// # Returns
+    ///
+    /// Result containing partition and offset, or error
+    #[tracing::instrument(
+        skip(self, event),
+        fields(
+            event_id = %event.id(),
+            topic = %self.config.topic,
+            event_type = %event.type_(),
+            source = %event.source()
+        ),
+        err(Debug)
+    )]
+    pub async fn publish(&self, event: &CloudEvent) -> Result<(i32, i64), KafkaError> {
+        use rdkafka::producer::FutureRecord;
+
+        let start = Instant::now();
+        let json = event.to_json_bytes()?;
+
+        let event_id = event.id().to_string();
+        let record = FutureRecord::to(&self.config.topic)
+            .key(&event_id)
+            .payload(&json);
+
+        let result = self.producer
+            .send(record, std::time::Duration::from_millis(self.config.timeout_ms.into()))
+            .await;
+
+        // Record metrics
+        let latency_ms = start.elapsed().as_millis() as f64;
+        let topic = self.config.topic.clone();
+        
+        match result {
+            Ok(delivery) => {
+                let partition = delivery.partition;
+                let offset = delivery.offset;
+                
+                metrics::counter!("kafka_events_published_total", 1, "topic" => topic.clone());
+                metrics::histogram!("kafka_publish_latency_ms", latency_ms, "topic" => topic);
+                tracing::Span::current().record("partition", partition);
+                tracing::Span::current().record("offset", offset);
+                
+                Ok((partition, offset))
+            }
+            Err((err, _)) => {
+                let error = KafkaError::PublishFailed(err.to_string());
+                let (error_type, _) = error.context();
+                
+                metrics::counter!("kafka_events_failed_total", 1, "topic" => topic.clone(), "error_type" => error_type);
+                metrics::histogram!("kafka_publish_latency_ms", latency_ms, "topic" => topic, "error" => "true");
+                
+                Err(error)
+            }
+        }
+    }
+
+    /// Health check for Kafka broker connectivity
+    ///
+    /// # Returns
+    ///
+    /// Result indicating broker is reachable or error
+    pub async fn health_check(&self) -> Result<(), KafkaError> {
+        use rdkafka::producer::Producer;
+
+        // Send a simple metadata request to verify connectivity
+        self.producer
+            .client()
+            .fetch_metadata(None, std::time::Duration::from_secs(5))
+            .map_err(|e| {
+                KafkaError::broker_unreachable(
+                    self.config.broker_url.clone(),
+                    e.to_string(),
+                )
+            })?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cloud_event_creation() {
+        let event = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            None,
+        );
+
+        assert_eq!(event.specversion, "1.0");
+        assert_eq!(event.type_, "com.example.test");
+        assert_eq!(event.source, "/api/v1/test");
+        assert!(!event.id().is_empty());
+        assert!(!event.time.is_empty());
+    }
+
+    #[test]
+    fn test_cloud_event_with_data() {
+        let data = serde_json::json!({"key": "value"});
+        let event = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            Some(data.clone()),
+        );
+
+        assert_eq!(event.data, Some(data));
+        assert_eq!(event.datacontenttype, Some("application/json".to_string()));
+    }
+
+    #[test]
+    fn test_cloud_event_serialization() {
+        let event = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            Some(serde_json::json!({"message": "test"})),
+        );
+
+        let json = event.to_json().expect("should serialize");
+        assert!(json.contains("\"specversion\":\"1.0\""));
+        assert!(json.contains("\"type\":\"com.example.test\""));
+        assert!(json.contains("\"source\":\"/api/v1/test\""));
+        assert!(json.contains("\"id\""));
+        assert!(json.contains("\"time\""));
+    }
+
+    #[test]
+    fn test_cloud_event_uuid_uniqueness() {
+        let event1 = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            None,
+        );
+        let event2 = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            None,
+        );
+
+        assert_ne!(event1.id(), event2.id());
+    }
+
+    #[test]
+    fn test_dummy_event_creation() {
+        let config = KafkaConfig {
+            broker_url: "localhost:9092".to_string(),
+            topic: "test-events".to_string(),
+            event_name: "com.example.dummy".to_string(),
+            compression: "snappy".to_string(),
+            linger_ms: 5,
+            retries: 3,
+            timeout_ms: 10000,
+        };
+
+        let event = create_dummy_event(&config, "/api/v1/handler");
+
+        assert_eq!(event.type_, "com.example.dummy");
+        assert_eq!(event.source, "/api/v1/handler");
+        assert!(event.data.is_some());
+        assert_eq!(event.specversion, "1.0");
+    }
+
+    #[test]
+    fn test_cloud_event_rfc3339_timestamp() {
+        let event = CloudEvent::new(
+            "com.example.test".to_string(),
+            "/api/v1/test".to_string(),
+            None,
+        );
+
+        // Should be valid RFC3339 format
+        assert!(chrono::DateTime::parse_from_rfc3339(&event.time).is_ok());
+    }
+}

@@ -1,0 +1,28 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: audio-exporter-postgres
+  namespace: default
+spec:
+  instances:   # Development: configurable instances
+  
+  # PostgreSQL configuration for development
+  postgresql:
+    parameters:
+      # Development settings - less strict
+      synchronous_commit: "local"  # Async replication for dev
+      shared_buffers: "256Mi"      # Lower memory for dev
+      max_connections: "100"
+  
+  # Development resource allocation
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  
+  # Smaller storage for development
+  storage:
+    size: "20Gi"

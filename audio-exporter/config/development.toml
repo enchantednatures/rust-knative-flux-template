@@ -1,0 +1,15 @@
+# Development environment configuration
+
+[telemetry]
+service_name = "audio-exporter-dev"
+log_level = "debug"
+otlp_endpoint = "http://localhost:4317"
+
+
+[s3]
+endpoint = "http://localhost:9000"
+bucket = "data"
+region = "us-east-1"
+
+
+

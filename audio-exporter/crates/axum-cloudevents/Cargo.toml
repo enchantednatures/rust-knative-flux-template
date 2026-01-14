@@ -1,0 +1,25 @@
+[package]
+name = "axum-cloudevents"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "CloudEvents extractors for Axum"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["json"] }
+bytes = "1.0"
+http = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+
+axum-cloudevents-macros = { path = "../axum-cloudevents-macros", optional = true }
+
+[features]
+default = ["macros"]
+macros = ["dep:axum-cloudevents-macros"]
+
+[dev-dependencies]
+axum-test = "17"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,150 @@
+use figment::{
+    Figment,
+    providers::{Env, Format, Serialized, Toml},
+};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct S3Config {
+    /// S3-compatible endpoint (required for MinIO)
+    pub endpoint: String,
+    /// Bucket name
+    pub bucket: String,
+    /// AWS region (use "us-east-1" for MinIO)
+    pub region: String,
+    // Credentials via AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Config {
+    pub server: ServerConfig,
+    pub redis: RedisConfig,
+    pub telemetry: TelemetryConfig,
+    pub s3: S3Config,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RedisConfig {
+    /// Redis connection URL
+    /// Format: redis://[:password@]host[:port][/db]
+    /// MUST be provided via config file or APP__REDIS__URL environment variable
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TelemetryConfig {
+    /// OTLP endpoint for traces (optional)
+    /// If not set, traces will only be logged
+    pub otlp_endpoint: Option<String>,
+    pub service_name: String,
+    pub log_level: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            server: ServerConfig {
+                host: "0.0.0.0".into(),
+                port: 8080,
+            },
+            redis: RedisConfig {
+                url: "redis://localhost:6379".into(),
+            },
+            telemetry: TelemetryConfig {
+                otlp_endpoint: None,
+                service_name: "audio-exporter".into(),
+                log_level: "info".into(),
+            },
+            s3: S3Config {
+                endpoint: "http://localhost:9000".into(),
+                bucket: "data".into(),
+                region: "us-east-1".into(),
+            },
+        }
+    }
+}
+
+impl Config {
+    /// Load configuration with the following priority (highest to lowest):
+    /// 1. Environment variables (APP__* prefix)
+    /// 2. Environment-specific config file (config/{env}.toml)
+    /// 3. Default values
+    ///
+    /// # Example Environment Variables
+    /// - APP__SERVER__PORT=9000
+    /// - APP__REDIS__URL=redis://:password@host:6379/0
+    /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
+    #[allow(clippy::result_large_err)]
+    pub fn load() -> Result<Self, figment::Error> {
+        let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
+
+        let config: Config = Figment::new()
+            // 1. Start with defaults
+            .merge(Serialized::defaults(Config::default()))
+            // 2. Merge environment-specific file
+            .merge(Toml::file(format!("config/{}.toml", env)).nested())
+            // 3. Override with environment variables (highest priority)
+            // APP__SERVER__PORT=9000 -> server.port = 9000
+            .merge(Env::prefixed("APP__").split("__"))
+            .extract()?;
+
+        // Early validation: ensure critical values are present
+        config.validate()?;
+
+        Ok(config)
+    }
+
+    /// Validate configuration
+    /// Fails fast if required values are missing or invalid
+    #[allow(clippy::result_large_err)]
+    fn validate(&self) -> Result<(), figment::Error> {
+        if self.redis.url.is_empty() {
+            return Err(figment::Error::from(
+                "redis.url must be set (via config file or APP__REDIS__URL)",
+            ));
+        }
+
+        if self.server.port == 0 {
+            return Err(figment::Error::from("server.port must be non-zero"));
+        }
+
+        if self.s3.endpoint.is_empty() {
+            return Err(figment::Error::from(
+                "s3.endpoint must be set (via config file or APP__S3__ENDPOINT)",
+            ));
+        }
+
+        if self.s3.bucket.is_empty() {
+            return Err(figment::Error::from(
+                "s3.bucket must be set (via config file or APP__S3__BUCKET)",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.server.port, 8080);
+        assert_eq!(config.server.host, "0.0.0.0");
+    }
+
+    #[test]
+    fn test_validation_fails_on_empty_redis_url() {
+        let mut config = Config::default();
+        config.redis.url = String::new();
+        assert!(config.validate().is_err());
+    }
+}

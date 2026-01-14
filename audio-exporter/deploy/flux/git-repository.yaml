@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: rust-service
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/enchantednatures/rust-knative-flux-template
+  ref:
+    branch: main
+  # Optional: For private repositories
+  # secretRef:
+  #   name: github-deploy-key

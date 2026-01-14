@@ -1,0 +1,15 @@
+# Production environment configuration
+
+[telemetry]
+service_name = "audio-exporter-prod"
+log_level = "info"
+otlp_endpoint = "http://otel-collector.observability.svc.cluster.local:4317"
+
+
+[s3]
+endpoint = "https://s3.amazonaws.com"
+bucket = ""
+region = ""
+
+
+

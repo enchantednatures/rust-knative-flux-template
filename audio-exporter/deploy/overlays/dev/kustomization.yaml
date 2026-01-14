@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+# Override image for local development with local registry
+images:
+  - name: ghcr.io/enchantednatures/audio-exporter
+    newName: kind-registry-dev:5000/audio-exporter
+    newTag: dev
+
+
+
+patches:
+  - target:
+      kind: Service
+      name: audio-exporter
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "0"
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "3"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "100m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "64Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: APP__REDIS__URL
+            value: "redis://redis.redis.svc.cluster.local:6379"
+          
+          - name: APP__S3__ENDPOINT
+            value: "http://minio.minio.svc.cluster.local:9000"
+          - name: APP__S3__BUCKET
+            value: "data"
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          - name: AWS_ACCESS_KEY_ID
+            value: "minioadmin"
+          - name: AWS_SECRET_ACCESS_KEY
+            value: "minioadmin"
+          
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "http://otel-collector.observability.svc.cluster.local:4317"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "audio-exporter-dev"
+          - name: APP__TELEMETRY__LOG_LEVEL
+            value: "debug"
+          - name: RUST_LOG
+            value: "debug,hyper=info,tower=info"

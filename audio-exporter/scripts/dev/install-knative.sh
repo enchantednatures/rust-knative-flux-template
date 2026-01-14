@@ -66,7 +66,7 @@ echo -e "${YELLOW}→${NC} Configuring registry skip for local development..."
 kubectl patch configmap/config-deployment \
   -n knative-serving \
   --type merge \
-  -p '{"data":{"registries-skipping-tag-resolving":"kind-registry-dev:5000"}}' || {
+  -p '{"data":{"registries-skipping-tag-resolving":"localhost:5001"}}' || {
   echo -e "${RED}✗ Error: Failed to patch config-deployment${NC}"
   exit 1
 }
