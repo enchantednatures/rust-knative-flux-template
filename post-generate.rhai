@@ -19,18 +19,20 @@ print("  ✓ All names are automatically normalized during generation\n");
 // ============================================================================
 // Step 1: Run Clippy to automatically fix linting issues
 // ============================================================================
-// --allow-dirty: Allow fixes even with uncommitted changes
-// --allow-staged: Allow fixes on staged files
-// --allow-no-vcs: Allow fixes when not in a git repository
-print("🔧 Running clippy --fix...");
-system::command("cargo", ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
+// NOTE: Clippy is disabled during template generation because it builds the
+// project and creates a target/ directory with binary files that contain
+// {{ }} patterns, causing cargo-generate validation to fail.
+// This will be run manually after generation.
+// print("🔧 Running clippy --fix...");
+// system::command("cargo", ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
 
 // ============================================================================
 // Step 2: Format all generated code
 // ============================================================================
 // --all: Format all packages in workspace
-print("🔧 Running cargo fmt...");
-system::command("cargo", ["fmt", "--all"]);
+// NOTE: fmt is also disabled for the same reason as clippy
+// print("🔧 Running cargo fmt...");
+// system::command("cargo", ["fmt", "--all"]);
 
 print("\n✅ Project generation complete!\n");
 print("Next steps:");

@@ -15,7 +15,7 @@ PostgreSQL metrics are exposed through:
 The `postgres-podmonitor.yaml` deploys two PodMonitors:
 
 1. **postgres-metrics**: Scrapes metrics from PostgreSQL pods in the `default` namespace
-   - Target: Pods with `postgresql=postgres-app` label
+   - Target: Pods with `postgresql={{ project_name }}-postgres` label
    - Port: `metrics` (9187)
    - Interval: 30 seconds
    - Scheme: HTTP
@@ -225,7 +225,7 @@ kubectl logs -l app=prometheus -n monitoring | grep "added targets"
 
 ```bash
 # Verify Prometheus can reach PostgreSQL pods
-kubectl port-forward -n default svc/postgres-app-rw 9187:9187
+kubectl port-forward -n default svc/{{ project_name }}-postgres-rw 9187:9187
 
 curl http://localhost:9187/metrics
 
@@ -256,7 +256,7 @@ kubectl exec -it prometheus-pod -n monitoring -- \
 3. **Verify storage connectivity**:
    ```bash
    # MinIO example
-   kubectl exec -it postgres-app-1 -- \
+   kubectl exec -it {{ project_name }}-postgres-1 -- \
      s3cmd -c /opt/postgres/barmanrc get s3://postgres-backups/ /tmp/
    ```
 4. **Check operator version**: `kubectl get pods -n cnpg-system`
@@ -264,17 +264,17 @@ kubectl exec -it prometheus-pod -n monitoring -- \
 
 ### When PostgreSQLReplicationLag is high
 
-1. **Check replica status**: `kubectl describe cluster postgres-app`
-2. **Check replica logs**: `kubectl logs postgres-app-2`
+1. **Check replica status**: `kubectl describe cluster {{ project_name }}-postgres`
+2. **Check replica logs**: `kubectl logs {{ project_name }}-postgres-2`
 3. **Monitor network**: Check cluster node network latency
 4. **Review primary load**: Query `pg_stat_statements` on primary
 5. **Consider failover prep** if lag continues > 60s
 
 ### When PostgreSQLInstanceDown fires
 
-1. **Check pod status**: `kubectl get pod postgres-app-N -o wide`
-2. **Check pod events**: `kubectl describe pod postgres-app-N`
-3. **Review pod logs**: `kubectl logs postgres-app-N`
+1. **Check pod status**: `kubectl get pod {{ project_name }}-postgres-N -o wide`
+2. **Check pod events**: `kubectl describe pod {{ project_name }}-postgres-N`
+3. **Review pod logs**: `kubectl logs {{ project_name }}-postgres-N`
 4. **Verify PVC**: `kubectl get pvc`
 5. **If lost pod**: Wait for CloudNativePG to recreate, verify data integrity after recovery
 

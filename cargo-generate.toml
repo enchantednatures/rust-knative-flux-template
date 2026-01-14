@@ -16,9 +16,6 @@ ignore = [
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
   ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
-  ".github/workflows/ci.yaml.liquid",
-  "docs/MONITORING.md.liquid",
-  "docs/TESTING.md.liquid",
   "docs/LOCAL_E2E_TESTING.md",
   "docs/E2E_TROUBLESHOOTING.md",
   "docs/VERSION_COMPATIBILITY.md",
@@ -84,9 +81,9 @@ prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
 
 [conditional.'!if features contains "s3"']
 ignore = [
-  "src/handlers/storage.rs.liquid",
-  "tests/storage_test.rs.liquid",
-  "STORAGE.md.liquid",
+  "src/handlers/storage.rs",
+  "tests/storage_test.rs",
+  "STORAGE.md",
   "terraform/modules/minio",
 ]
 
@@ -98,13 +95,13 @@ kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type
 
 [conditional.'!if event_sources contains "kafka"']
 ignore = [
-  "deploy/base/kafka-source.yaml.liquid",
-  "deploy/base/dlq-handler.yaml.liquid",
-  "deploy/dev/infrastructure/kafka.yaml.liquid",
+  "deploy/base/kafka-source.yaml",
+  "deploy/base/dlq-handler.yaml",
+  "deploy/dev/infrastructure/kafka.yaml",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",
-  "docs/KAFKA_EVENTING.md.liquid",
+  "docs/KAFKA_EVENTING.md",
   "tests/e2e/fixtures/kafka",
 ]
 
@@ -121,30 +118,30 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 
 [conditional.'!if features contains "postgres"']
 ignore = [
-  "deploy/base/postgres-cluster.yaml.liquid",
-  "deploy/base/postgres-backup.yaml.liquid",
-  "deploy/base/postgres-pooler.yaml.liquid",
-  "deploy/base/postgres-objectstore.yaml.liquid",
-  "deploy/base/postgres-podmonitor.yaml.liquid",
-  "deploy/base/postgres-alerts.yaml.liquid",
-  "deploy/flux/postgres-kustomization.yaml.liquid",
-  "deploy/overlays/dev/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/dev/postgres-backup-patch.yaml.liquid",
-  "deploy/overlays/staging/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/staging/postgres-backup-patch.yaml.liquid",
-  "deploy/overlays/prod/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/prod/postgres-backup-patch.yaml.liquid",
-  "scripts/dev/deploy-postgres.sh.liquid",
-  "scripts/dev/check-postgres-status.sh.liquid",
-  "scripts/dev/port-forward-postgres.sh.liquid",
-  "scripts/dev/create-backup.sh.liquid",
-  "scripts/dev/check-backup-status.sh.liquid",
-  "scripts/dev/list-backups.sh.liquid",
-  "scripts/dev/restore-from-backup.sh.liquid",
-  "scripts/validate-postgres-manifests.sh.liquid",
-  "docs/POSTGRES.md.liquid",
-  "docs/POSTGRES_BACKUP_RESTORE.md.liquid",
-  "docs/POSTGRES_MONITORING.md.liquid",
+  "deploy/base/postgres-cluster.yaml",
+  "deploy/base/postgres-backup.yaml",
+  "deploy/base/postgres-pooler.yaml",
+  "deploy/base/postgres-objectstore.yaml",
+  "deploy/base/postgres-podmonitor.yaml",
+  "deploy/base/postgres-alerts.yaml",
+  "deploy/flux/postgres-kustomization.yaml",
+  "deploy/overlays/dev/postgres-cluster-patch.yaml",
+  "deploy/overlays/dev/postgres-backup-patch.yaml",
+  "deploy/overlays/staging/postgres-cluster-patch.yaml",
+  "deploy/overlays/staging/postgres-backup-patch.yaml",
+  "deploy/overlays/prod/postgres-cluster-patch.yaml",
+  "deploy/overlays/prod/postgres-backup-patch.yaml",
+  "scripts/dev/deploy-postgres.sh",
+  "scripts/dev/check-postgres-status.sh",
+  "scripts/dev/port-forward-postgres.sh",
+  "scripts/dev/create-backup.sh",
+  "scripts/dev/check-backup-status.sh",
+  "scripts/dev/list-backups.sh",
+  "scripts/dev/restore-from-backup.sh",
+  "scripts/validate-postgres-manifests.sh",
+  "docs/POSTGRES.md",
+  "docs/POSTGRES_BACKUP_RESTORE.md",
+  "docs/POSTGRES_MONITORING.md",
   "specs/001-cloudnative-postgres-backups",
 ]
 
@@ -155,6 +152,6 @@ kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service
 
 [conditional.'!if features contains "kafka"']
 ignore = [
-  "src/handlers/kafka.rs.liquid",
-  "tests/integration/kafka_publishing_test.rs.liquid",
+  "src/handlers/kafka.rs",
+  "tests/integration/kafka_publishing_test.rs",
 ]

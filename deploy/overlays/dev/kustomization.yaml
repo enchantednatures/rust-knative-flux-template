@@ -5,14 +5,63 @@ namespace: default
 
 resources:
   - ../../base
-  - infrastructure/minio.yaml
 
+# Override image for local development with local registry
+images:
+  - name: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: "_", "-" }}
+    newName: kind-registry-dev:5000/{{ project_name | replace: "_", "-" }}
+    newTag: dev
+
+{% if event_sources contains "kafka" %}
 patchesStrategicMerge:
-  - postgres-cluster-patch.yaml.liquid
-  - postgres-backup-patch.yaml.liquid
+  - kafka-source-patch.yaml
+{% endif %}
 
-# Note: Create and encrypt object-storage-secret.yaml with SOPS:
-# 1. cp ../../base/object-storage-secret.yaml.example object-storage-secret.yaml
-# 2. Edit with MinIO credentials (minioadmin/minioadmin for dev)
-# 3. sops -e -i object-storage-secret.yaml
-# 4. Add to resources above
+patches:
+  - target:
+      kind: Service
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "{% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}"
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "{% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "{% if use_default_scaling %}100m{% else %}{{ dev_cpu_request }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "{% if use_default_scaling %}64Mi{% else %}{{ dev_memory_request }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "{% if use_default_scaling %}500m{% else %}{{ dev_cpu_limit }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "{% if use_default_scaling %}256Mi{% else %}{{ dev_memory_limit }}{% endif %}"
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: APP__REDIS__URL
+            value: "redis://redis.redis.svc.cluster.local:6379"
+          {% if features contains "s3" %}
+          - name: APP__S3__ENDPOINT
+            value: "http://minio.minio.svc.cluster.local:9000"
+          - name: APP__S3__BUCKET
+            value: "data"
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          - name: AWS_ACCESS_KEY_ID
+            value: "minioadmin"
+          - name: AWS_SECRET_ACCESS_KEY
+            value: "minioadmin"
+          {% endif %}
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "http://otel-collector.observability.svc.cluster.local:4317"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "{{ project_name | replace: "_", "-" }}-dev"
+          - name: APP__TELEMETRY__LOG_LEVEL
+            value: "debug"
+          - name: RUST_LOG
+            value: "debug,hyper=info,tower=info"
