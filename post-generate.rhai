@@ -30,9 +30,8 @@ print("  ✓ All names are automatically normalized during generation\n");
 // Step 2: Format all generated code
 // ============================================================================
 // --all: Format all packages in workspace
-// NOTE: fmt is also disabled for the same reason as clippy
-// print("🔧 Running cargo fmt...");
-// system::command("cargo", ["fmt", "--all"]);
+print("🔧 Running cargo fmt...");
+system::command("cargo", ["fmt", "--all"]);
 
 print("\n✅ Project generation complete!\n");
 print("Next steps:");
