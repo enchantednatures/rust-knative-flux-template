@@ -103,6 +103,7 @@ jobs:
           github_repo = "test-repo"
           default_branch = "main"
           image_registry = "ghcr.io"
+          use_default_scaling = false
           base_min_scale = "1"
           base_max_scale = "10"
           base_target = "100"
