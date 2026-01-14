@@ -26,9 +26,6 @@ ignore = [
   "scripts/cleanup-e2e-local.sh",
   "scripts/README.md",
   "CHANGELOG-LOCAL-E2E.md",
-  # Static files that should not be included in generated projects
-  "Makefile",
-  "scripts/dev/build-and-deploy.sh",
 ]
 
 [hooks]
