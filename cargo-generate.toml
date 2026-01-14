@@ -151,7 +151,4 @@ kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string
 kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
 
 [conditional.'!if features contains "kafka"']
-ignore = [
-  "src/handlers/kafka.rs",
-  "tests/integration/kafka_publishing_test.rs",
-]
+ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]

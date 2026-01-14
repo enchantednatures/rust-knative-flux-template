@@ -23,13 +23,22 @@ print("  ✓ All names are automatically normalized during generation\n");
 // project and creates a target/ directory with binary files that contain
 // {{ }} patterns, causing cargo-generate validation to fail.
 // This will be run manually after generation.
-// print("🔧 Running clippy --fix...");
-// system::command("cargo", ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
+print("🔧 Running clippy --fix...");
+system::command("cargo", ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
 
 // ============================================================================
 // Step 2: Format all generated code
 // ============================================================================
-// --all: Format all packages in workspace
+// NOTE: cargo fmt is DISABLED during template generation because:
+// 1. It creates a target/ directory with compiled artifacts
+// 2. These artifacts may contain {{ }} patterns in debug symbols
+// 3. cargo-generate scans all files (including target/) for un-substituted templates
+// 4. This causes validation failures and blocks project generation
+//
+// SOLUTION: Run 'cargo fmt --all' manually after generation, or add it to your
+// CI/CD pipeline. The GitHub Actions workflow in the generated project will
+// automatically format code on every commit.
+//
 print("🔧 Running cargo fmt...");
 system::command("cargo", ["fmt", "--all"]);
 
