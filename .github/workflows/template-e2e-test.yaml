@@ -395,7 +395,7 @@ jobs:
           # Ensure expected bucket exists for tests
           kubectl wait --for=condition=ready pod -l release=minio --timeout=120s
           kubectl run minio-mc --rm -i --restart=Never --timeout=120s \
-            --image=minio/mc:RELEASE.2024-01-01T16-01-16Z \
+            --image=quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z \
             --command -- /bin/sh -c \
             "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && mc mb -p minio/data"
 
