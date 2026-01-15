@@ -50,7 +50,7 @@ opentelemetry-zipkin = { version = "0.31", default-features = false, features = 
 
 # Metrics
 metrics = "0.24"
-metrics-exporter-prometheus = "0.13"
+metrics-exporter-prometheus = "0.18"
 
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
@@ -80,7 +80,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 {% endif %}
 
 # Utilities
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 [dev-dependencies]
