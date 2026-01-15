@@ -392,6 +392,12 @@ jobs:
             --wait \
             --timeout 180s
 
+          # Ensure expected bucket exists for tests
+          kubectl run minio-mc --rm -i --restart=Never \
+            --image=minio/mc:RELEASE.2024-01-01T16-01-16Z \
+            --command -- /bin/sh -c \
+            "mc alias set minio http://minio:9000 minioadmin minioadmin && mc mb -p minio/data"
+
       - name: Validate cluster dependencies
         run: |
           echo "✓ Checkpoint 4: Validating cluster dependencies"
