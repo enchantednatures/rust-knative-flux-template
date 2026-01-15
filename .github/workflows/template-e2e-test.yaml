@@ -565,7 +565,17 @@ jobs:
             output=$(kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- "$@" 2>&1)
             exit_code=$?
             # Filter out kubectl pod messages and HTTP headers, keep only response body
-            echo "$output" | awk '/^$/{body=1;next} body && !/^pod.*/{print}'
+            # If there are no headers, return the raw body
+            echo "$output" | awk '
+              BEGIN { body=0; saw_header=0 }
+              /^pod.*/ { next }
+              /^HTTP\// { saw_header=1; next }
+              /^< HTTP\// { saw_header=1; next }
+              /^< [A-Za-z-]+:/ { saw_header=1; next }
+              /^[A-Za-z-]+:/ { saw_header=1; next }
+              /^$/ { if (saw_header) { body=1; next } }
+              { if (!saw_header || body) print }
+            '
             return $exit_code
           }
 
