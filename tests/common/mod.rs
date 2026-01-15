@@ -16,10 +16,9 @@ pub async fn create_test_state() -> AppState {
         .await
         .expect("Failed to connect to Redis");
 
-    // Create a mock metrics handle for testing
-    let metrics_handle = metrics_exporter_prometheus::PrometheusBuilder::new()
-        .install_recorder()
-        .expect("Failed to install metrics recorder");
+    // Initialize metrics properly (same as production) to ensure tests match runtime behavior
+    let metrics_handle = {{ crate_name }}::observability::init_metrics()
+        .expect("Failed to initialize metrics");
 
 {%- if features contains "s3" and features contains "kafka" %}
     let storage = create_test_storage();

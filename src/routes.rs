@@ -53,7 +53,9 @@ struct ApiDoc;
 
 /// Simple metrics middleware that records HTTP request counts
 async fn metrics_middleware(req: Request<Body>, next: Next) -> axum::response::Response {
-    counter!("http_requests_total", 1);
+    let counter = counter!("http_requests_total");
+    counter.increment(1);
+    tracing::debug!("HTTP request counted");
     next.run(req).await
 }
 

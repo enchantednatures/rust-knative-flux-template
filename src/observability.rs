@@ -44,7 +44,8 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     {%- endif %}
 
     // Record an initial metric to ensure the exporter has something to render
-    metrics::counter!("app_info", 1);
+    let app_info = metrics::counter!("app_info");
+    app_info.increment(1);
 
     tracing::info!("Prometheus metrics exporter initialized");
     Ok(handle)
