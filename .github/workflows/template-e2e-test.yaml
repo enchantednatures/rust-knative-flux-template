@@ -635,7 +635,17 @@ jobs:
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
             echo ""
             echo "Test: S3 storage example..."
-            RESPONSE=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+            echo "  Debug: Testing with verbose curl..."
+            VERBOSE_OUTPUT=$(kubectl run curl-debug-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- curl -v -s -X POST "${SERVICE_URL}/api/v1/storage/example" 2>&1 || true)
+            echo "  Debug: Verbose output (first 500 chars):"
+            echo "$VERBOSE_OUTPUT" | head -c 500
+            echo ""
+
+            RESPONSE=$(kubectl_curl -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+            CURL_EXIT=$?
+            echo "  Debug: curl exit code=$CURL_EXIT"
+            echo "  Debug: response length=${#RESPONSE}"
+            echo "  Debug: response preview: $(echo "$RESPONSE" | head -c 200)"
 
             if echo "$RESPONSE" | grep -q '"success":true' && \
                echo "$RESPONSE" | grep -q '"read_verified":true'; then
