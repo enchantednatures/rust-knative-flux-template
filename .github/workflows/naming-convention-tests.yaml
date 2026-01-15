@@ -30,19 +30,19 @@ jobs:
             project_name: "test-service"
             expected_crate: "test_service"
             expected_k8s: "test-service"
-          
+
           # Test with snake_case (underscores)
           - naming_style: "snake_case"
             project_name: "test_service"
             expected_crate: "test_service"
             expected_k8s: "test-service"
-          
+
           # Test with single word
           - naming_style: "single-word"
             project_name: "testservice"
             expected_crate: "testservice"
             expected_k8s: "testservice"
-          
+
           # Test with uppercase (should be normalized)
           - naming_style: "mixed-case"
             project_name: "TestService"
@@ -119,7 +119,8 @@ jobs:
           cargo generate \
             --path . \
             --name "${{ matrix.project_name }}" \
-            --define-file template-values.toml \
+            --template-values-file template-values.toml \
+            --silent \
             --allow-commands
 
           # Change to generated project directory
@@ -130,16 +131,16 @@ jobs:
       - name: Verify naming conventions
         run: |
           cd "${{ matrix.project_name }}"
-          
+
           echo "=== Verifying Naming Conventions ==="
           echo "Project name input: ${{ matrix.project_name }}"
           echo "Expected crate name: ${{ matrix.expected_crate }}"
           echo "Expected K8s name: ${{ matrix.expected_k8s }}"
-          
+
           # Extract actual crate name from Cargo.toml
           ACTUAL_CRATE=$(grep '^name = ' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/')
           echo "Actual crate name: $ACTUAL_CRATE"
-          
+
           # Verify crate name
           if [[ "$ACTUAL_CRATE" != "${{ matrix.expected_crate }}" ]]; then
             echo "❌ FAILED: Crate name mismatch"
@@ -148,26 +149,26 @@ jobs:
             exit 1
           fi
           echo "✓ Crate name verified"
-          
+
           # Verify Makefile has templated PROJECT_NAME
           if ! grep -q "PROJECT_NAME := {{ project_name | replace: \"_\", \"-\" }}" Makefile; then
             echo "⚠️  Note: Makefile should contain templated PROJECT_NAME"
           fi
-          
+
           # Check that build script exists and is templated
           if [[ ! -f scripts/dev/build-and-deploy.sh ]]; then
             echo "❌ FAILED: build-and-deploy.sh not found"
             exit 1
           fi
           echo "✓ Build script exists"
-          
+
           # Verify SERVICE_NAME and CRATE_NAME are set in build script
           if ! grep -q "SERVICE_NAME=" scripts/dev/build-and-deploy.sh; then
             echo "❌ FAILED: SERVICE_NAME not found in build script"
             exit 1
           fi
           echo "✓ SERVICE_NAME variable found in build script"
-          
+
           if ! grep -q "CRATE_NAME=" scripts/dev/build-and-deploy.sh; then
             echo "❌ FAILED: CRATE_NAME not found in build script"
             exit 1
@@ -198,7 +199,7 @@ jobs:
           kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.20.0/serving-crds.yaml
           kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.20.0/serving-core.yaml
           kubectl apply -f https://github.com/knative/net-kourier/releases/download/knative-v1.20.0/kourier.yaml
-          
+
           # Wait for Knative to be ready
           kubectl wait --for=condition=Ready pod -l app=controller -n knative-serving --timeout=5m 2>/dev/null || true
           kubectl wait --for=condition=Ready pod -l app=3scale-kourier-gateway -n kourier-system --timeout=5m 2>/dev/null || true
@@ -206,13 +207,13 @@ jobs:
       - name: Verify Knative service name format
         run: |
           cd "${{ matrix.project_name }}"
-          
+
           # Extract service name from knative-service.yaml
           SERVICE_NAME=$(grep -A 2 "metadata:" deploy/base/knative-service.yaml | grep "name:" | sed 's/.*name: \(.*\)/\1/')
-          
+
           echo "Knative service name: $SERVICE_NAME"
           echo "Expected: ${{ matrix.expected_k8s }}"
-          
+
           # Verify service name uses hyphens (not underscores)
           if [[ "$SERVICE_NAME" =~ "_" ]]; then
             echo "❌ FAILED: Knative service name contains underscores: $SERVICE_NAME"
@@ -220,7 +221,7 @@ jobs:
             exit 1
           fi
           echo "✓ Knative service name is valid (no underscores)"
-          
+
           if [[ "$SERVICE_NAME" != "${{ matrix.expected_k8s }}" ]]; then
             echo "⚠️  Warning: Service name mismatch"
             echo "Expected: ${{ matrix.expected_k8s }}"
@@ -230,18 +231,18 @@ jobs:
       - name: Verify kustomization image references
         run: |
           cd "${{ matrix.project_name }}"
-          
+
           # Check that kustomization uses hyphenated names for images
           if grep -q "{{ project_name }}" deploy/overlays/dev/kustomization.yaml; then
             echo "❌ FAILED: Kustomization contains un-templated project_name"
             exit 1
           fi
-          
+
           # Verify replace filter is applied
           if ! grep -q "replace: \"_\", \"-\"" deploy/overlays/dev/kustomization.yaml; then
             echo "⚠️  Warning: Kustomization might not properly normalize underscores to hyphens"
           fi
-          
+
           echo "✓ Kustomization image references verified"
 
       - name: Summary

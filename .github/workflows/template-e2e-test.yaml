@@ -93,7 +93,7 @@ jobs:
           # Create template values file
           cat > template-values.toml <<EOF
           [values]
-          project_name = "test-app"
+          project_name = "test-app-${{ matrix.scenario }}"
           project_author = "E2E Bot <e2e@github.com>"
           features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
           event_sources = []
@@ -130,20 +130,26 @@ jobs:
           prod_memory_request = "256Mi"
           prod_memory_limit = "512Mi"
           EOF
+
+          PROJECT_NAME=$(awk -F'"' '/^project_name =/ {print $2}' template-values.toml)
+          SERVICE_NAME=$(echo "$PROJECT_NAME" | tr '_' '-')
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
+          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_ENV
+
                      cargo generate --path . \
-            --name "test-app-${{ matrix.scenario }}" \
+            --name "${PROJECT_NAME}" \
             --template-values-file template-values.toml \
             --silent \
             --allow-commands
                      # Move generated project to expected location
           mkdir -p ./generated
-          mv test-app-${{ matrix.scenario }} ./generated/
+          mv ${PROJECT_NAME} ./generated/
 
       - name: Validate generated project structure
         run: |
           echo "✓ Checkpoint 1: Validating template generation"
 
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           required_files=(
             "${GENERATED_DIR}/Cargo.toml"
@@ -189,8 +195,8 @@ jobs:
           IMAGE_TAG="pr-${PR_NUMBER}-run-${RUN_NUMBER}-${SHORT_SHA}"
 
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "app_image=${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "manifest_image=${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "app_image=${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "manifest_image=${{ env.REGISTRY }}/${{ github.repository }}/manifests-${PROJECT_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
           echo "📦 Using image tag: ${IMAGE_TAG}"
 
@@ -203,7 +209,7 @@ jobs:
 
       - name: Build application image
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           docker build \
             -t ${{ steps.image-meta.outputs.app_image }} \
@@ -232,7 +238,7 @@ jobs:
 
       - name: Prepare manifests for OCI push
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           cd "${GENERATED_DIR}/deploy/base"
 
@@ -245,8 +251,8 @@ jobs:
             - knative-service.yaml
 
           images:
-            - name: ghcr.io/test-org/test-app
-              newName: ${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}
+            - name: ghcr.io/test-org/${PROJECT_NAME}
+              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${PROJECT_NAME}
               newTag: ${{ steps.image-meta.outputs.image_tag }}
 
           namespace: default
@@ -261,7 +267,7 @@ jobs:
 
       - name: Push manifests as OCI artifact
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           flux push artifact \
             oci://${{ steps.image-meta.outputs.manifest_image }} \
@@ -386,13 +392,13 @@ jobs:
       - name: Create application secrets
         run: |
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
-            kubectl create secret generic rust-service-secrets \
+            kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
               --from-literal=aws-access-key-id=minioadmin \
               --from-literal=aws-secret-access-key=minioadmin \
               --dry-run=client -o yaml | kubectl apply -f -
           else
-            kubectl create secret generic rust-service-secrets \
+            kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
@@ -413,11 +419,11 @@ jobs:
           apiVersion: source.toolkit.fluxcd.io/v1beta2
           kind: OCIRepository
           metadata:
-            name: test-app-${{ matrix.scenario }}
+            name: ${PROJECT_NAME}
             namespace: flux-system
           spec:
             interval: 1m
-            url: oci://${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}
+            url: oci://${{ env.REGISTRY }}/${{ github.repository }}/manifests-${PROJECT_NAME}
             ref:
               tag: "${{ steps.image-meta.outputs.image_tag }}"
             secretRef:
@@ -426,13 +432,13 @@ jobs:
           apiVersion: kustomize.toolkit.fluxcd.io/v1
           kind: Kustomization
           metadata:
-            name: test-app-${{ matrix.scenario }}
+            name: ${PROJECT_NAME}
             namespace: flux-system
           spec:
             interval: 1m
             sourceRef:
               kind: OCIRepository
-              name: test-app-${{ matrix.scenario }}
+              name: ${PROJECT_NAME}
             path: ./
             prune: true
             targetNamespace: default
@@ -446,9 +452,9 @@ jobs:
           kubectl wait --for=condition=ready \
             --timeout=180s \
             -n flux-system \
-            ocirepository/test-app-${{ matrix.scenario }} || {
+            ocirepository/${PROJECT_NAME} || {
               echo "❌ OCIRepository failed to become ready"
-              kubectl describe ocirepository/test-app-${{ matrix.scenario }} -n flux-system
+              kubectl describe ocirepository/${PROJECT_NAME} -n flux-system
               exit 1
             }
 
@@ -456,9 +462,9 @@ jobs:
           kubectl wait --for=condition=ready \
             --timeout=300s \
             -n flux-system \
-            kustomization/test-app-${{ matrix.scenario }} || {
+            kustomization/${PROJECT_NAME} || {
               echo "❌ Kustomization failed to become ready"
-              kubectl describe kustomization/test-app-${{ matrix.scenario }} -n flux-system
+              kubectl describe kustomization/${PROJECT_NAME} -n flux-system
               exit 1
             }
 
@@ -467,6 +473,8 @@ jobs:
       - name: Validate application deployment
         run: |
           echo "✓ Checkpoint 5: Validating application deployment"
+
+          SERVICE_NAME="${SERVICE_NAME}"
 
           echo "Checking Flux resource status..."
           flux get all -A
@@ -479,10 +487,10 @@ jobs:
           echo "Waiting for Knative Service to be ready..."
           kubectl wait --for=condition=ready \
             --timeout=300s \
-            ksvc/rust-service || {
+            ksvc/${SERVICE_NAME} || {
               echo "❌ Knative Service not ready"
-              kubectl describe ksvc/rust-service
-              kubectl logs -l serving.knative.dev/service=rust-service --tail=100
+              kubectl describe ksvc/${SERVICE_NAME}
+              kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100
               exit 1
             }
 
@@ -491,7 +499,8 @@ jobs:
       - name: Get application URL
         id: app-url
         run: |
-          SERVICE_URL=$(kubectl get ksvc rust-service -o jsonpath='{.status.url}')
+          SERVICE_NAME="${SERVICE_NAME}"
+          SERVICE_URL=$(kubectl get ksvc ${SERVICE_NAME} -o jsonpath='{.status.url}')
           echo "service_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
           echo "📡 Service URL: ${SERVICE_URL}"
 
@@ -599,13 +608,15 @@ jobs:
       - name: Collect debug information on failure
         if: failure()
         run: |
+          SERVICE_NAME="${SERVICE_NAME}"
+
           echo "::group::Flux logs"
           kubectl logs -n flux-system deployment/source-controller --tail=100 || true
           kubectl logs -n flux-system deployment/kustomize-controller --tail=100 || true
           echo "::endgroup::"
 
           echo "::group::Application logs"
-          kubectl logs -l serving.knative.dev/service=rust-service --tail=100 || true
+          kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100 || true
           echo "::endgroup::"
 
           echo "::group::All pods"
