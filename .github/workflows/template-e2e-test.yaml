@@ -27,8 +27,13 @@ jobs:
         include:
           - scenario: no-s3
             include_s3: "false"
+            project_name: "test-app-no-s3"
           - scenario: with-s3
             include_s3: "true"
+            project_name: "test-app-with-s3"
+          - scenario: underscore-naming
+            include_s3: "false"
+            project_name: "test_app_underscore"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -93,7 +98,7 @@ jobs:
           # Create template values file
           cat > template-values.toml <<EOF
           [values]
-          project_name = "test-app-${{ matrix.scenario }}"
+          project_name = "${{ matrix.project_name }}"
           project_author = "E2E Bot <e2e@github.com>"
           features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
           event_sources = []
@@ -251,11 +256,23 @@ jobs:
             - knative-service.yaml
 
           images:
-            - name: ghcr.io/test-org/${PROJECT_NAME}
-              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${PROJECT_NAME}
+            - name: ghcr.io/test-org/${SERVICE_NAME}
+              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}
               newTag: ${{ steps.image-meta.outputs.image_tag }}
 
           namespace: default
+
+          # Add imagePullSecrets to the Knative service for GHCR authentication
+          patches:
+            - patch: |-
+                - op: add
+                  path: /spec/template/spec/imagePullSecrets
+                  value:
+                    - name: ghcr-auth
+              target:
+                kind: Service
+                group: serving.knative.dev
+                version: v1
           EOF
 
           mkdir -p ../../manifests-built
@@ -264,6 +281,27 @@ jobs:
           echo "::group::Built manifests"
           cat ../../manifests-built/all.yaml
           echo "::endgroup::"
+
+      - name: Validate image transformation
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+          
+          EXPECTED_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}:${{ steps.image-meta.outputs.image_tag }}"
+          
+          echo "Validating image transformation..."
+          echo "Expected image: ${EXPECTED_IMAGE}"
+          
+          if ! grep -q "${EXPECTED_IMAGE}" "${GENERATED_DIR}/manifests-built/all.yaml"; then
+            echo "❌ Image transformation failed"
+            echo ""
+            echo "Expected to find: ${EXPECTED_IMAGE}"
+            echo ""
+            echo "Actual image references in manifest:"
+            grep "image:" "${GENERATED_DIR}/manifests-built/all.yaml" || echo "No image references found"
+            exit 1
+          fi
+          
+          echo "✅ Image transformation verified: ${EXPECTED_IMAGE}"
 
       - name: Push manifests as OCI artifact
         run: |
@@ -403,10 +441,19 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           fi
 
-      - name: Create GHCR pull secret for Flux
+      - name: Create GHCR pull secret for Flux and default namespace
         run: |
+          # Create pull secret in flux-system namespace (for OCI artifact pulls)
           kubectl create secret docker-registry ghcr-auth \
             --namespace=flux-system \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Create pull secret in default namespace (for application image pulls)
+          kubectl create secret docker-registry ghcr-auth \
+            --namespace=default \
             --docker-server=${{ env.REGISTRY }} \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
