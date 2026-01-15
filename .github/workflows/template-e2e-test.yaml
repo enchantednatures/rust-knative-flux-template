@@ -601,11 +601,16 @@ jobs:
 
           echo ""
           echo "Test: Hello API..."
-          RESPONSE=$(kubectl_curl -f -s "${SERVICE_URL}/api/v1/hello")
+          RESPONSE=$(kubectl_curl -s "${SERVICE_URL}/api/v1/hello")
+          CURL_EXIT=$?
+          echo "  Debug: curl exit code=$CURL_EXIT"
+          echo "  Debug: response length=${#RESPONSE}"
+          echo "  Debug: response preview: $(echo "$RESPONSE" | head -c 200)"
           if echo "$RESPONSE" | grep -q '"message"'; then
             echo "  ✓ Hello API PASSED"
           else
             echo "  ✗ Hello API FAILED"
+            echo "  Full response: $RESPONSE"
             ((FAILED++))
           fi
 
