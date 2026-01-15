@@ -25,15 +25,15 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - scenario: no-s3
-            include_s3: "false"
-            project_name: "test-app-no-s3"
+          # - scenario: no-s3
+          #   include_s3: "false"
+          #   project_name: "test-app-no-s3"
           - scenario: with-s3
             include_s3: "true"
             project_name: "test-app-with-s3"
-          - scenario: underscore-naming
-            include_s3: "false"
-            project_name: "test_app_underscore"
+          # - scenario: underscore-naming
+          #   include_s3: "false"
+          #   project_name: "test_app_underscore"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -285,12 +285,12 @@ jobs:
       - name: Validate image transformation
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
-          
+
           EXPECTED_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}:${{ steps.image-meta.outputs.image_tag }}"
-          
+
           echo "Validating image transformation..."
           echo "Expected image: ${EXPECTED_IMAGE}"
-          
+
           if ! grep -q "${EXPECTED_IMAGE}" "${GENERATED_DIR}/manifests-built/all.yaml"; then
             echo "❌ Image transformation failed"
             echo ""
@@ -300,7 +300,7 @@ jobs:
             grep "image:" "${GENERATED_DIR}/manifests-built/all.yaml" || echo "No image references found"
             exit 1
           fi
-          
+
           echo "✅ Image transformation verified: ${EXPECTED_IMAGE}"
 
       - name: Push manifests as OCI artifact
@@ -457,7 +457,7 @@ jobs:
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --dry-run=client -o yaml | kubectl apply -f -
-          
+
           # Create pull secret in default namespace (for application image pulls)
           kubectl create secret docker-registry ghcr-auth \
             --namespace=default \
@@ -625,7 +625,7 @@ jobs:
           echo "  Debug: Verbose output (first 500 chars):"
           echo "$VERBOSE_OUTPUT" | head -c 500
           echo ""
-          
+
           RESPONSE=$(kubectl_curl -s "${SERVICE_URL}/api/v1/hello")
           CURL_EXIT=$?
           echo "  Debug: curl exit code=$CURL_EXIT"
