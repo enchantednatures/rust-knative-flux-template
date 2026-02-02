@@ -1,0 +1,136 @@
+# =============================================================================
+# Test Workflow
+# =============================================================================
+#
+# This workflow runs code quality checks and tests for the Rust application.
+# It is designed to run on pull requests to validate changes before merging,
+# and on pushes to main to ensure the main branch stays healthy.
+#
+# Jobs:
+#   - lint: Code formatting and Clippy lints
+#   - test: Unit and integration tests
+#   - security: Security audit of dependencies
+#
+# Customization:
+#   - Add service containers for integration tests (Redis, PostgreSQL)
+#   - Modify test command for different test configurations
+#   - Add coverage reporting if needed
+#
+# Template Variables (Liquid):
+#   - {{ project_name }}: Project name from template
+#
+# =============================================================================
+
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    
+    # Service containers for integration tests
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Run tests
+        run: cargo test --all-features --workspace
+        env:
+          APP__REDIS__URL: redis://localhost:6379
+      
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tests completed. See job logs for detailed results." >> $GITHUB_STEP_SUMMARY
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      
+      - name: Run security audit
+        run: cargo audit
+        continue-on-error: true  # Don't fail build on advisories, but report them
+
+  # Build check - ensures the project compiles in release mode
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Check release build
+        run: cargo build --release --all-features

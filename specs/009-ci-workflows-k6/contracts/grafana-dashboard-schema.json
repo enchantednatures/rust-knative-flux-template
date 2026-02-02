@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "k6 Grafana Dashboard Contract",
+  "description": "Expected structure for k6 load testing Grafana dashboards",
+  "type": "object",
+  "required": ["uid", "title", "panels", "templating"],
+  "properties": {
+    "uid": {
+      "type": "string",
+      "description": "Unique dashboard identifier",
+      "pattern": "^[a-z0-9-]+$",
+      "example": "k6-load-testing"
+    },
+    "title": {
+      "type": "string",
+      "description": "Dashboard display title",
+      "example": "k6 Load Testing"
+    },
+    "description": {
+      "type": "string",
+      "description": "Dashboard description"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tags for dashboard filtering",
+      "example": ["k6", "load-testing", "performance"]
+    },
+    "refresh": {
+      "type": "string",
+      "description": "Auto-refresh interval",
+      "enum": ["5s", "10s", "30s", "1m", "5m"],
+      "default": "10s"
+    },
+    "templating": {
+      "type": "object",
+      "required": ["list"],
+      "properties": {
+        "list": {
+          "type": "array",
+          "description": "Template variables for filtering",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { 
+                "type": "string",
+                "enum": ["datasource", "query", "custom", "constant"]
+              },
+              "datasource": { "type": "string" },
+              "query": { "type": "string" }
+            }
+          },
+          "example": [
+            {
+              "name": "DS_PROMETHEUS",
+              "type": "datasource",
+              "query": "prometheus"
+            },
+            {
+              "name": "testid",
+              "type": "query",
+              "datasource": "${DS_PROMETHEUS}",
+              "query": "label_values(k6_http_reqs_total, testid)"
+            }
+          ]
+        }
+      }
+    },
+    "panels": {
+      "type": "array",
+      "description": "Dashboard panels",
+      "items": {
+        "$ref": "#/definitions/panel"
+      }
+    }
+  },
+  "definitions": {
+    "panel": {
+      "type": "object",
+      "required": ["id", "type", "title"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Unique panel ID within dashboard"
+        },
+        "type": {
+          "type": "string",
+          "description": "Panel visualization type",
+          "enum": ["timeseries", "stat", "gauge", "table", "row"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Panel title"
+        },
+        "gridPos": {
+          "type": "object",
+          "properties": {
+            "h": { "type": "integer", "description": "Height in grid units" },
+            "w": { "type": "integer", "description": "Width in grid units (max 24)" },
+            "x": { "type": "integer", "description": "X position" },
+            "y": { "type": "integer", "description": "Y position" }
+          }
+        },
+        "targets": {
+          "type": "array",
+          "description": "Prometheus queries",
+          "items": {
+            "$ref": "#/definitions/target"
+          }
+        },
+        "fieldConfig": {
+          "type": "object",
+          "properties": {
+            "defaults": {
+              "type": "object",
+              "properties": {
+                "unit": {
+                  "type": "string",
+                  "description": "Display unit",
+                  "enum": ["s", "ms", "reqps", "percent", "bytes", "none"]
+                },
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "color": { "type": "string" },
+                          "value": { "type": ["number", "null"] }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["expr"],
+      "properties": {
+        "expr": {
+          "type": "string",
+          "description": "PromQL query expression"
+        },
+        "legendFormat": {
+          "type": "string",
+          "description": "Legend label format"
+        },
+        "refId": {
+          "type": "string",
+          "description": "Query reference ID"
+        }
+      }
+    }
+  },
+  "examples": {
+    "requiredPanels": [
+      {
+        "title": "Virtual Users",
+        "type": "timeseries",
+        "query": "sum(k6_vus{testid=~\"$testid\"})"
+      },
+      {
+        "title": "HTTP Request Rate",
+        "type": "timeseries",
+        "query": "sum(irate(k6_http_reqs_total{testid=~\"$testid\"}[$__rate_interval]))"
+      },
+      {
+        "title": "HTTP Request Duration",
+        "type": "timeseries",
+        "query": "avg(k6_http_req_duration_p95{testid=~\"$testid\"})"
+      },
+      {
+        "title": "Error Rate",
+        "type": "stat",
+        "query": "sum(k6_http_reqs_total{testid=~\"$testid\", expected_response=\"false\"}) / sum(k6_http_reqs_total{testid=~\"$testid\"}) * 100"
+      },
+      {
+        "title": "Total Requests",
+        "type": "stat",
+        "query": "sum(k6_http_reqs_total{testid=~\"$testid\"})"
+      },
+      {
+        "title": "Checks Pass Rate",
+        "type": "gauge",
+        "query": "sum(k6_checks_total{testid=~\"$testid\"}) / count(k6_checks_total{testid=~\"$testid\"}) * 100"
+      }
+    ]
+  }
+}

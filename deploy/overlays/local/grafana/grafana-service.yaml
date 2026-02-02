@@ -1,0 +1,37 @@
+# Grafana Service
+#
+# Exposes Grafana on port 3000 for local access.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observability
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: grafana
+
+---
+# Optional: NodePort for easy local access
+# Uncomment if you want to access Grafana without port-forwarding
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: grafana-nodeport
+#   namespace: observability
+# spec:
+#   type: NodePort
+#   ports:
+#     - port: 3000
+#       targetPort: 3000
+#       nodePort: 30300
+#       protocol: TCP
+#       name: http
+#   selector:
+#     app: grafana

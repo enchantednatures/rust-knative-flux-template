@@ -1,0 +1,94 @@
+# Load Test - k6 TestRun CRD
+#
+# Sustained traffic test to validate application performance under load.
+# Uses: deploy/k6/tests/api-load.js
+#
+# Duration: ~5 minutes (configurable via MAX_VUS/DURATION_MINUTES env vars)
+# VUs: Ramping 0 -> 50 -> 100 -> 0
+# Parallelism: 4 pods for distributed load generation
+#
+# Usage:
+#   kubectl apply -f deploy/k6/testruns/load-test.yaml
+#   kubectl wait --for=condition=completed testrun/load-test --timeout=15m
+#   kubectl logs -l app=k6 --tail=100
+
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: load-test
+  labels:
+    app: k6-test
+    test-type: load
+spec:
+  # Multiple runner pods for distributed load generation
+  # Each pod runs a portion of the total VUs
+  parallelism: 4
+  
+  # Reference to test script ConfigMap
+  script:
+    configMap:
+      name: k6-scripts
+      file: api-load.js
+  
+  # k6 CLI arguments
+  arguments: --out experimental-prometheus-rw
+  
+  # Runner pod configuration
+  runner:
+    image: grafana/k6:latest
+    
+    # Environment variables for k6
+    env:
+      # Prometheus remote write configuration
+      - name: K6_PROMETHEUS_RW_SERVER_URL
+        value: "http://prometheus-server.observability.svc:9090/api/v1/write"
+      
+      # Trend statistics to export (comprehensive for load tests)
+      - name: K6_PROMETHEUS_RW_TREND_STATS
+        value: "p(50),p(90),p(95),p(99),min,max,avg"
+      
+      # Push interval for metrics
+      - name: K6_PROMETHEUS_RW_PUSH_INTERVAL
+        value: "5s"
+      
+      # Send stale markers when test ends
+      - name: K6_PROMETHEUS_RW_STALE_MARKERS
+        value: "true"
+      
+      # Target application URL - UPDATE THIS for your environment
+      - name: BASE_URL
+        value: "http://my-service:8080"
+      
+      # Test identifier (uses TestRun name)
+      - name: TEST_ID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      
+      # Environment label
+      - name: ENVIRONMENT
+        value: "dev"
+      
+      # Load test configuration
+      # Max VUs per pod (total = parallelism * MAX_VUS / parallelism)
+      - name: MAX_VUS
+        value: "25"  # 4 pods * 25 VUs = 100 total VUs
+      
+      # Test duration in minutes
+      - name: DURATION_MINUTES
+        value: "5"
+    
+    # Resource limits for load test (moderate)
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 12345
+      fsGroup: 12345

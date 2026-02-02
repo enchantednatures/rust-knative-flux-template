@@ -1,0 +1,8 @@
+# k6 Operator Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k6-operator-system
+  labels:
+    app.kubernetes.io/name: k6-operator
+    app.kubernetes.io/component: load-testing

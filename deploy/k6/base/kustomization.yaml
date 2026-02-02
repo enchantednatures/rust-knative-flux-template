@@ -1,0 +1,20 @@
+# k6 Operator Base Kustomization
+# Provides k6-operator for running load tests in Kubernetes
+#
+# Usage: Include this base in overlays that need k6 testing capabilities
+# See: https://github.com/grafana/k6-operator
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: k6-operator-system
+
+resources:
+  - namespace.yaml
+  - k6-operator.yaml
+
+# Labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: k6-operator
+  app.kubernetes.io/component: load-testing
+  app.kubernetes.io/part-of: observability

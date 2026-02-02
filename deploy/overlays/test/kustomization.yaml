@@ -1,0 +1,30 @@
+# Test Environment Overlay
+#
+# This overlay is designed for CI/CD test environments.
+# It includes:
+# - Application base resources
+# - Grafana for test result visualization (k6 dashboards included)
+# - k6 operator for automated load testing
+#
+# Usage: kustomize build deploy/overlays/test | kubectl apply -f -
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+  # Grafana for test environment (includes k6 dashboards)
+  - grafana/
+
+# k6 operator is deployed cluster-wide via deploy/k6/base/
+# Tests are triggered via TestRun CRDs in deploy/k6/testruns/
+
+# Test-specific patches can be added here
+# patchesStrategicMerge:
+#   - test-config-patch.yaml
+
+# Note: For test environments, ensure you have:
+# 1. Prometheus running (for k6 metrics)
+# 2. k6 operator installed: kustomize build deploy/k6/base | kubectl apply -f -

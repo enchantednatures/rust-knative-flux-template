@@ -364,6 +364,8 @@ Examples:
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
+- YAML (GitHub Actions workflows), JavaScript (k6 test scripts), JSON (Grafana dashboards), Rust 1.75+ (existing application) + GitHub Actions, k6 operator (grafana/k6-operator), Prometheus, Grafana, FluxCD, Kustomize (009-ci-workflows-k6)
+- Prometheus (metrics time-series), GitHub Container Registry (container images) (009-ci-workflows-k6)
 
 ## Recent Changes
 - 001-cloudnative-postgres-backups: Added Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen

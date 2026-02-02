@@ -11,6 +11,20 @@ patchesStrategicMerge:
   - postgres-cluster-patch.yaml.liquid
   - postgres-backup-patch.yaml.liquid
 
+# =============================================================================
+# Grafana Configuration
+# =============================================================================
+# NOTE: Grafana is NOT deployed in dev/prod overlays.
+# Dev and prod environments use a global Grafana instance that is deployed
+# separately (typically in a shared observability namespace).
+#
+# k6 load tests running in dev/prod will export metrics to Prometheus,
+# which is scraped by the global Grafana instance.
+#
+# To configure k6 metrics export, ensure the TestRun CRDs use the correct
+# Prometheus remote write URL for the global Prometheus instance.
+# =============================================================================
+
 # Note: Create and encrypt object-storage-secret.yaml with SOPS:
 # 1. cp ../../base/object-storage-secret.yaml.example object-storage-secret.yaml
 # 2. Edit with MinIO credentials (minioadmin/minioadmin for dev)

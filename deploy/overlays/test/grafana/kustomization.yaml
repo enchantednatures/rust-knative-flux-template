@@ -1,0 +1,32 @@
+# Grafana Kustomization for Test Overlay
+#
+# Deploys Grafana with pre-configured datasources and k6 dashboards.
+# Same configuration as local overlay but can be patched for test-specific settings.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: observability
+
+resources:
+  - grafana-deployment.yaml
+  - grafana-service.yaml
+  - grafana-configmaps.yaml
+
+# Labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: grafana
+  app.kubernetes.io/component: visualization
+  app.kubernetes.io/part-of: observability
+  environment: test
+
+# Test environment patches can be added here
+# For example, to disable anonymous access in test:
+# patches:
+#   - target:
+#       kind: Deployment
+#       name: grafana
+#     patch: |-
+#       - op: replace
+#         path: /spec/template/spec/containers/0/env/0/value
+#         value: "false"

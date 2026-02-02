@@ -1,0 +1,253 @@
+# GitHub Actions Workflow Contract
+# This defines the expected structure for CI/CD workflows in this template
+
+# =============================================================================
+# Build Workflow Contract
+# =============================================================================
+# File: .github/workflows/build.yaml.liquid
+# Purpose: Build container images and push to ghcr.io
+# Triggers: push to main, tags v*
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: docker/setup-buildx-action@v3
+      
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+---
+# =============================================================================
+# Test Workflow Contract
+# =============================================================================
+# File: .github/workflows/test.yaml.liquid
+# Purpose: Run unit tests, integration tests, linting
+# Triggers: pull_request, push to main
+
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  checks: write        # For test result annotations
+  pull-requests: write # For PR comments
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Run tests
+        run: cargo test --all-features
+        env:
+          APP__REDIS__URL: redis://localhost:6379
+
+---
+# =============================================================================
+# Deploy Workflow Contract
+# =============================================================================
+# File: .github/workflows/deploy.yaml.liquid
+# Purpose: Update Kustomize manifests for GitOps deployment via FluxCD
+# Triggers: workflow_call (from build), workflow_dispatch
+
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        required: true
+        type: string
+      image-digest:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: 'Image tag to deploy'
+        required: true
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+      
+      - name: Update image in overlay
+        run: |
+          cd deploy/overlays/${{ inputs.environment }}
+          kustomize edit set image \
+            app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.image-digest }}
+      
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "Deploy ${{ inputs.image-tag }} to ${{ inputs.environment }}"
+          git push
+
+---
+# =============================================================================
+# Load Test Workflow Contract
+# =============================================================================
+# File: .github/workflows/load-test.yaml.liquid
+# Purpose: Trigger k6 load tests in Kubernetes cluster
+# Triggers: workflow_dispatch, schedule (optional)
+
+name: Load Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-type:
+        description: 'Test type to run'
+        required: true
+        type: choice
+        options:
+          - smoke
+          - load
+          - stress
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+      
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+      
+      - name: Create test ConfigMap
+        run: |
+          kubectl create configmap k6-scripts \
+            --from-file=deploy/k6/tests/ \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Run k6 test
+        run: |
+          kubectl apply -f deploy/k6/testruns/${{ inputs.test-type }}-test.yaml
+      
+      - name: Wait for test completion
+        run: |
+          kubectl wait --for=condition=completed \
+            testrun/${{ inputs.test-type }}-test \
+            --timeout=15m
+      
+      - name: Get test results
+        if: always()
+        run: |
+          kubectl logs -l app=k6 --tail=100

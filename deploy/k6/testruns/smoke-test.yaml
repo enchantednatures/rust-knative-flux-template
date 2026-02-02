@@ -1,0 +1,85 @@
+# Smoke Test - k6 TestRun CRD
+#
+# Quick validation test with minimal load to verify application availability.
+# Uses: deploy/k6/tests/health-check.js
+#
+# Duration: ~1 minute
+# VUs: 1
+# Parallelism: 1 pod
+#
+# Usage:
+#   kubectl apply -f deploy/k6/testruns/smoke-test.yaml
+#   kubectl wait --for=condition=completed testrun/smoke-test --timeout=5m
+#   kubectl logs -l app=k6 --tail=100
+
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: smoke-test
+  labels:
+    app: k6-test
+    test-type: smoke
+spec:
+  # Single runner pod for smoke test
+  parallelism: 1
+  
+  # Reference to test script ConfigMap
+  script:
+    configMap:
+      name: k6-scripts
+      file: health-check.js
+  
+  # k6 CLI arguments
+  # --out experimental-prometheus-rw enables Prometheus remote write output
+  arguments: --out experimental-prometheus-rw
+  
+  # Runner pod configuration
+  runner:
+    image: grafana/k6:latest
+    
+    # Environment variables for k6
+    env:
+      # Prometheus remote write configuration
+      - name: K6_PROMETHEUS_RW_SERVER_URL
+        value: "http://prometheus-server.observability.svc:9090/api/v1/write"
+      
+      # Trend statistics to export
+      - name: K6_PROMETHEUS_RW_TREND_STATS
+        value: "p(50),p(90),p(95),p(99),min,max,avg"
+      
+      # Push interval for metrics
+      - name: K6_PROMETHEUS_RW_PUSH_INTERVAL
+        value: "5s"
+      
+      # Send stale markers when test ends
+      - name: K6_PROMETHEUS_RW_STALE_MARKERS
+        value: "true"
+      
+      # Target application URL - UPDATE THIS for your environment
+      - name: BASE_URL
+        value: "http://my-service:8080"
+      
+      # Test identifier (uses TestRun name)
+      - name: TEST_ID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      
+      # Environment label
+      - name: ENVIRONMENT
+        value: "dev"
+    
+    # Resource limits for smoke test (minimal)
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 12345
+      fsGroup: 12345

@@ -1,0 +1,152 @@
+# =============================================================================
+# Load Test Workflow
+# =============================================================================
+#
+# This workflow triggers k6 load tests in the Kubernetes cluster using the
+# k6 operator. Tests are defined as TestRun CRDs and executed as pods.
+#
+# Test Types:
+#   - smoke: Quick validation with minimal load (1 VU, 1 minute)
+#   - load: Sustained traffic test (ramp up to 50-100 VUs)
+#   - stress: High load test to find breaking points
+#
+# Prerequisites:
+#   - k6 operator installed in cluster (deploy/k6/base/)
+#   - Prometheus configured for k6 metrics
+#   - KUBECONFIG secret configured for target environment
+#
+# Customization:
+#   - Modify test scripts in deploy/k6/tests/
+#   - Adjust TestRun configurations in deploy/k6/testruns/
+#   - Add notification for test results
+#
+# Template Variables (Liquid):
+#   - {{ project_name }}: Project name from template
+#
+# =============================================================================
+
+name: Load Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-type:
+        description: 'Test type to run'
+        required: true
+        type: choice
+        options:
+          - smoke
+          - load
+          - stress
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+      target-url:
+        description: 'Target URL (optional, uses default if empty)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  K6_NAMESPACE: default
+
+jobs:
+  load-test:
+    name: Run {% raw %}${{ inputs.test-type }}{% endraw %} test
+    runs-on: ubuntu-latest
+    environment: {% raw %}${{ inputs.environment }}{% endraw %}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+      
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "{% raw %}${{ secrets.KUBECONFIG }}{% endraw %}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+      
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+      
+      - name: Create k6 test scripts ConfigMap
+        run: |
+          kubectl create configmap k6-scripts \
+            --from-file=deploy/k6/tests/ \
+            --namespace {% raw %}${{ env.K6_NAMESPACE }}{% endraw %} \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Configure test target URL
+        id: config
+        run: |
+          if [ -n "{% raw %}${{ inputs.target-url }}{% endraw %}" ]; then
+            echo "target_url={% raw %}${{ inputs.target-url }}{% endraw %}" >> $GITHUB_OUTPUT
+          else
+            # Default URLs per environment
+            case "{% raw %}${{ inputs.environment }}{% endraw %}" in
+              dev)
+                echo "target_url=http://{{ project_name }}.default.svc.cluster.local:8080" >> $GITHUB_OUTPUT
+                ;;
+              staging)
+                echo "target_url=http://{{ project_name }}.default.svc.cluster.local:8080" >> $GITHUB_OUTPUT
+                ;;
+            esac
+          fi
+      
+      - name: Apply TestRun with target URL
+        run: |
+          # Create a patched version of the TestRun with the target URL
+          cat deploy/k6/testruns/{% raw %}${{ inputs.test-type }}{% endraw %}-test.yaml | \
+            sed "s|http://my-service:8080|{% raw %}${{ steps.config.outputs.target_url }}{% endraw %}|g" | \
+            kubectl apply -f -
+      
+      - name: Wait for test to start
+        run: |
+          echo "Waiting for TestRun to start..."
+          sleep 10
+          kubectl get testrun {% raw %}${{ inputs.test-type }}{% endraw %}-test -n {% raw %}${{ env.K6_NAMESPACE }}{% endraw %}
+      
+      - name: Wait for test completion
+        run: |
+          echo "Waiting for test to complete (timeout: 15 minutes)..."
+          kubectl wait --for=condition=completed \
+            testrun/{% raw %}${{ inputs.test-type }}{% endraw %}-test \
+            --namespace {% raw %}${{ env.K6_NAMESPACE }}{% endraw %} \
+            --timeout=15m || true
+      
+      - name: Get test results
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Type:** {% raw %}${{ inputs.test-type }}{% endraw %}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** {% raw %}${{ inputs.environment }}{% endraw %}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target URL:** {% raw %}${{ steps.config.outputs.target_url }}{% endraw %}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### TestRun Status" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          kubectl get testrun {% raw %}${{ inputs.test-type }}{% endraw %}-test -n {% raw %}${{ env.K6_NAMESPACE }}{% endraw %} -o yaml | grep -A 10 "status:" >> $GITHUB_STEP_SUMMARY || echo "No status available" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### k6 Pod Logs (last 100 lines)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          kubectl logs -l app=k6 -n {% raw %}${{ env.K6_NAMESPACE }}{% endraw %} --tail=100 >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No logs available" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Cleanup TestRun
+        if: always()
+        run: |
+          kubectl delete testrun {% raw %}${{ inputs.test-type }}{% endraw %}-test -n {% raw %}${{ env.K6_NAMESPACE }}{% endraw %} --ignore-not-found=true

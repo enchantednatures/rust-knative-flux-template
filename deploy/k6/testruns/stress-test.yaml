@@ -1,0 +1,123 @@
+# Stress Test - k6 TestRun CRD
+#
+# High-load stress test to find application breaking points.
+# Uses: deploy/k6/tests/api-load.js with aggressive configuration
+#
+# Duration: ~10 minutes
+# VUs: Constant high load with 200+ VUs
+# Parallelism: 8 pods for maximum load generation
+#
+# WARNING: This test may cause service degradation. Use with caution.
+#
+# Usage:
+#   kubectl apply -f deploy/k6/testruns/stress-test.yaml
+#   kubectl wait --for=condition=completed testrun/stress-test --timeout=20m
+#   kubectl logs -l app=k6 --tail=100
+
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: stress-test
+  labels:
+    app: k6-test
+    test-type: stress
+spec:
+  # Maximum runner pods for stress testing
+  parallelism: 8
+  
+  # Reference to test script ConfigMap
+  script:
+    configMap:
+      name: k6-scripts
+      file: api-load.js
+  
+  # k6 CLI arguments
+  arguments: --out experimental-prometheus-rw
+  
+  # Runner pod configuration
+  runner:
+    image: grafana/k6:latest
+    
+    # Environment variables for k6
+    env:
+      # Prometheus remote write configuration
+      - name: K6_PROMETHEUS_RW_SERVER_URL
+        value: "http://prometheus-server.observability.svc:9090/api/v1/write"
+      
+      # Trend statistics to export
+      - name: K6_PROMETHEUS_RW_TREND_STATS
+        value: "p(50),p(90),p(95),p(99),min,max,avg"
+      
+      # Push interval for metrics (more frequent for stress tests)
+      - name: K6_PROMETHEUS_RW_PUSH_INTERVAL
+        value: "3s"
+      
+      # Send stale markers when test ends
+      - name: K6_PROMETHEUS_RW_STALE_MARKERS
+        value: "true"
+      
+      # Target application URL - UPDATE THIS for your environment
+      - name: BASE_URL
+        value: "http://my-service:8080"
+      
+      # Test identifier (uses TestRun name)
+      - name: TEST_ID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      
+      # Environment label
+      - name: ENVIRONMENT
+        value: "dev"
+      
+      # Stress test configuration - aggressive settings
+      # Max VUs per pod (total = parallelism * MAX_VUS)
+      - name: MAX_VUS
+        value: "25"  # 8 pods * 25 VUs = 200 total VUs
+      
+      # Test duration in minutes
+      - name: DURATION_MINUTES
+        value: "10"
+    
+    # Resource limits for stress test (generous)
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 12345
+      fsGroup: 12345
+
+---
+# Alternative: Constant Arrival Rate Stress Test
+# Uncomment this if you want to test with a fixed request rate instead of VUs
+#
+# apiVersion: k6.io/v1alpha1
+# kind: TestRun
+# metadata:
+#   name: stress-test-constant-rate
+#   labels:
+#     app: k6-test
+#     test-type: stress
+# spec:
+#   parallelism: 4
+#   script:
+#     configMap:
+#       name: k6-scripts-stress
+#       file: constant-rate-stress.js
+#   arguments: --out experimental-prometheus-rw
+#   runner:
+#     image: grafana/k6:latest
+#     env:
+#       - name: K6_PROMETHEUS_RW_SERVER_URL
+#         value: "http://prometheus-server.observability.svc:9090/api/v1/write"
+#       - name: BASE_URL
+#         value: "http://my-service:8080"
+#       - name: TARGET_RPS
+#         value: "500"  # Target requests per second

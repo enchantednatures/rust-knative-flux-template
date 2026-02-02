@@ -1,0 +1,35 @@
+# Local Development Overlay
+#
+# This overlay is designed for local Kubernetes development (e.g., Kind, Minikube).
+# It includes:
+# - Application base resources
+# - Grafana for local observability (k6 dashboards included)
+# - k6 operator for load testing
+#
+# Usage: kustomize build deploy/overlays/local | kubectl apply -f -
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+  # Grafana for local development (includes k6 dashboards)
+  - grafana/
+
+# k6 operator is deployed cluster-wide via deploy/k6/base/
+# Tests are triggered via TestRun CRDs in deploy/k6/testruns/
+
+# Local-specific patches can be added here
+# patchesStrategicMerge:
+#   - local-config-patch.yaml
+
+# Image overrides for local development
+# images:
+#   - name: app
+#     newTag: dev
+
+# Note: For local development, ensure you have:
+# 1. Prometheus running (for k6 metrics): deploy/dev/observability/prometheus.yaml
+# 2. k6 operator installed: kustomize build deploy/k6/base | kubectl apply -f -

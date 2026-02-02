@@ -1,0 +1,138 @@
+# =============================================================================
+# Deploy Workflow
+# =============================================================================
+#
+# This workflow implements GitOps deployment by updating Kustomize manifests
+# with new image tags. FluxCD watches the repository and automatically
+# reconciles changes to the target Kubernetes cluster.
+#
+# Pattern:
+#   1. Receive image-tag and image-digest from build workflow
+#   2. Update the appropriate overlay's kustomization.yaml
+#   3. Commit and push the changes
+#   4. FluxCD detects the commit and reconciles
+#
+# Triggers:
+#   - workflow_call: Called by build workflow after successful build
+#   - workflow_dispatch: Manual deployment with specified image and environment
+#
+# Customization:
+#   - Modify overlay paths for different project structures
+#   - Add approval gates using GitHub Environments
+#   - Integrate with notification systems (Slack, Teams, etc.)
+#
+# Template Variables (Liquid):
+#   - {{ project_name }}: Project name from template
+#   - {{ github_org }}: GitHub organization
+#
+# =============================================================================
+
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: 'Image tag to deploy'
+        required: true
+        type: string
+      image-digest:
+        description: 'Image digest for immutable reference'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: string
+  
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: 'Image tag to deploy'
+        required: true
+        type: string
+      image-digest:
+        description: 'Image digest (optional, will use tag if not provided)'
+        required: false
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
+
+jobs:
+  deploy:
+    name: Deploy to {% raw %}${{ inputs.environment }}{% endraw %}
+    runs-on: ubuntu-latest
+    environment: {% raw %}${{ inputs.environment }}{% endraw %}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+      
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+      
+      - name: Determine image reference
+        id: image-ref
+        run: |
+          if [ -n "{% raw %}${{ inputs.image-digest }}{% endraw %}" ]; then
+            echo "ref={% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}@{% raw %}${{ inputs.image-digest }}{% endraw %}" >> $GITHUB_OUTPUT
+          else
+            echo "ref={% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}:{% raw %}${{ inputs.image-tag }}{% endraw %}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update image in overlay
+        run: |
+          cd deploy/overlays/{% raw %}${{ inputs.environment }}{% endraw %}
+          
+          # Update the image reference using kustomize
+          kustomize edit set image \
+            app={% raw %}${{ steps.image-ref.outputs.ref }}{% endraw %}
+          
+          echo "Updated kustomization.yaml:"
+          cat kustomization.yaml
+      
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add deploy/overlays/{% raw %}${{ inputs.environment }}{% endraw %}/
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "deploy: {% raw %}${{ inputs.image-tag }}{% endraw %} to {% raw %}${{ inputs.environment }}{% endraw %}
+
+            Image: {% raw %}${{ steps.image-ref.outputs.ref }}{% endraw %}
+            Triggered by: {% raw %}${{ github.actor }}{% endraw %}
+            Workflow run: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}"
+            
+            git push
+          fi
+      
+      - name: Generate deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** {% raw %}${{ inputs.environment }}{% endraw %}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** {% raw %}${{ inputs.image-tag }}{% endraw %}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Reference:** \`{% raw %}${{ steps.image-ref.outputs.ref }}{% endraw %}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "FluxCD will automatically reconcile this deployment." >> $GITHUB_STEP_SUMMARY
