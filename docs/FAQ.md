@@ -21,7 +21,7 @@ Common questions about {{ project_name }}.
 - **Knative Serving**: Serverless auto-scaling
 - **FluxCD**: GitOps deployment
 - **OpenTelemetry**: Observability stack
-{% if features contains "s3" %}
+{% if feature_s3 %}
 - **S3/MinIO**: Optional object storage
 {% endif %}
 
@@ -73,7 +73,7 @@ make dev-forward
 - **Kind Kubernetes Cluster** - Local Kubernetes environment
 - **Knative Serving** - Serverless framework
 - **Redis** (port 6379) - Caching/sessions
-{% if features contains "s3" %}
+{% if feature_s3 %}
 - **MinIO** (port 9000) - S3-compatible storage
 - **MinIO Console** (port 9001) - Web UI
 {% endif %}
@@ -225,7 +225,7 @@ port = 8080
 ```bash
 kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  {% if features contains "s3" %}--from-literal=aws-access-key-id='...' \
+  {% if feature_s3 %}--from-literal=aws-access-key-id='...' \
   --from-literal=aws-secret-access-key='...' \
   {% endif %}
 ```
@@ -245,9 +245,9 @@ spec:
       key: /{{ project_name }}/production/redis-url
 ```
 
-### How do I configure {% if features contains "s3" %}S3{% else %}Redis{% endif %}?
+### How do I configure {% if feature_s3 %}S3{% else %}Redis{% endif %}?
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 **Environment Variables**:
 ```bash
 export APP__S3__ENDPOINT=https://s3.amazonaws.com
@@ -325,9 +325,9 @@ Common causes:
 - **Port conflicts**: Check `lsof -i :8080`
 - **Kubernetes issues**: Check `export KUBECONFIG=.kubeconfig-dev && kubectl get pods`
 
-### Why is {% if features contains "s3" %}S3{% else %}Redis{% endif %} connection failing?
+### Why is {% if feature_s3 %}S3{% else %}Redis{% endif %} connection failing?
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 **Check MinIO**:
 ```bash
 # Is MinIO running?
@@ -390,7 +390,7 @@ kubectl logs -n flux-system deployment/kustomize-controller
 3. **Optimize code**: Review slow spans
 4. **Scale up**: Increase resources or replicas
 5. **Cache**: Add Redis caching for frequent operations
-6. **{% if features contains "s3" %}Buffer S3: Stream uploads instead of loading into memory{% else %}Use connection pooling: Increase Redis pool size{% endif %}
+6. **{% if feature_s3 %}Buffer S3: Stream uploads instead of loading into memory{% else %}Use connection pooling: Increase Redis pool size{% endif %}
 
 ### How do I handle high traffic?
 

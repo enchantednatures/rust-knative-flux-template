@@ -1,0 +1,99 @@
+---
+# MetricTemplate: HTTP request success rate
+# Queries the Prometheus instance already scraping Knative revision pods.
+# Flagger evaluates this against the canary revision's traffic subset.
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: request-success-rate
+  namespace: flagger-system
+spec:
+  provider:
+    type: prometheus
+    # Points to the in-cluster Prometheus deployed by this template's observability stack.
+    # Update to your Prometheus service address if different.
+    address: http://prometheus.observability.svc.cluster.local:9090
+  query: |
+    100 - sum(
+      rate(
+        revision_request_count{
+          namespace="{{ namespace }}",
+          configuration_name="{{ target }}",
+          response_code_class!="2xx"
+        }[{{ interval }}]
+      )
+    )
+    /
+    sum(
+      rate(
+        revision_request_count{
+          namespace="{{ namespace }}",
+          configuration_name="{{ target }}"
+        }[{{ interval }}]
+      )
+    ) * 100
+
+---
+# MetricTemplate: p99 request latency in milliseconds
+# Rollback if the 99th-percentile response time exceeds the configured threshold.
+#
+# Knative Serving exposes revision_request_latencies as a histogram whose bucket
+# boundaries are in MILLISECONDS. The histogram_quantile result is therefore
+# already in ms — no unit conversion is needed.
+# Threshold in canary.yaml is compared directly in ms (e.g. max: 500 = 500ms).
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: request-duration
+  namespace: flagger-system
+spec:
+  provider:
+    type: prometheus
+    address: http://prometheus.observability.svc.cluster.local:9090
+  query: |
+    histogram_quantile(
+      0.99,
+      sum(
+        rate(
+          revision_request_latencies_bucket{
+            namespace="{{ namespace }}",
+            configuration_name="{{ target }}"
+          }[{{ interval }}]
+        )
+      ) by (le)
+    )
+
+---
+# MetricTemplate: Custom application metric
+#
+# Replace the query below with a PromQL expression that reflects a business KPI
+# or application-level SLO for your service. This template is a placeholder — if
+# you don't need a custom gate, remove the corresponding entry from canary.yaml.
+#
+# Example use cases:
+#   - Error rate from your own /metrics endpoint
+#   - Queue depth (e.g., Kafka consumer lag)
+#   - Database connection pool saturation
+#   - SLO burn rate from recording rules
+#
+# The query must return a scalar. Flagger compares it to thresholdRange in canary.yaml.
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: custom-metric
+  namespace: flagger-system
+spec:
+  provider:
+    type: prometheus
+    address: http://prometheus.observability.svc.cluster.local:9090
+  query: |
+    # TODO: Replace with your application-specific metric query.
+    # The variable {{ target }} resolves to the Knative configuration name (== service name).
+    # The variable {{ namespace }} resolves to the deployment namespace.
+    #
+    # Example: HTTP 5xx error rate from your app's own counter
+    # sum(rate(http_requests_total{job="{{ target }}", status=~"5.."}[{{ interval }}]))
+    # / sum(rate(http_requests_total{job="{{ target }}"}[{{ interval }}]))
+    #
+    # Returning 0 makes this gate always pass until you fill it in.
+    vector(0)

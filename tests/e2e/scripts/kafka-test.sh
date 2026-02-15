@@ -1,4 +1,4 @@
-{% if features contains "kafka" -%}
+{% if feature_kafka -%}
 #!/bin/bash
 set -euo pipefail
 

@@ -39,11 +39,11 @@ pub async fn liveness() -> Json<HealthResponse> {
 /// Readiness probe - can the service handle traffic?
 ///
 /// Checks Redis connectivity with PING before returning 200 OK.
-/// {%- if features contains "kafka" %}
+/// {%- if feature_kafka %}
 /// Also verifies Kafka broker connectivity if event publishing is enabled.
 /// {%- endif %}
 /// If Redis is unreachable, returns 503 Service Unavailable.
-/// {%- if features contains "kafka" %}
+/// {%- if feature_kafka %}
 /// If Kafka broker is unreachable and event publishing is enabled, returns 503.
 /// {%- endif %}
 ///
@@ -67,7 +67,7 @@ pub async fn readiness(
 
     match redis::cmd("PING").query_async::<_, String>(&mut conn).await {
         Ok(_) => {
-            {%- if features contains "kafka" %}
+            {%- if feature_kafka %}
             // If Kafka publishing is enabled, also check broker connectivity
             if let Some(publisher) = &state.kafka_publisher {
                 match publisher.health_check().await {
@@ -114,7 +114,7 @@ pub async fn readiness(
 /// Metrics include:
 /// - HTTP request metrics (via tower-http)
 /// - Custom application metrics
-/// {%- if features contains "kafka" %}
+/// {%- if feature_kafka %}
 /// - kafka_events_published_total: Counter for successfully published events
 /// - kafka_events_failed_total: Counter for failed publish attempts  
 /// - kafka_publish_latency_ms: Histogram for publishing latency

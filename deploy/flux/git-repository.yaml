@@ -1,7 +1,7 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: rust-service
+  name: {{ project_name | replace: "_", "-" }}
   namespace: flux-system
 spec:
   interval: 1m

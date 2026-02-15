@@ -1,15 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: postgres-infrastructure
+  name: {{ project_name | replace: "_", "-" }}-postgres
   namespace: flux-system
 spec:
   interval: 5m
-  path: ./deploy/overlays/dev
+  path: ./deploy/components/postgres
   prune: true
   sourceRef:
     kind: GitRepository
-    name: {{ github_repo }}-postgres
+    name: {{ project_name | replace: "_", "-" }}
   wait: true
   timeout: 10m
   # Wait for CloudNativePG operator to be ready

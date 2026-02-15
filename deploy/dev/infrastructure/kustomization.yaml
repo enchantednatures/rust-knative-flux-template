@@ -3,7 +3,9 @@ kind: Kustomization
 
 resources:
   - redis.yaml
-  # kafka.yaml and minio.yaml are Liquid templates processed by cargo-generate
-  # They will be available after template generation
-  # - kafka.yaml
-  # - minio.yaml
+  {% if event_source_kafka %}
+  - kafka.yaml
+  {% endif %}
+  {% if feature_s3 %}
+  - minio.yaml
+  {% endif %}

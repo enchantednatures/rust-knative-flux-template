@@ -21,7 +21,7 @@ use crate::config::TelemetryConfig;
 /// - kafka_events_failed_total: Counter for failed publish attempts
 /// - kafka_publish_latency_ms: Histogram for publishing latency
 /// - HTTP request metrics (via tower-http)
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 ///
 /// Kafka metrics are tagged with:
 /// - topic: The Kafka topic where events are published
@@ -37,7 +37,7 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     // even before any requests are made
     describe_counter!("http_requests_total", "Total number of HTTP requests");
     describe_counter!("app_info", "Application information and version");
-    {%- if features contains "kafka" %}
+    {%- if feature_kafka %}
     describe_counter!("kafka_events_published_total", "Total number of Kafka events published successfully");
     describe_counter!("kafka_events_failed_total", "Total number of Kafka event publish failures");
     describe_histogram!("kafka_publish_latency_ms", "Kafka event publishing latency in milliseconds");

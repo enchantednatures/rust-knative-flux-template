@@ -169,7 +169,7 @@ Edit `Cargo.toml`:
 # Update to new versions
 axum = "0.7"
 tokio = { version = "1.35", features = ["full"] }
-{% if features contains "s3" %}opendal = "0.45"
+{% if feature_s3 %}opendal = "0.45"
 {% endif %}
 # etc...
 ```
@@ -191,7 +191,7 @@ endpoint = "http://minio:9000"
 
 **New**:
 ```toml
-{% if features contains "s3" %}[s3]
+{% if feature_s3 %}[s3]
 endpoint = "http://minio:9000"
 region = "us-east-1"  # New required field
 {% endif %}
@@ -258,7 +258,7 @@ spec:
         env:
         - name: APP__REDIS__URL
           value: "redis://redis:6379"
-{% if features contains "s3" %}
+{% if feature_s3 %}
         - name: APP__S3__REGION
           value: "us-east-1"  # New required env var
 {% endif %}
@@ -393,7 +393,7 @@ rustc --version  # Should be 1.92+
 [dependencies]
 axum = "0.7"  # Upgraded from 0.6
 tokio = { version = "1.35", features = ["full"] }
-{% if features contains "s3" %}
+{% if feature_s3 %}
 opendal = "0.45"  # Upgraded from 0.40
 {% endif %}
 ```
@@ -412,7 +412,7 @@ cargo build
 [telemetry]
 sampler = "always"  # New field
 
-{% if features contains "s3" %}# Add S3 region
+{% if feature_s3 %}# Add S3 region
 [s3]
 region = "us-east-1"  # New required field
 {% endif %}

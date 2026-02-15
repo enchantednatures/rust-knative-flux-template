@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release from template
 - Knative Serving support
 - FluxCD GitOps integration
-{% if features contains "s3" %}
+{% if feature_s3 %}
 - S3/MinIO storage support via OpenDAL
 - S3 CRUD operations API
 {% endif %}
@@ -176,7 +176,7 @@ Initial template release.
 - OpenTelemetry integration
 - Testing infrastructure
 - Documentation suite
-{% if features contains "s3" %}
+{% if feature_s3 %}
 - S3/MinIO storage (optional)
 {% endif %}
 

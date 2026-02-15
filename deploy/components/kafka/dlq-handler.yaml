@@ -1,4 +1,4 @@
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 ---
 # Dead Letter Queue Handler Service
 # Receives events that failed to be delivered to main service

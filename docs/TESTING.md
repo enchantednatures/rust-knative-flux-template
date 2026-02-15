@@ -39,7 +39,7 @@ Complete testing strategy and best practices for {{ project_name }}.
 | Type | Speed | Dependencies | Coverage |
 |------|--------|--------------|-----------|
 | Unit | <1s | None | Business logic, pure functions |
-| Integration | 1-10s | Docker services | Handlers, database{% if features contains "s3" %}, storage{% endif %} |
+| Integration | 1-10s | Docker services | Handlers, database{% if feature_s3 %}, storage{% endif %} |
 | E2E | 30s-5m | Kind cluster | Full deployment |
 
 ---
@@ -84,7 +84,7 @@ src/
 │   │       └── #[cfg(test)] tests { ... }
 │   ├── health.rs
 │   │   └── #[cfg(test)] tests { ... }
-{% if features contains "s3" %}
+{% if feature_s3 %}
 │   └── storage.rs
 │       └── #[cfg(test)] tests { ... }
 {% endif %}
@@ -150,7 +150,7 @@ async fn test_health_endpoints() {
 }
 ```
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 
 ### S3 Integration Tests
 
@@ -368,7 +368,7 @@ curl -f $URL/health/live || exit 1
 echo "Testing readiness endpoint..."
 curl -f $URL/health/ready || exit 1
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 echo "Testing S3 upload..."
 curl -f -X POST $URL/api/upload \
   -H "Content-Type: application/json" \
@@ -538,7 +538,7 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
-{% if features contains "s3" %}
+{% if feature_s3 %}
       minio:
         image: minio/minio:latest
         ports:
@@ -583,7 +583,7 @@ jobs:
       run: cargo test --test '*' --ignored --nocapture
       env:
         APP__REDIS__URL: redis://localhost:6379
-        {% if features contains "s3" %}
+        {% if feature_s3 %}
         APP__S3__ENDPOINT: http://localhost:9000
         APP__S3__BUCKET: data
         AWS_ACCESS_KEY_ID: minioadmin

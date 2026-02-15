@@ -1,0 +1,12 @@
+{% if event_source_kafka %}
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-kafka-source
+  namespace: {{ target_namespace }}
+spec:
+  bootstrapServers:
+  - kafka.kafka.svc.cluster.local:9092
+  consumers: 1
+  initialOffset: earliest
+{% endif %}

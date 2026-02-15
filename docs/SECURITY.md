@@ -328,7 +328,7 @@ spec:
     ports:
     - protocol: TCP
       port: 6379  # Redis
-{% if features contains "s3" %}
+{% if feature_s3 %}
     - to:
       - namespaceSelector: {}
     ports:
@@ -401,7 +401,7 @@ stringData:
 ```bash
 kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  {% if features contains "s3" %}--from-literal=aws-access-key-id='YOUR_KEY' \
+  {% if feature_s3 %}--from-literal=aws-access-key-id='YOUR_KEY' \
   --from-literal=aws-secret-access-key='YOUR_SECRET' \
   {% endif %}
 ```
@@ -443,7 +443,7 @@ spec:
   - secretKey: redis-url
     remoteRef:
       key: /{{ project_name }}/production/redis-url
-  {% if features contains "s3" %}
+  {% if feature_s3 %}
   - secretKey: aws-access-key-id
     remoteRef:
       key: /{{ project_name }}/production/aws-access-key-id
@@ -771,7 +771,7 @@ syft your-image:latest -o spdx-json > sbom.json
 
 ### Data Retention
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 **S3 Bucket Lifecycle**:
 ```bash
 # Set lifecycle policy

@@ -16,8 +16,8 @@ This document describes the end-to-end testing approach for the cargo-generate t
 
 The CI/CD pipeline generates test projects on-the-fly using `cargo generate` for two scenarios:
 
-- **no-s3** - Generated with `if features contains "s3"=false` (basic service only)
-- **with-s3** - Generated with `if features contains "s3"=true` (includes S3/MinIO support)
+- **no-s3** - Generated with `if feature_s3=false` (basic service only)
+- **with-s3** - Generated with `if feature_s3=true` (includes S3/MinIO support)
 
 This approach ensures:
 - Tests always validate the latest template code
@@ -56,7 +56,7 @@ This approach ensures:
     ├─ Health checks (liveness, readiness)
     ├─ API endpoints (hello, swagger)
     ├─ Metrics (Prometheus format)
-    └─ S3 operations (if if features contains "s3"=true)
+    └─ S3 operations (if if feature_s3=true)
 
 7. Cleanup
     └─ Destroy Kind cluster
@@ -72,9 +72,9 @@ The E2E tests are run via GitHub Actions workflow in `.github/workflows/template
 matrix:
   include:
     - scenario: no-s3
-      if features contains "s3": "false"
+      if feature_s3: "false"
     - scenario: with-s3
-      if features contains "s3": "true"
+      if feature_s3: "true"
 ```
 
 ### Key Checkpoints
@@ -136,7 +136,7 @@ You can reproduce the CI workflow locally:
 # 1. Generate a test project
 cargo generate --path . \
   --name test-local \
-  --define if features contains "s3"=true \
+  --define if feature_s3=true \
   --define project_name=test-app \
   --define target_namespace=default \
   --define github_org=your-org \

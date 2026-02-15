@@ -1,4 +1,4 @@
-{% if features contains "kafka" -%}
+{% if feature_kafka -%}
 # Kafka Event Publishing from Handlers
 
 This document provides comprehensive guidance for using Kafka event publishing in your {{ project_name }} service.

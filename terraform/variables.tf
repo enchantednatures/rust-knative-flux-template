@@ -1,4 +1,4 @@
-{% if features contains "s3" %}
+{% if feature_s3 %}
 variable "minio_endpoint" {
   description = "MinIO S3-compatible endpoint"
   type        = string

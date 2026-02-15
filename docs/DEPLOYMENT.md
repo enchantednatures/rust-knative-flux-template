@@ -105,7 +105,7 @@ curl http://localhost:8080/health/live
 curl http://localhost:8080/health/ready
 
 # Test API
-{% if features contains "s3" %}
+{% if feature_s3 %}
 curl -X POST http://localhost:8080/api/upload \
   -H "Content-Type: application/json" \
   -d '{"key":"test.txt","data":"aGVsbG8="}'
@@ -145,7 +145,7 @@ kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
   -n {{ project_name }}
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 # S3 credentials
 kubectl create secret generic {{ project_name }}-s3 \
   --from-literal=aws-access-key-id='your-access-key' \
@@ -300,7 +300,7 @@ kubectl apply -k deploy/overlays/dev -n {{ project_name }}-dev
 # - Min 1 replica (no scale-to-zero)
 # - Debug logging
 # - MinIO for storage
-{% if features contains "s3" %}# - Lower resource limits{% endif %}
+{% if feature_s3 %}# - Lower resource limits{% endif %}
 ```
 
 `deploy/overlays/dev/kustomization.yaml`:

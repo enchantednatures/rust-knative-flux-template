@@ -50,7 +50,7 @@ cargo --version
 ### Starting Local Development Environment
 
 ```bash
-# Start all services (Kind cluster with Knative, Redis{% if features contains "s3" %}, MinIO{% endif %}, Jaeger, Prometheus, OTEL Collector)
+# Start all services (Kind cluster with Knative, Redis{% if feature_s3 %}, MinIO{% endif %}, Jaeger, Prometheus, OTEL Collector)
 make dev-up
 
 # Verify services are running
@@ -70,7 +70,7 @@ make dev-clean
 - Kind Kubernetes Cluster (local)
 - Knative Serving v1.20.0
 - Redis (port 6379) - Caching/sessions
-{% if features contains "s3" %}- MinIO S3 API (port 9000) - Object storage
+{% if feature_s3 %}- MinIO S3 API (port 9000) - Object storage
 - MinIO Console (port 9001) - Web UI at http://localhost:9001{% endif %}
 - OpenTelemetry Collector (port 4317) - Telemetry collection
 - Jaeger (port 16686) - Distributed tracing UI
@@ -108,7 +108,7 @@ curl http://localhost:8080/health/ready
 # Metrics
 curl http://localhost:8080/metrics | head
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 # Test S3 upload
 curl -X POST http://localhost:8080/api/upload \
   -H "Content-Type: application/json" \
@@ -129,13 +129,13 @@ curl http://localhost:8080/api/objects
 │   ├── main.rs                    # Application entry point
 │   ├── lib.rs                     # Module exports
 │   ├── config.rs                  # Configuration loading
-│   ├── state.rs                   # AppState (Redis{% if features contains "s3" %}, S3{% endif %})
+│   ├── state.rs                   # AppState (Redis{% if feature_s3 %}, S3{% endif %})
 │   ├── error.rs                   # Error types
 │   ├── observability.rs            # OpenTelemetry setup
 │   ├── routes.rs                  # Router definition
 │   └── handlers/
 │       ├── mod.rs                 # Handler exports
-│       ├── api.rs                 # API handlers{% if features contains "s3" %}
+│       ├── api.rs                 # API handlers{% if feature_s3 %}
 │       ├── storage.rs             # S3 operation handlers{% endif %}
 │       └── health.rs             # Health check handlers
 ├── config/
@@ -149,7 +149,7 @@ curl http://localhost:8080/api/objects
 ├── scripts/
 │   └── dev/                      # Development automation scripts
 ├── tests/
-│   ├── health_test.rs             # Health endpoint tests{% if features contains "s3" %}
+│   ├── health_test.rs             # Health endpoint tests{% if feature_s3 %}
 │   ├── storage_test.rs            # S3 integration tests{% endif %}
 │   └── common/
 │       └── mod.rs                # Test utilities
@@ -260,7 +260,7 @@ Add to `src/handlers/mod.rs`:
 ```rust
 pub mod api;
 pub mod health;
-{% if features contains "s3" %}pub mod storage;
+{% if feature_s3 %}pub mod storage;
 {% endif %}
 pub mod my_feature;
 
@@ -298,7 +298,7 @@ cargo run
 curl http://localhost:8080/api/my-feature
 ```
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 
 ### Adding a New S3 Operation
 

@@ -23,24 +23,26 @@ ignore = [
   "scripts/cleanup-e2e-local.sh",
   "scripts/README.md",
   "CHANGELOG-LOCAL-E2E.md",
+  "scripts/test-template-matrix.sh",
+  "template-values.toml",
+  "post-generate.rhai",
 ]
 
-[hooks]
-post = ["post-generate.rhai"]
+# [hooks]
+# post = ["post-generate.rhai"]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
-features = { prompt = "Select default features", type = "array", choices = [
-  "s3",
-  "postgres",
-  "kafka",
-], default = [
-] }
-event_sources = { prompt = "Select event sources", type = "array", choices = [
-  "kafka",
-], default = [
-] }
+
+# Feature toggles (individual booleans — cargo-generate v0.23.x cannot evaluate
+# array variables in conditional expressions due to a bug in the Rhai on_var callback)
+feature_s3 = { prompt = "Enable S3/MinIO object storage?", type = "bool", default = false }
+feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
+feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
+feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
+event_source_kafka = { prompt = "Enable Kafka event source (consumer)?", type = "bool", default = false }
+
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
 github_org = { prompt = "GitHub organization or username", type = "string", default = "your-org" }
@@ -79,7 +81,7 @@ prod_cpu_limit = { prompt = "Prod CPU limit", type = "string" }
 prod_memory_request = { prompt = "Prod memory request", type = "string" }
 prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
 
-[conditional.'!if features contains "s3"']
+[conditional.'!feature_s3']
 ignore = [
   "src/handlers/storage.rs",
   "tests/storage_test.rs",
@@ -87,17 +89,19 @@ ignore = [
   "terraform/modules/minio",
 ]
 
-[conditional.'if event_sources contains "kafka"'.placeholders]
+[conditional.'event_source_kafka'.placeholders]
 kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events" }
 kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "{{project_name}}-consumers" }
 kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
 kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
 
-[conditional.'!if event_sources contains "kafka"']
+[conditional.'!event_source_kafka']
 ignore = [
-  "deploy/base/kafka-source.yaml",
-  "deploy/base/dlq-handler.yaml",
+  "deploy/components/kafka",
   "deploy/dev/infrastructure/kafka.yaml",
+  "deploy/overlays/dev/kafka-source-patch.yaml",
+  "deploy/overlays/staging/kafka-source-patch.yaml",
+  "deploy/overlays/prod/kafka-source-patch.yaml",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",
@@ -105,7 +109,7 @@ ignore = [
   "tests/e2e/fixtures/kafka",
 ]
 
-[conditional.'if features contains "postgres"'.placeholders]
+[conditional.'feature_postgres'.placeholders]
 postgres_version = { prompt = "PostgreSQL version", type = "string", default = "16" }
 postgres_instances_dev = { prompt = "Dev PostgreSQL replicas", type = "string", default = "1" }
 postgres_instances_staging = { prompt = "Staging PostgreSQL replicas", type = "string", default = "2" }
@@ -116,15 +120,12 @@ backup_retention_dev = { prompt = "Dev backup retention (days)", type = "string"
 backup_retention_staging = { prompt = "Staging backup retention (days)", type = "string", default = "14" }
 backup_retention_prod = { prompt = "Prod backup retention (days)", type = "string", default = "30" }
 
-[conditional.'!if features contains "postgres"']
+[conditional.'!feature_postgres']
 ignore = [
-  "deploy/base/postgres-cluster.yaml",
-  "deploy/base/postgres-backup.yaml",
-  "deploy/base/postgres-pooler.yaml",
-  "deploy/base/postgres-objectstore.yaml",
-  "deploy/base/postgres-podmonitor.yaml",
-  "deploy/base/postgres-alerts.yaml",
+  "deploy/components/postgres",
+  "deploy/components/operator",
   "deploy/flux/postgres-kustomization.yaml",
+  "deploy/flux/git-repository-postgres.yaml",
   "deploy/overlays/dev/postgres-cluster-patch.yaml",
   "deploy/overlays/dev/postgres-backup-patch.yaml",
   "deploy/overlays/staging/postgres-cluster-patch.yaml",
@@ -145,10 +146,26 @@ ignore = [
   "specs/001-cloudnative-postgres-backups",
 ]
 
-[conditional.'if features contains "kafka"'.placeholders]
+[conditional.'feature_kafka'.placeholders]
 kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
 kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
 kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
 
-[conditional.'!if features contains "kafka"']
+[conditional.'!feature_kafka']
 ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]
+
+[conditional.'feature_flagger'.placeholders]
+# Minimum HTTP success rate % to allow canary promotion (rollback if below this)
+canary_success_rate_threshold = { prompt = "Minimum HTTP success rate % for canary promotion", type = "string", default = "99" }
+# Maximum p99 latency in milliseconds to allow canary promotion (rollback if above this)
+canary_latency_threshold_ms = { prompt = "Maximum p99 latency in ms for canary promotion", type = "string", default = "500" }
+# Number of k6 virtual users during the rollout load test
+k6_vus = { prompt = "Number of k6 virtual users for canary load test", type = "string", default = "10" }
+
+[conditional.'!feature_flagger']
+ignore = [
+  "deploy/components/flagger",
+  "deploy/infrastructure/flagger",
+  "deploy/flux/flagger-kustomization.yaml",
+  "docs/FLAGGER.md",
+]

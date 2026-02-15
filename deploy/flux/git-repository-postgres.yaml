@@ -1,13 +1,13 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: rust-service-postgres
+  name: {{ project_name | replace: "_", "-" }}-postgres
   namespace: flux-system
 spec:
   interval: 5m
   url: https://github.com/{{ github_org }}/{{ github_repo }}
   ref:
-    branch: 001-cloudnative-postgres-backups
+    branch: {{ default_branch }}
   # Optional: For private repositories
   # secretRef:
   #   name: github-deploy-key

@@ -2,19 +2,19 @@
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
-{% if features contains "s3" or features contains "kafka" or event_sources contains "kafka" %}
+{% if feature_s3 or feature_kafka or event_source_kafka %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
-{% if features contains "s3" %}
+{% if feature_s3 %}
 - 📦 **S3-Compatible Storage**: Integrated OpenDAL for MinIO/AWS S3 object storage
 {% endif %}
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 - 📨 **Kafka Event Source**: Knative KafkaSource for consuming Kafka events
 - 🔁 **Topic-Per-Source Pattern**: One KafkaSource per topic for independent scaling
 - ⚰️ **Dead Letter Queue**: Automatic DLQ handling for failed events
 {% endif %}
-{% if features contains "kafka" %}
+{% if feature_kafka %}
 - 📤 **Kafka Event Publishing**: Optional event publishing from HTTP handlers
 - 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 spec compliance via vendored axum-cloudevents
 - 📊 **Publisher Metrics**: Built-in Prometheus metrics for event publishing
@@ -22,7 +22,7 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
 - 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
 - 🏗️ **Infrastructure as Code**: Terraform modules for resource management
-- 🧪 **Fully Tested**: Integration tests with Redis{% if features contains "s3" %}, MinIO{% endif %}{% if features contains "kafka" %}, and Kafka{% endif %}
+- 🧪 **Fully Tested**: Integration tests with Redis{% if feature_s3 %}, MinIO{% endif %}{% if feature_kafka %}, and Kafka{% endif %}
 - 📝 **Type-Safe**: Rust with strict compiler checks
 - ⚡ **Fast**: Built on Tokio async runtime
 
@@ -90,7 +90,7 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
     kubectl apply -f deploy/flux/kustomization.yaml
     ```
 
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 #### Kafka Event Source Deployment
 
 The KafkaSource and DLQ handler are automatically deployed with the application.
@@ -127,17 +127,17 @@ For production/staging, ensure external Kafka is configured:
 ```
 {{ project_name }}/
 ├── src/
-│   ├── main.rs           # Application entry point{% if features contains "s3" %} with S3 setup{% endif %}{% if features contains "kafka" %} and Kafka publisher{% endif %}
+│   ├── main.rs           # Application entry point{% if feature_s3 %} with S3 setup{% endif %}{% if feature_kafka %} and Kafka publisher{% endif %}
 │   ├── lib.rs            # Module exports
-│   ├── config.rs         # Configuration{% if features contains "s3" %} with S3Config{% endif %}{% if features contains "kafka" %} and KafkaConfig{% endif %}
-│   ├── state.rs          # AppState with Redis{% if features contains "s3" %}, storage Operator{% endif %}{% if features contains "kafka" %}, and Kafka publisher{% endif %}
+│   ├── config.rs         # Configuration{% if feature_s3 %} with S3Config{% endif %}{% if feature_kafka %} and KafkaConfig{% endif %}
+│   ├── state.rs          # AppState with Redis{% if feature_s3 %}, storage Operator{% endif %}{% if feature_kafka %}, and Kafka publisher{% endif %}
 │   ├── error.rs          # Error handling
 │   ├── observability.rs  # OpenTelemetry setup (B3 propagation for Knative)
 │   ├── routes.rs         # Route definitions
 │   ├── handlers/
-│   │   ├── api.rs        # API handlers{% if features contains "s3" %} with S3 operations{% endif %}
+│   │   ├── api.rs        # API handlers{% if feature_s3 %} with S3 operations{% endif %}
 │   │   ├── health.rs     # Health check endpoints
-{% if features contains "kafka" %}│   │   ├── kafka.rs       # Kafka event publishing handlers
+{% if feature_kafka %}│   │   ├── kafka.rs       # Kafka event publishing handlers
 {% endif %}│   │   └── mod.rs        # Handler exports
 │
 ├── crates/               # Vendored local dependencies
@@ -205,7 +205,7 @@ For production/staging, ensure external Kafka is configured:
 - `AWS_ACCESS_KEY_ID`: S3 access key
 - `AWS_SECRET_ACCESS_KEY`: S3 secret key
 
-{% if features contains "kafka" %}
+{% if feature_kafka %}
 **Kafka Event Publishing:**
 - `APP__KAFKA__BROKER_URL`: Kafka broker address (default: kafka.kafka.svc.cluster.local:9092)
 - `APP__KAFKA__TOPIC`: Kafka topic for publishing (default: events)
@@ -278,7 +278,7 @@ log_level = "debug"
 
 - `HEAD /api/stat/:key` - Get object metadata
 
-{% if features contains "kafka" %}
+{% if feature_kafka %}
 ### Kafka Event Publishing (if enabled)
 
 - `POST /api/v1/publish-event` - Publish a CloudEvent to Kafka (example endpoint)
@@ -311,7 +311,7 @@ log_level = "debug"
 
 ## Storage Integration (S3/MinIO)
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 See [STORAGE.md](./STORAGE.md) for detailed S3/MinIO integration guide covering:
 - Architecture and design patterns
 - Configuration for MinIO and AWS S3
@@ -321,7 +321,7 @@ See [STORAGE.md](./STORAGE.md) for detailed S3/MinIO integration guide covering:
 - Production deployment
 {% endif %}
 
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 ## Kafka Event Source Integration
 
 See [docs/KAFKA_EVENTING.md](./docs/KAFKA_EVENTING.md) for detailed Kafka event source guide covering:
@@ -335,7 +335,7 @@ See [docs/KAFKA_EVENTING.md](./docs/KAFKA_EVENTING.md) for detailed Kafka event 
 - Best practices for idempotency and error handling
 {% endif %}
 
-{% if features contains "kafka" %}
+{% if feature_kafka %}
 ## Kafka Event Publishing
 
 See [docs/KAFKA_PUBLISHING.md](./docs/KAFKA_PUBLISHING.md) for detailed Kafka event publishing guide covering:

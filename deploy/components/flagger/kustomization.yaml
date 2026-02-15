@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - canary.yaml
+  - metric-templates.yaml
+  - k6-configmap.yaml
+
+# Patch the flagger-loadtester HelmRelease to mount the k6 script ConfigMap.
+# This targets the HelmRelease in flagger-system (where the operator lives),
+# not the app namespace — the configMap name is service-specific.
+patches:
+  - path: loadtester-patch.yaml
+    target:
+      kind: HelmRelease
+      name: flagger-loadtester
+      namespace: flagger-system
+
+labels:
+  - pairs:
+      component: flagger-canary
+      app.kubernetes.io/part-of: {{ project_name | replace: "_", "-" }}
+    includeSelectors: false

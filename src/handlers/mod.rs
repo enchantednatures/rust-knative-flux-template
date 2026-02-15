@@ -1,9 +1,9 @@
 pub mod api;
 pub mod events;
 pub mod health;
-{%- if features contains "s3" %}
+{%- if feature_s3 %}
 pub mod storage;
 {%- endif %}
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 pub mod kafka;
 {%- endif %}

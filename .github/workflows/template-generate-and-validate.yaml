@@ -10,52 +10,92 @@ on:
 
 jobs:
   generate-and-validate:
-    name: Generate & Validate (s3=${{ matrix.include_s3 }}, kafka=${{ matrix.include_kafka }}, updates=${{ matrix.enable_image_updates }})
+    name: "Validate (${{ matrix.scenario }})"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          # S3: false, Kafka: false, ImageUpdates: false
-          - scenario: no-s3-no-kafka
-            include_s3: "false"
-            include_kafka: "false"
+          # Bare — no features
+          - scenario: bare
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "false"
             enable_image_updates: "false"
-          # S3: false, Kafka: false, ImageUpdates: true
-          - scenario: no-s3-no-kafka
-            include_s3: "false"
-            include_kafka: "false"
-            enable_image_updates: "true"
-          # S3: false, Kafka: true, ImageUpdates: false
-          - scenario: no-s3-with-kafka
-            include_s3: "false"
-            include_kafka: "true"
+          # S3 only
+          - scenario: s3-only
+            feature_s3: "true"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "false"
             enable_image_updates: "false"
-          # S3: false, Kafka: true, ImageUpdates: true
-          - scenario: no-s3-with-kafka
-            include_s3: "false"
-            include_kafka: "true"
-            enable_image_updates: "true"
-          # S3: true, Kafka: false, ImageUpdates: false
-          - scenario: with-s3-no-kafka
-            include_s3: "true"
-            include_kafka: "false"
+          # Kafka only (producer + consumer)
+          - scenario: kafka-only
+            feature_s3: "false"
+            feature_kafka: "true"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "true"
             enable_image_updates: "false"
-          # S3: true, Kafka: false, ImageUpdates: true
-          - scenario: with-s3-no-kafka
-            include_s3: "true"
-            include_kafka: "false"
-            enable_image_updates: "true"
-          # S3: true, Kafka: true, ImageUpdates: false
-          - scenario: with-s3-with-kafka
-            include_s3: "true"
-            include_kafka: "true"
+          # Postgres only
+          - scenario: postgres-only
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "true"
+            feature_flagger: "false"
+            event_source_kafka: "false"
             enable_image_updates: "false"
-          # S3: true, Kafka: true, ImageUpdates: true
-          - scenario: with-s3-with-kafka
-            include_s3: "true"
-            include_kafka: "true"
+          # Flagger only
+          - scenario: flagger-only
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "true"
+            event_source_kafka: "false"
+            enable_image_updates: "false"
+          # S3 + Kafka
+          - scenario: s3-kafka
+            feature_s3: "true"
+            feature_kafka: "true"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "true"
+            enable_image_updates: "false"
+          # S3 + Postgres
+          - scenario: s3-postgres
+            feature_s3: "true"
+            feature_kafka: "false"
+            feature_postgres: "true"
+            feature_flagger: "false"
+            event_source_kafka: "false"
+            enable_image_updates: "false"
+          # Kafka + Postgres
+          - scenario: kafka-postgres
+            feature_s3: "false"
+            feature_kafka: "true"
+            feature_postgres: "true"
+            feature_flagger: "false"
+            event_source_kafka: "true"
+            enable_image_updates: "false"
+          # All features (no image updates)
+          - scenario: all-features
+            feature_s3: "true"
+            feature_kafka: "true"
+            feature_postgres: "true"
+            feature_flagger: "true"
+            event_source_kafka: "true"
+            enable_image_updates: "false"
+          # All features + image updates
+          - scenario: all-features-img
+            feature_s3: "true"
+            feature_kafka: "true"
+            feature_postgres: "true"
+            feature_flagger: "true"
+            event_source_kafka: "true"
             enable_image_updates: "true"
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -69,6 +109,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install system dependencies for Kafka
+        if: matrix.feature_kafka == 'true' || matrix.event_source_kafka == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsasl2-dev pkg-config
@@ -80,7 +121,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.include_kafka }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.scenario }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -90,47 +131,106 @@ jobs:
       - name: Generate template and run build & lint checks
         run: |
           set -euo pipefail
+
+          # cargo-generate --path reads from the git index, NOT the working tree.
+          # Copy the checkout to a temp dir without .git/ so all files are visible.
+          TEMPLATE_SRC=$(mktemp -d)
+          rsync -a --exclude='.git' --exclude='target' "$GITHUB_WORKSPACE/" "$TEMPLATE_SRC/"
+
           TEMP_DIR=$(mktemp -d)
-          cd "$TEMP_DIR"
 
-          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, kafka=${{ matrix.include_kafka }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+          echo "Generating template: ${{ env.SCENARIO }}"
 
-          # Build features array based on matrix values
-          FEATURES="[]"
-          if [[ "${{ matrix.include_s3 }}" == "true" && "${{ matrix.include_kafka }}" == "true" ]]; then
-            FEATURES='["s3", "kafka"]'
-          elif [[ "${{ matrix.include_s3 }}" == "true" ]]; then
-            FEATURES='["s3"]'
-          elif [[ "${{ matrix.include_kafka }}" == "true" ]]; then
-            FEATURES='["kafka"]'
-          fi
-
-          # Create template values file
-          cat > template-values.toml << TEMPLATE_EOF
+          # Build template-values.toml with boolean placeholders
+          cat > "$TEMP_DIR/template-values.toml" <<'TOML_HEADER'
           [values]
           project_name = "example-app"
           project_author = "CI Bot <ci@github.com>"
-          features = $FEATURES
-          event_sources = []
+          TOML_HEADER
+
+          # Feature booleans
+          cat >> "$TEMP_DIR/template-values.toml" <<TOML_FEATURES
+          feature_s3 = ${{ matrix.feature_s3 }}
+          feature_kafka = ${{ matrix.feature_kafka }}
+          feature_postgres = ${{ matrix.feature_postgres }}
+          feature_flagger = ${{ matrix.feature_flagger }}
+          event_source_kafka = ${{ matrix.event_source_kafka }}
           enable_image_updates = ${{ matrix.enable_image_updates }}
+          TOML_FEATURES
+
+          # Common settings
+          cat >> "$TEMP_DIR/template-values.toml" <<'TOML_COMMON'
           target_namespace = "default"
           github_org = "enchantednatures"
           github_repo = "rust-knative-flux-template"
           default_branch = "main"
           image_registry = "ghcr.io"
           use_default_scaling = true
-          TEMPLATE_EOF
+          TOML_COMMON
 
-          cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
-            --template-values-file template-values.toml \
-            --silent \
-            --allow-commands
+          # Flagger-specific values (prompted when feature_flagger = true)
+          if [[ "${{ matrix.feature_flagger }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_FLAGGER'
+          canary_success_rate_threshold = "99"
+          canary_latency_threshold_ms = "500"
+          k6_vus = "10"
+          TOML_FLAGGER
+          fi
 
-          GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
+          # Postgres-specific values (prompted when feature_postgres = true)
+          if [[ "${{ matrix.feature_postgres }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_POSTGRES'
+          postgres_version = "16"
+          postgres_instances_dev = "1"
+          postgres_instances_staging = "2"
+          postgres_instances_prod = "3"
+          postgres_storage_class = "standard"
+          backup_schedule = "0 2 * * *"
+          backup_retention_dev = "7"
+          backup_retention_staging = "14"
+          backup_retention_prod = "30"
+          TOML_POSTGRES
+          fi
+
+          # kafka_topic is shared between feature_kafka and event_source_kafka
+          if [[ "${{ matrix.feature_kafka }}" == "true" || "${{ matrix.event_source_kafka }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_KAFKA_COMMON'
+          kafka_topic = "events"
+          TOML_KAFKA_COMMON
+          fi
+
+          # Kafka event source values (prompted when event_source_kafka = true)
+          if [[ "${{ matrix.event_source_kafka }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_KAFKA_ES'
+          kafka_consumer_group = "example-app-consumers"
+          kafka_bootstrap_servers_staging = "kafka.staging.svc.cluster.local:9092"
+          kafka_bootstrap_servers_prod = "kafka.prod.svc.cluster.local:9092"
+          TOML_KAFKA_ES
+          fi
+
+          # Kafka feature values (prompted when feature_kafka = true)
+          if [[ "${{ matrix.feature_kafka }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_KAFKA_FEAT'
+          kafka_broker_url = "kafka.kafka.svc.cluster.local:9092"
+          kafka_event_name = "com.example-app.event.published"
+          TOML_KAFKA_FEAT
+          fi
+
+          echo "--- template-values.toml ---"
+          cat "$TEMP_DIR/template-values.toml"
+          echo "---"
+
+          PROJ_NAME="example-app-${{ env.SCENARIO }}"
+
+          cargo generate \
+            --path "$TEMPLATE_SRC" \
+            --name "$PROJ_NAME" \
+            --template-values-file "$TEMP_DIR/template-values.toml" \
+            --destination "$TEMP_DIR" \
+            --silent
+
+          GENERATED_DIR="$TEMP_DIR/$PROJ_NAME"
           cd "$GENERATED_DIR"
-
-          echo "Cleaning build artifacts from post-generate hook"
-          cargo clean
 
           echo "Running formatting check"
           cargo fmt --all -- --check

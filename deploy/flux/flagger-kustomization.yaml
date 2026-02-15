@@ -1,0 +1,30 @@
+# FluxCD Kustomization: installs the Flagger operator cluster-wide.
+#
+# Flagger is a cluster-wide controller (like CloudNativePG) — install it once
+# per cluster via this Kustomization, not per application namespace.
+#
+# The app Kustomization (kustomization.yaml) declares dependsOn this resource
+# so Flagger CRDs are available before Canary objects are applied.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flagger
+  namespace: flux-system
+spec:
+  interval: 1h
+  path: ./deploy/infrastructure/flagger/operator
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: {{ project_name | replace: "_", "-" }}
+  wait: true
+  timeout: 5m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: flagger
+      namespace: flagger-system
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: flagger-loadtester
+      namespace: flagger-system

@@ -24,13 +24,11 @@ spec:
       secretAccessKey:
         name: postgres-backup-storage
         key: ACCESS_SECRET_KEY
-  
-  # Development: shorter retention (configurable via template)
-  retentionPolicy: "{{ backup_retention_dev }}d"
-  
-  # Development: faster compression (gzip)
-  configuration:
+    # Development: faster compression (gzip)
     data:
       compression: gzip
     wal:
       compression: gzip
+  
+  # Development: shorter retention (configurable via template)
+  retentionPolicy: "{{ backup_retention_dev }}d"

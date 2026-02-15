@@ -1,0 +1,32 @@
+---
+# HelmRelease patch: mounts the k6 script ConfigMap into the flagger-loadtester pod.
+#
+# The Flagger loadtester Helm chart exposes `volumes` and `volumeMounts` values
+# that are passed through to the underlying Deployment. This patch adds the
+# generated k6 script at /scripts/canary-test.js, which is the path that
+# canary.yaml passes to `k6 run`.
+#
+# Applied via Kustomize strategic merge against the HelmRelease in
+# deploy/infrastructure/flagger/operator/helmrelease.yaml.
+#
+# NOTE: This patch targets the flagger-system namespace where the loadtester
+# HelmRelease lives. If you deploy multiple services with Flagger canaries,
+# each service should use a distinct ConfigMap name (k6-<service-name>) and
+# mount it under a unique mountPath (e.g. /scripts/<service-name>/).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger-loadtester
+  namespace: flagger-system
+spec:
+  values:
+    # Mount the k6 script ConfigMap so the loadtester can find it at runtime.
+    # The `k6 run /scripts/canary-test.js` command in canary.yaml references this path.
+    volumes:
+      - name: k6-scripts
+        configMap:
+          name: k6-{{ project_name | replace: "_", "-" }}
+    volumeMounts:
+      - name: k6-scripts
+        mountPath: /scripts
+        readOnly: true

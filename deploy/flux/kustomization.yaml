@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: rust-service
+  name: {{ project_name | replace: "_", "-" }}
   namespace: flux-system
 spec:
   interval: 10m
@@ -9,6 +9,12 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: rust-service
+    name: {{ project_name | replace: "_", "-" }}
   wait: true
   timeout: 5m
+  {% if feature_flagger %}
+  # Ensure Flagger CRDs exist before the Canary object in the prod overlay is applied.
+  # Without this, Flux will fail with "no matches for kind Canary in group flagger.app".
+  dependsOn:
+    - name: flagger
+  {% endif %}

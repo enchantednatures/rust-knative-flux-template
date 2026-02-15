@@ -13,14 +13,14 @@ service_name = "{{ project_name | kebab_case }}"
 log_level = "info"
 # otlp_endpoint = "http://otel-collector:4317"  # Optional
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 [s3]
 endpoint = "http://localhost:9000"  # MinIO endpoint
 bucket = "data"
 region = "us-east-1"
 {% endif %}
 
-{% if features contains "kafka" %}
+{% if feature_kafka %}
 [kafka]
 broker_url = "{{ kafka_broker_url }}"
 topic = "{{ kafka_topic }}"

@@ -1,0 +1,108 @@
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: {{ project_name | replace: "_", "-" }}
+  # namespace is set by the overlay
+spec:
+  # Knative provider: Flagger manages spec.traffic on the KnativeService
+  # No service mesh required — uses Knative's native revision traffic splitting
+  provider: knative
+
+  # The Knative Service to wrap with canary analysis
+  targetRef:
+    apiVersion: serving.knative.dev/v1
+    kind: Service
+    name: {{ project_name | replace: "_", "-" }}
+
+  # How long to wait for a new revision to become Ready before failing the canary
+  progressDeadlineSeconds: 120
+
+  analysis:
+    # How often to run metric checks and advance traffic
+    interval: 1m
+
+    # Number of consecutive failed metric checks before rolling back
+    threshold: 5
+
+    # Maximum traffic percentage routed to canary revision
+    # Flagger will never exceed this — after reaching maxWeight with passing
+    # metrics, it promotes the canary to 100% and retires the primary
+    maxWeight: 50
+
+    # Traffic increment per successful analysis iteration (10% → 20% → ... → 50% → promote)
+    stepWeight: 10
+
+    # Metric gates: all must pass on every interval or the failed-check counter increments
+    metrics:
+      # Gate 1: HTTP success rate — rollback if < {{ canary_success_rate_threshold }}% of requests succeed
+      - name: request-success-rate
+        # References the MetricTemplate in flagger-system namespace
+        templateRef:
+          name: request-success-rate
+          namespace: flagger-system
+        thresholdRange:
+          min: {{ canary_success_rate_threshold }}
+        interval: 1m
+
+      # Gate 2: p99 latency — rollback if 99th-percentile latency > {{ canary_latency_threshold_ms }}ms
+      - name: request-duration
+        templateRef:
+          name: request-duration
+          namespace: flagger-system
+        thresholdRange:
+          max: {{ canary_latency_threshold_ms }}
+        interval: 1m
+
+      # Gate 3: Custom app metric — replace the PromQL in metric-templates.yaml
+      # with your own business KPI (e.g. error rate, queue depth, SLO burn rate)
+      # Remove this block if you don't need a custom metric gate
+      - name: {{ project_name | replace: "_", "-" }}-custom-metric
+        templateRef:
+          name: custom-metric
+          namespace: flagger-system
+        thresholdRange:
+          min: 0
+        interval: 1m
+
+    # Webhooks: executed by the flagger-loadtester at each analysis step.
+    # The loadtester pod runs the k6 script mounted from k6-configmap.yaml.
+    # See deploy/components/flagger/k6-configmap.yaml for the script source.
+    webhooks:
+      # Stage 1 — Smoke test (pre-rollout):
+      # Runs BEFORE any traffic is shifted to the canary revision.
+      # Calls the k6 `smokeTest` export to verify the new revision is alive.
+      # A non-zero k6 exit code aborts the canary immediately (no traffic shifted).
+      - name: smoke-test
+        type: pre-rollout
+        url: http://flagger-loadtester.flagger-system/gate/halt
+        timeout: 30s
+        metadata:
+          # --export-only runs only the named exported function, not the default.
+          # /scripts/canary-test.js is mounted from k6-configmap.yaml.
+          cmd: "k6 run --export-only smokeTest /scripts/canary-test.js"
+
+      # Stage 2 — Load test (rollout):
+      # Runs on EACH analysis interval while traffic is being shifted.
+      # Calls the k6 default export which targets the canary stable URL.
+      # k6 thresholds (p95 < 500ms, error rate < 1%) act as a hard gate:
+      # a threshold breach causes a non-zero exit → Flagger increments the
+      # failure counter → rollback after `threshold` consecutive failures.
+      - name: load-test
+        type: rollout
+        url: http://flagger-loadtester.flagger-system/gate/halt
+        timeout: 2m
+        metadata:
+          # Knative creates a stable canary URL:
+          #   <service>-canary.<namespace>.svc.cluster.local
+          # The k6 script targets this FQDN (baked in at generation time).
+          # If staging/prod use different namespaces, patch this per overlay.
+          cmd: "k6 run /scripts/canary-test.js"
+
+      # Post-promotion notification webhook (optional)
+      # Uncomment to trigger a Slack/PagerDuty alert on successful promotion
+      # - name: notify-promotion
+      #   type: post-rollout
+      #   url: http://your-notification-service/notify
+      #   timeout: 10s
+      #   metadata:
+      #     message: "Canary for {{ project_name | replace: "_", "-" }} promoted successfully"

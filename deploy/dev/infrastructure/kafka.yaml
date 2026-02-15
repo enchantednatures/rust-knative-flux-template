@@ -1,4 +1,4 @@
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 apiVersion: v1
 kind: Namespace
 metadata:

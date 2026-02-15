@@ -1,4 +1,4 @@
-{% if features contains "s3" %}
+{% if feature_s3 %}
 # S3/MinIO Integration Guide
 
 This template includes optional S3-compatible storage support via Apache OpenDAL, preconfigured with MinIO for local development.
@@ -410,7 +410,7 @@ Traces appear in Jaeger with operation details.
 This template was generated without S3 storage support. To add it later:
 
 1. Update `cargo-generate.toml` to include S3 option
-2. Re-generate the template with `if features contains "s3" = true`
+2. Re-generate the template with `if feature_s3 = true`
 
 Or manually:
 1. Add `opendal` dependency to `Cargo.toml`

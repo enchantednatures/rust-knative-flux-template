@@ -2,7 +2,7 @@
 
 This guide explains how to use Apache Kafka event sources with your Knative service.
 
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 ## Quick Start
 
 1. **Start development environment** (includes Kafka):
@@ -100,7 +100,7 @@ kubectl apply -f https://github.com/knative-extensions/eventing-kafka-broker/rel
 **Automatically deployed with `make dev-up`:**
 - **Namespace**: `kafka`
 - **Bootstrap servers**: `kafka.kafka.svc.cluster.local:9092`
-{% if event_sources contains "kafka" %}
+{% if event_source_kafka %}
 - **Topic**: `{{ kafka_topic }}`
 {% endif %}
 - **Partitions**: 3

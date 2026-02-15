@@ -1,4 +1,4 @@
-{% if features contains "s3" %}
+{% if feature_s3 %}
 apiVersion: v1
 kind: Namespace
 metadata:

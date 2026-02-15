@@ -46,7 +46,7 @@ curl http://localhost:8080/health/live
 
 **Checks**:
 - Redis connection
-{% if features contains "s3" %}- S3/MinIO connectivity{% endif %}
+{% if feature_s3 %}- S3/MinIO connectivity{% endif %}
 
 **Response on Success**: 200 OK
 
@@ -59,7 +59,7 @@ curl http://localhost:8080/health/ready
 {
   "status": "ready",
   "checks": {
-    "redis": "healthy"{% if features contains "s3" %},
+    "redis": "healthy"{% if feature_s3 %},
     "s3": "healthy"{% endif %}
   },
   "timestamp": "2024-01-15T10:30:45Z"
@@ -72,7 +72,7 @@ curl http://localhost:8080/health/ready
 {
   "status": "not_ready",
   "checks": {
-    "redis": "unhealthy"{% if features contains "s3" %},
+    "redis": "unhealthy"{% if feature_s3 %},
     "s3": "healthy"{% endif %}
   },
   "error": "Redis connection failed",
@@ -125,7 +125,7 @@ http_request_total{method="GET",path="/health/live",status="200"} 45
 
 ---
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 
 ## Storage Endpoints
 
@@ -560,7 +560,7 @@ Default timeout behavior:
 |-----------|---------|-------|
 | HTTP Request | 30s | Configurable via middleware |
 | Redis Operation | 5s | Connection timeout |
-{% if features contains "s3" %}| S3 Operation | 30s | OpenDAL default |{% endif %}
+{% if feature_s3 %}| S3 Operation | 30s | OpenDAL default |{% endif %}
 | Readiness Check | 5s | Kubernetes probe timeout |
 
 ---
@@ -569,7 +569,7 @@ Default timeout behavior:
 
 ### cURL
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 ```bash
 # Upload
 curl -X POST http://localhost:8080/api/upload \
@@ -598,7 +598,7 @@ curl http://localhost:8080/metrics
 
 ### JavaScript/Node.js
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 ```javascript
 // Upload
 const response = await fetch('http://localhost:8080/api/upload', {
@@ -637,7 +637,7 @@ const metrics = await fetch('http://localhost:8080/metrics')
 
 ### Python
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 ```python
 import requests
 import base64
@@ -676,7 +676,7 @@ metrics = requests.get('http://localhost:8080/metrics').text
 
 ### Rust
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 ```rust
 use reqwest::Client;
 use serde_json::json;

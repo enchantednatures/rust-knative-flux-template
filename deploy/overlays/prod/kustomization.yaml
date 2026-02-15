@@ -6,6 +6,17 @@ namespace: production
 resources:
   - ../../base
 
+components:
+  {% if feature_postgres %}
+  - ../../components/postgres
+  {% endif %}
+  {% if event_source_kafka %}
+  - ../../components/kafka
+  {% endif %}
+  {% if feature_flagger %}
+  - ../../components/flagger
+  {% endif %}
+
 patches:
   - target:
       kind: Service
@@ -29,8 +40,15 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
+  {% if event_source_kafka %}
+  - path: kafka-source-patch.yaml
+  {% endif %}
+  {% if feature_postgres %}
+  - path: postgres-cluster-patch.yaml
+  - path: postgres-backup-patch.yaml
+  {% endif %}
 
- {% if features contains "s3" %}
+ {% if feature_s3 %}
 # Production S3 configuration (typically AWS S3 or managed MinIO)
 configMapGenerator:
   - name: s3-config
@@ -40,9 +58,3 @@ configMapGenerator:
       - S3_BUCKET=data-prod
       - S3_REGION=us-east-1
  {% endif %}
-
-{% if event_sources contains "kafka" %}
-patchesStrategicMerge:
-  - kafka-source-patch.yaml
-{% endif %}
-

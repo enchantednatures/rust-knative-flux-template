@@ -147,13 +147,14 @@ main() {
     
     log_info "Checking Phase 2 - Base Manifests..."
     
-    check_file_exists "deploy/base/postgres-cluster.yaml.liquid"
-    check_file_exists "deploy/base/postgres-backup.yaml.liquid"
-    check_file_exists "deploy/base/postgres-pooler.yaml.liquid"
-    check_file_exists "deploy/base/postgres-alerts.yaml.liquid"
-    check_file_exists "deploy/base/postgres-podmonitor.yaml.liquid"
-    check_file_exists "deploy/base/postgres-objectstore.yaml.liquid"
-    check_file_exists "deploy/base/object-storage-secret.yaml.example"
+    check_file_exists "deploy/components/postgres/kustomization.yaml"
+    check_file_exists "deploy/components/postgres/postgres-cluster.yaml"
+    check_file_exists "deploy/components/postgres/postgres-backup.yaml"
+    check_file_exists "deploy/components/postgres/postgres-pooler.yaml"
+    check_file_exists "deploy/components/postgres/postgres-alerts.yaml"
+    check_file_exists "deploy/components/postgres/postgres-podmonitor.yaml"
+    check_file_exists "deploy/components/postgres/postgres-objectstore.yaml"
+    check_file_exists "deploy/components/operator/kustomization.yaml"
     
     # ========================================================================
     # Phase 2: FluxCD Integration
@@ -162,7 +163,7 @@ main() {
     log_info "Checking Phase 2 - FluxCD Integration..."
     
     check_file_exists "deploy/flux/git-repository-postgres.yaml"
-    check_file_exists "deploy/flux/postgres-kustomization.yaml.liquid"
+    check_file_exists "deploy/flux/postgres-kustomization.yaml"
     
     # ========================================================================
     # Phase 3: Environment Overlays
@@ -174,9 +175,13 @@ main() {
         log_info "Validating $env environment..."
         
         check_file_exists "deploy/overlays/$env/kustomization.yaml"
-        check_file_exists "deploy/overlays/$env/postgres-cluster-patch.yaml.liquid"
-        check_file_exists "deploy/overlays/$env/postgres-backup-patch.yaml.liquid"
-        check_file_exists "deploy/overlays/$env/infrastructure/minio.yaml"
+        check_file_exists "deploy/overlays/$env/postgres-cluster-patch.yaml"
+        check_file_exists "deploy/overlays/$env/postgres-backup-patch.yaml"
+        
+        # MinIO only exists in dev environment
+        if [[ "$env" == "dev" ]]; then
+            check_file_exists "deploy/overlays/$env/infrastructure/minio.yaml"
+        fi
         
         # Kustomization check
         check_kustomization "deploy/overlays/$env"

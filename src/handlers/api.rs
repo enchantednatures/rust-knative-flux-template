@@ -4,7 +4,7 @@ use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::state::AppState;
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 use std::sync::Arc;
 {%- endif %}
 
@@ -44,7 +44,7 @@ pub async fn hello(
 ) -> Json<HelloResponse> {
     let name = query.name.unwrap_or_else(|| "World".into());
 
-    {%- if features contains "kafka" %}
+    {%- if feature_kafka %}
     // Publish event to Kafka asynchronously (non-blocking)
     if let Some(publisher) = &_state.kafka_publisher {
         let publisher = Arc::clone(publisher);

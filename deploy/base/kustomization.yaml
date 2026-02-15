@@ -3,20 +3,14 @@ kind: Kustomization
 
 resources:
   - knative-service.yaml
-  {% if event_sources contains "kafka" %}
-  - kafka-source.yaml
-  - dlq-handler.yaml
-  {% endif %}
-  {% if features contains "postgres" %}
-  - postgres-objectstore.yaml
-  - postgres-cluster.yaml
-  - postgres-backup.yaml
-  - postgres-podmonitor.yaml
-  - postgres-alerts.yaml
-  {% endif %}
   # NOTE: secret.yaml is NOT included here
   # Users must create it from secret.yaml.example
   # This prevents accidental commits of secrets to git
+
+# Components (optional features) are included via overlays
+# - deploy/components/postgres - PostgreSQL cluster with backup
+# - deploy/components/kafka - Kafka event source with DLQ handler
+# - deploy/components/operator - CloudNativePG operator (local dev only)
 
 commonAnnotations:
   kustomize.config.k8s.io/version: "5.0"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCENARIO="${1}"
-if features contains "s3"="${2}"
+if feature_s3="${2}"
 
 # Use scenario-specific kubeconfig
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,7 +76,7 @@ run_test "CloudEvent with complex data" \
     -d @tests/e2e/fixtures/cloudevents/data-event.json > /dev/null" || ((FAILED++))
 
 # Test 8: S3 storage example endpoint (conditional)
-if [ "$if features contains "s3"" = "true" ]; then
+if [ "$if feature_s3" = "true" ]; then
   echo ""
   echo "Test: S3 storage example endpoint..."
   RESPONSE=$(curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")

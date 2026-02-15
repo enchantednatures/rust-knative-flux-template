@@ -1,4 +1,4 @@
-{%- if features contains "s3" -%}
+{%- if feature_s3 -%}
 use opendal::Operator;
 {%- endif %}
 
@@ -20,19 +20,19 @@ pub async fn create_test_state() -> AppState {
     let metrics_handle = {{ crate_name }}::observability::init_metrics()
         .expect("Failed to initialize metrics");
 
-{%- if features contains "s3" and features contains "kafka" %}
+{%- if feature_s3 and feature_kafka %}
     let storage = create_test_storage();
     AppState::new(conn, storage, None, metrics_handle)
-{%- elsif features contains "s3" %}
+{%- elsif feature_s3 %}
     let storage = create_test_storage();
     AppState::new(conn, storage, metrics_handle)
-{%- elsif features contains "kafka" %}
+{%- elsif feature_kafka %}
     AppState::new(conn, None, metrics_handle)
 {%- else %}
     AppState::new(conn, metrics_handle)
 {%- endif %}
 }
-{%- if features contains "s3" %}
+{%- if feature_s3 %}
 
 /// Create a test storage operator pointing to local MinIO
 fn create_test_storage() -> Operator {

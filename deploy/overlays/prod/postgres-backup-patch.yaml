@@ -24,15 +24,13 @@ spec:
       secretAccessKey:
         name: postgres-backup-storage
         key: ACCESS_SECRET_KEY
-  
-  # Production: extended retention (configurable via template)
-  retentionPolicy: "{{ backup_retention_prod }}d"
-  
-  # Production: maximum compression (zstd)
-  configuration:
+    # Production: maximum compression (zstd)
     data:
       compression: zstd
       jobs: 4
     wal:
       compression: zstd
       maxParallel: 8
+  
+  # Production: extended retention (configurable via template)
+  retentionPolicy: "{{ backup_retention_prod }}d"

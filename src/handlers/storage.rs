@@ -1,4 +1,4 @@
-{% if features contains "s3" -%}
+{% if feature_s3 -%}
 //! S3 storage example endpoint
 //!
 //! Demonstrates OpenDAL usage for S3 operations
@@ -9,7 +9,7 @@ use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::{error::AppError, state::AppState};
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 use std::sync::Arc;
 {%- endif %}
 
@@ -98,7 +98,7 @@ pub async fn storage_example(
 
     tracing::debug!(key = %key, "Cleaned up test file");
 
-    {%- if features contains "kafka" %}
+    {%- if feature_kafka %}
     // Publish event to Kafka asynchronously (non-blocking)
     if let Some(publisher) = &state.kafka_publisher {
         let publisher = Arc::clone(publisher);

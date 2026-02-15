@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCENARIO="${1}"
-if features contains "s3"="${2}"
+if feature_s3="${2}"
 
 echo "Installing cargo-generate..."
 cargo install cargo-generate --locked
@@ -14,7 +14,7 @@ echo "Generating template: ${SCENARIO}..."
 cargo generate \
   --path "$OLDPWD" \
   --name "example-app-${SCENARIO}" \
-  --define "if features contains "s3"=${if features contains "s3"}" \
+  --define "if feature_s3=${if feature_s3}" \
   --define enable_image_updates=false \
   --define target_namespace=default \
   --define github_org=enchantednatures \
@@ -37,7 +37,7 @@ test -f "${GENERATED_DIR}/Cargo.toml" || { echo "ERROR: Cargo.toml missing"; exi
 test -f "${GENERATED_DIR}/Dockerfile" || { echo "ERROR: Dockerfile missing"; exit 1; }
 test -d "${GENERATED_DIR}/deploy" || { echo "ERROR: deploy/ missing"; exit 1; }
 
-if [ "$if features contains "s3"" = "true" ]; then
+if [ "$if feature_s3" = "true" ]; then
   grep -q "opendal" "${GENERATED_DIR}/Cargo.toml" || {
     echo "ERROR: opendal dependency missing in S3 scenario"
     exit 1
@@ -84,7 +84,7 @@ if [ -n "$DIFF_OUTPUT" ]; then
   echo ""
   echo "This means the examples/ directory is out of sync with the template."
   echo "Please regenerate examples by running:"
-  echo "  cargo generate --path . --name ${SCENARIO} --define if features contains "s3"=${if features contains "s3"}"
+  echo "  cargo generate --path . --name ${SCENARIO} --define if feature_s3=${if feature_s3}"
   echo "  rm -rf examples/${SCENARIO}"
   echo "  mv ${SCENARIO} examples/"
   exit 1

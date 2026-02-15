@@ -1,4 +1,4 @@
-{%- if features contains "s3" -%}
+{%- if feature_s3 -%}
 //! S3-compatible storage integration tests
 //!
 //! These tests require MinIO running locally:

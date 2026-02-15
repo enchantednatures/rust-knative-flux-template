@@ -21,7 +21,7 @@ use crate::state::AppState;
         health::readiness,
         health::metrics,
         api::hello,
-        {%- if features contains "s3" %}
+        {%- if feature_s3 %}
         crate::handlers::storage::storage_example,
         {%- endif %}
     ),
@@ -30,7 +30,7 @@ use crate::state::AppState;
             health::HealthResponse,
             api::HelloResponse,
             api::HelloQuery,
-            {%- if features contains "s3" %}
+            {%- if feature_s3 %}
             crate::handlers::storage::StorageTestData,
             crate::handlers::storage::StorageExampleResponse,
             {%- endif %}
@@ -39,7 +39,7 @@ use crate::state::AppState;
     tags(
         (name = "Health", description = "Health check endpoints"),
         (name = "API", description = "Application endpoints"),
-        {%- if features contains "s3" %}
+        {%- if feature_s3 %}
         (name = "Storage", description = "S3 storage examples"),
         {%- endif %}
     ),
@@ -81,7 +81,7 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 fn api_v1_routes() -> Router<AppState> {
-    {%- if features contains "s3" %}
+    {%- if feature_s3 %}
     Router::new().route("/hello", get(api::hello)).route(
         "/storage/example",
         post(crate::handlers::storage::storage_example),

@@ -4,7 +4,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-{%- if features contains "s3" %}
+{%- if feature_s3 %}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3Config {
@@ -18,7 +18,7 @@ pub struct S3Config {
 }
 {%- endif %}
 
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KafkaConfig {
     /// Kafka broker URL (e.g., "kafka.kafka.svc.cluster.local:9092")
@@ -66,10 +66,10 @@ pub struct Config {
     pub server: ServerConfig,
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
-    {%- if features contains "s3" %}
+    {%- if feature_s3 %}
      pub s3: S3Config,
      {%- endif %}
-     {%- if features contains "kafka" %}
+     {%- if feature_kafka %}
      pub kafka: Option<KafkaConfig>,
      {%- endif %}
 }
@@ -112,14 +112,14 @@ impl Default for Config {
                 service_name: "{{ project_name }}".into(),
                 log_level: "info".into(),
             },
-            {%- if features contains "s3" %}
+            {%- if feature_s3 %}
             s3: S3Config {
                 endpoint: "http://localhost:9000".into(),
                 bucket: "data".into(),
                 region: "us-east-1".into(),
              },
              {%- endif %}
-             {%- if features contains "kafka" %}
+             {%- if feature_kafka %}
              kafka: None,
              {%- endif %}
         }
@@ -136,7 +136,7 @@ impl Config {
     /// - APP__SERVER__PORT=9000
      /// - APP__REDIS__URL=redis://:password@host:6379/0
      /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
-     {%- if features contains "kafka" %}
+     {%- if feature_kafka %}
      /// - APP__KAFKA__BROKER_URL=kafka.kafka.svc.cluster.local:9092
      /// - APP__KAFKA__TOPIC=events
      /// - APP__KAFKA__EVENT_NAME=com.example.service.event.published
@@ -175,7 +175,7 @@ impl Config {
             return Err(figment::Error::from("server.port must be non-zero"));
         }
 
-        {%- if features contains "s3" %}
+        {%- if feature_s3 %}
 
         if self.s3.endpoint.is_empty() {
             return Err(figment::Error::from(
@@ -190,7 +190,7 @@ impl Config {
          }
          {%- endif %}
 
-         {%- if features contains "kafka" %}
+         {%- if feature_kafka %}
          if let Some(kafka) = &self.kafka {
              kafka.validate()?;
          }
@@ -200,7 +200,7 @@ impl Config {
      }
  }
 
- {%- if features contains "kafka" %}
+ {%- if feature_kafka %}
  impl KafkaConfig {
     /// Validate Kafka configuration
     /// Ensures required fields are non-empty and optional fields are within valid ranges

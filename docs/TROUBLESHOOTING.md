@@ -57,7 +57,7 @@ grep -r "redis://" config/
 # Should show: redis://redis.services.svc.cluster.local:6379 (in-cluster)
 ```
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 
 ### MinIO Connection Failed
 
@@ -354,7 +354,7 @@ kubectl create configmap {{ project_name }}-config \
 ```bash
 kubectl create secret generic {{ project_name }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  {% if features contains "s3" %}--from-literal=aws-access-key-id='YOUR_KEY' \
+  {% if feature_s3 %}--from-literal=aws-access-key-id='YOUR_KEY' \
   --from-literal=aws-secret-access-key='YOUR_SECRET' \
   {% endif %}
   -n {{ project_name }}
@@ -402,7 +402,7 @@ export APP__REDIS__TIMEOUT_SECS=10
 redis-cli -h <redis-host> -p 6379 CLIENT LIST
 ```
 
-{% if features contains "s3" %}
+{% if feature_s3 %}
 
 ### S3 Access Denied
 
@@ -676,7 +676,7 @@ resources:
 4. Optimize code:
 - Use references instead of cloning
 - Stream large data instead of loading into memory
-- Use connection pooling{% if features contains "s3" %}
+- Use connection pooling{% if feature_s3 %}
 - Buffer S3 uploads/downloads{% endif %}
 
 ### Database Connection Pool Exhaustion
@@ -788,7 +788,7 @@ nslookup redis
 
 # Test connectivity
 nc -zv redis 6379
-{% if features contains "s3" %}
+{% if feature_s3 %}
 nc -zv s3.amazonaws.com 443
 {% endif %}
 ```

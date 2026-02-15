@@ -1,6 +1,6 @@
 use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
-{%- if features contains "kafka" %}
+{%- if feature_kafka %}
 use std::sync::Arc;
 {%- endif %}
 
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
             e
         })?;
     tracing::info!("Redis connection established");
-    {%- if features contains "s3" %}
+    {%- if feature_s3 %}
     // =========================================================================
     // 3b. Initialize S3-compatible Storage (OpenDAL)
     // =========================================================================
@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!("S3-compatible storage initialized");
     {%- endif %}
-    {%- if features contains "kafka" %}
+    {%- if feature_kafka %}
 
     // =========================================================================
     // 3c. Initialize Kafka Publisher (Event Publishing)
@@ -94,14 +94,14 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // 4. Build Application State
     // =========================================================================
-    {%- if features contains "s3" %}
-    {%- if features contains "kafka" %}
+    {%- if feature_s3 %}
+    {%- if feature_kafka %}
     let state = AppState::new(redis_conn, storage, kafka_publisher, metrics_handle);
     {%- else %}
     let state = AppState::new(redis_conn, storage, metrics_handle);
     {%- endif %}
     {%- else %}
-    {%- if features contains "kafka" %}
+    {%- if feature_kafka %}
     let state = AppState::new(redis_conn, kafka_publisher, metrics_handle);
     {%- else %}
     let state = AppState::new(redis_conn, metrics_handle);

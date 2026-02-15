@@ -642,6 +642,113 @@ The `scripts/dev/build-and-deploy.sh` script:
 
 **No imagePullSecrets needed** for local development!
 
+## Deployment Structure
+
+The template uses a modern Kustomize component-based architecture for deployments:
+
+### Directory Structure
+
+```
+deploy/
+├── base/                    # Core application manifests
+│   └── knative-service.yaml # Only the Knative service (no infra)
+├── components/              # Optional feature components (Kustomize Components)
+│   ├── operator/           # CloudNativePG operator (local dev only)
+│   │   └── kustomization.yaml
+│   ├── postgres/           # PostgreSQL cluster resources
+│   │   ├── kustomization.yaml
+│   │   ├── cluster.yaml
+│   │   ├── backup.yaml
+│   │   ├── objectstore.yaml
+│   │   └── ...
+│   └── kafka/              # Kafka event source resources
+│       ├── kustomization.yaml
+│       ├── kafka-source.yaml
+│       └── dlq-handler.yaml
+└── overlays/               # Environment-specific configurations
+    ├── dev/                # Local development
+    │   ├── kustomization.yaml  # Includes: operator, postgres, kafka
+    │   └── patches/
+    ├── staging/            # Staging environment
+    │   ├── kustomization.yaml  # Includes: postgres, kafka (NO operator)
+    │   └── patches/
+    └── prod/               # Production environment
+        ├── kustomization.yaml  # Includes: postgres, kafka (NO operator)
+        └── patches/
+```
+
+### Component-Based Architecture
+
+**Key Benefits:**
+- **Modular**: Features are opt-in via components
+- **Environment-aware**: Dev includes operator, prod/staging assumes pre-installed
+- **GitOps-ready**: Components can be selectively enabled in FluxCD Kustomizations
+- **Maintainable**: Changes to postgres/kafka isolated to their components
+
+**Usage in Overlays:**
+
+```yaml
+# deploy/overlays/dev/kustomization.yaml (Local Development)
+components:
+  - ../../components/operator   # Install CNPG operator for local dev
+  - ../../components/postgres   # Deploy PostgreSQL cluster
+  - ../../components/kafka      # Deploy Kafka event source
+
+# deploy/overlays/prod/kustomization.yaml (Production)
+components:
+  - ../../components/postgres   # Deploy PostgreSQL cluster only
+  - ../../components/kafka      # Deploy Kafka event source only
+  # NO operator component - assumes cluster-wide operator pre-installed
+```
+
+### CNPG Operator Installation
+
+**Critical**: Beyond local development, the CloudNativePG operator should be installed **cluster-wide** via your cluster management tooling (Flux, ArgoCD, Terraform, etc.), not per-application.
+
+- **Local dev (`dev` overlay)**: Includes `components/operator` to install CNPG operator
+- **Staging/Prod (`staging`/`prod` overlays)**: Assumes operator already installed, only includes `components/postgres`
+
+This prevents:
+- Multiple operator installations (one per namespace)
+- Version conflicts between applications
+- Unnecessary resource duplication
+- Deployment failures when operator CRDs are missing
+
+**For production clusters**, install the operator separately:
+
+```yaml
+# Example: FluxCD HelmRelease for cluster-wide operator
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: cloudnative-pg
+  namespace: cnpg-system
+spec:
+  chart:
+    spec:
+      chart: cloudnative-pg
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+```
+
+Or via Kustomization:
+
+```yaml
+# Example: FluxCD Kustomization for cluster-wide operator
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cnpg-operator
+  namespace: flux-system
+spec:
+  path: ./deploy/infrastructure/cloudnative-pg/operator
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+```
+
 ## Configuration
 
 - Use `figment` for hierarchical config (TOML files + env vars)
@@ -665,6 +772,108 @@ Examples:
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
+- Flagger >=1.38.0 (optional, `flagger` feature flag), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
+
+## Flagger Canary Release Promotion
+
+When `feature_flagger` is selected during `cargo generate`, the template adds automated canary release promotion via [Flagger](https://flagger.app).
+
+### Architecture
+
+```
+FluxCD GitRepository
+  └── FluxCD Kustomization (flagger)
+        └── deploy/infrastructure/flagger/operator/
+              ├── namespace.yaml           # flagger-system namespace
+              ├── helmrepository.yaml      # flagger.app Helm repo
+              └── helmrelease.yaml         # Flagger operator + loadtester
+
+FluxCD Kustomization (app) dependsOn (flagger)
+  └── deploy/overlays/staging|prod/
+        └── components/flagger/            # Kustomize Component
+              ├── canary.yaml              # Canary CRD (wraps KnativeService)
+              └── metric-templates.yaml    # Prometheus MetricTemplate CRDs
+```
+
+### How It Works
+
+1. **Developer pushes** a new image tag; Flux ImageUpdateAutomation updates `knative-service.yaml`
+2. **Flux reconciles** — applies the updated KnativeService, creating a new Knative revision
+3. **Flagger detects** the new revision and starts canary analysis
+4. **Traffic shifts** 10% → 20% → ... → 50% in 1-minute steps
+5. **Metric gates** evaluated each step:
+   - HTTP success rate ≥ `canary_success_rate_threshold`% (default 99%)
+   - p99 latency ≤ `canary_latency_threshold_ms`ms (default 500ms)
+   - Custom app metric ≥ 0 (placeholder — fill in with your business KPI)
+6. **Promotion**: after 5 passing steps at maxWeight (50%), Flagger shifts 100% to the new revision
+7. **Rollback**: if any metric gate fails `threshold` (5) consecutive times, Flagger rolls back to the primary revision and fires an alert
+
+### Template Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `canary_success_rate_threshold` | `99` | Min HTTP success rate % |
+| `canary_latency_threshold_ms` | `500` | Max p99 latency in ms |
+
+### Operator Installation
+
+Flagger is cluster-wide — install once via `deploy/flux/flagger-kustomization.yaml`.
+The app FluxCD Kustomization should declare `dependsOn: [{name: flagger}]` to ensure
+CRDs exist before Canary objects are applied.
+
+**Do NOT install Flagger per-application namespace** — it will conflict with an existing
+cluster-wide installation.
+
+### Monitoring Canary Progress
+
+```bash
+# Watch canary status in real time
+kubectl describe canary <service-name> -n <namespace>
+
+# Check Flagger logs
+kubectl logs -n flagger-system deploy/flagger -f
+
+# Check load tester
+kubectl logs -n flagger-system deploy/flagger-loadtester -f
+
+# Manually pause a canary (halts traffic shifting until resumed)
+kubectl annotate canary/<service-name> flagger.app/canary.paused="true" -n <namespace>
+
+# Resume a paused canary
+kubectl annotate canary/<service-name> flagger.app/canary.paused- -n <namespace>
+```
+
+### Customizing Metric Gates
+
+Edit `deploy/components/flagger/metric-templates.yaml` to:
+- Change the Prometheus address (default: `http://prometheus.observability.svc.cluster.local:9090`)
+- Update the custom metric PromQL query with your business KPI
+- Add additional MetricTemplates for extra gates
+
+Edit `deploy/components/flagger/canary.yaml` to:
+- Adjust `stepWeight` (default 10%), `maxWeight` (default 50%), `interval` (default 1m)
+- Change `threshold` (default 5 consecutive failures before rollback)
+- Add/remove metric gates
+- Configure notification webhooks (Slack, PagerDuty, etc.)
+
+### File Structure
+
+```
+deploy/
+├── components/flagger/
+│   ├── kustomization.yaml       # Kustomize Component declaration
+│   ├── canary.yaml              # Flagger Canary CRD
+│   └── metric-templates.yaml   # Prometheus MetricTemplate CRDs
+├── infrastructure/flagger/
+│   └── operator/
+│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease
+│       ├── namespace.yaml       # flagger-system namespace
+│       ├── helmrepository.yaml  # flagger.app Helm chart repository
+│       └── helmrelease.yaml     # Flagger + loadtester HelmReleases
+└── flux/
+    └── flagger-kustomization.yaml  # FluxCD Kustomization for the operator
+```
 
 ## Recent Changes
 - 001-cloudnative-postgres-backups: Added Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen
+- flagger-canary: Added opt-in Flagger canary release promotion with Knative provider, Prometheus metric gates (success rate + p99 latency + custom), and FluxCD HelmRelease operator lifecycle management
