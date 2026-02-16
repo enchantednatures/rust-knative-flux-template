@@ -31,12 +31,10 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: {% raw %}${{ github.ref }}{% endraw %}
-          release_name: Release {% raw %}${{ github.ref }}{% endraw %}
+          name: Release {% raw %}${{ steps.get_version.outputs.version }}{% endraw %}
           body: |
             ## Release {% raw %}${{ steps.get_version.outputs.version }}{% endraw %}
             
@@ -106,6 +104,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          # Note: RUST_BASE_IMAGE_TAG=release assumes rust:release exists
+          # If not available, the Dockerfile's ARG default (1.92-slim) is used
           build-args: |
             RUST_BASE_IMAGE_TAG=release
 

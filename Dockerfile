@@ -2,6 +2,8 @@
 # Stage 1: Chef - Prepare dependency recipe
 # ==============================================================================
 # ARG for selecting base image tag (defaults to version, but 'release' preferred for releases)
+# Note: If rust:release doesn't exist, the default version tag is used
+# The release workflow passes RUST_BASE_IMAGE_TAG=release for production builds
 ARG RUST_BASE_IMAGE_TAG=1.92-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS chef
