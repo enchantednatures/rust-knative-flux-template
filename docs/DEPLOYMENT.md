@@ -32,7 +32,7 @@ When generating a project from this template, you'll be prompted for a `project_
 
 **Why This Matters**: Knative Services **cannot** contain underscores in their names. Using underscores will cause `ImagePullBackOff` errors because the image tag won't match the service name. The template handles this normalization automatically.
 
-> **For Detailed Information**: See the "Naming Conventions" section in `AGENTS.md` for comprehensive documentation on how naming works across all template files, common issues, and solutions.
+> **For Detailed Information**: See the "Naming Conventions" section in [`../AGENTS.md`](../AGENTS.md) for comprehensive documentation on how naming works across all template files, common issues, and solutions.
 
 ## Table of Contents
 
