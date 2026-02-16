@@ -1,7 +1,10 @@
 # ==============================================================================
 # Stage 1: Chef - Prepare dependency recipe
 # ==============================================================================
-FROM rust:1.92-slim AS chef
+# ARG for selecting base image tag (defaults to version, but 'release' preferred for releases)
+ARG RUST_BASE_IMAGE_TAG=1.92-slim
+
+FROM rust:${RUST_BASE_IMAGE_TAG} AS chef
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
@@ -20,7 +23,9 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ==============================================================================
 # Stage 2: Build dependencies using chef recipe
 # ==============================================================================
-FROM rust:1.92-slim AS builder
+ARG RUST_BASE_IMAGE_TAG=1.92-slim
+
+FROM rust:${RUST_BASE_IMAGE_TAG} AS builder
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \

@@ -19,10 +19,30 @@ spec:
 
 ---
 # =============================================================================
+# ImagePolicy for release tag (stable deployments)
+# =============================================================================
+# This policy selects images tagged with 'release' for stable production deployments.
+# The release workflow automatically tags releases with 'release' in addition to semver.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-release
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_name | replace: "_", "-" }}
+  filterTags:
+    pattern: '^release$'
+  policy:
+    alphabetical:
+      order: asc
+
+---
+# =============================================================================
 # Alternative: ImagePolicy for SemVer releases
 # =============================================================================
 # Uncomment this if you prefer semantic versioning releases (e.g., v1.0.0)
-# instead of continuous deployment
+# instead of continuous deployment or the 'release' tag
 #
 # apiVersion: image.toolkit.fluxcd.io/v1beta2
 # kind: ImagePolicy
