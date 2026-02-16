@@ -1,557 +1,547 @@
 # PostgreSQL Operations Guide
 
-This guide provides comprehensive instructions for deploying, managing, and troubleshooting PostgreSQL clusters using CloudNativePG in Kubernetes environments.
+Complete guide for deploying, managing, and troubleshooting CloudNativePG PostgreSQL clusters in Kubernetes.
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Deployment](#deployment)
-4. [Configuration](#configuration)
-5. [Monitoring](#monitoring)
-6. [Troubleshooting](#troubleshooting)
-7. [Advanced Operations](#advanced-operations)
+1. [Quick Start](#quick-start)
+2. [Deployment](#deployment)
+3. [Configuration](#configuration)
+4. [Operations](#operations)
+5. [Troubleshooting](#troubleshooting)
+6. [Advanced Topics](#advanced-topics)
+7. [Best Practices](#best-practices)
 
-## Overview
+## Quick Start
 
-The PostgreSQL feature uses **CloudNativePG Operator** to manage PostgreSQL clusters in Kubernetes with:
+### 1. Deploy PostgreSQL Cluster
 
-- **High Availability**: Multi-replica deployment with automatic failover
-- **Automated Backups**: Scheduled backups to S3-compatible object storage
-- **Point-in-Time Recovery (PITR)**: Recover to any point in time via WAL archiving
-- **Monitoring**: Prometheus metrics and alerts for cluster health
-- **Security**: Encryption at rest and in transit, secret management via SOPS
+```bash
+# Deploy with dev configuration (1 instance, MinIO backups)
+make dev-up
 
-**Key Components**:
+# Or manually
+export KUBECONFIG=.kubeconfig-dev
+kubectl apply -k deploy/overlays/dev/
 
-- **CloudNativePG Operator 1.28.0**: Kubernetes operator for PostgreSQL management
-- **PostgreSQL 16**: Latest stable version
-- **Barman Cloud Plugin**: Backup and recovery management
-- **Object Storage**: MinIO (dev) or S3 (prod)
-- **FluxCD**: GitOps-based deployment and reconciliation
-
-## Architecture
-
-### Cluster Topology
-
-```
-PostgreSQL Cluster (replicated)
-├─ Primary (1)        # Handles read/write operations
-├─ Replica (2+)       # Read replicas, automatic failover candidates
-└─ PgBouncer Pooler   # Connection pooling (optional)
+# Wait for cluster to be ready (~2 minutes)
+./scripts/dev/check-postgres-status.sh
 ```
 
-### Storage
+### 2. Connect to PostgreSQL
 
-- **Data**: Kubernetes PersistentVolumes (configurable by environment)
-- **Backups**: S3-compatible object storage (MinIO/AWS S3)
-- **WAL Archiving**: Continuous streaming to object storage
+```bash
+# Port-forward from local machine
+./scripts/dev/port-forward-postgres.sh
 
-### Network
+# Connect with psql
+psql postgresql://app:PASSWORD@localhost:5432/app
 
-- **Internal**: Service-based DNS within cluster
-- **External**: Port forwarding for local development
-- **Security**: RBAC, network policies, TLS for connections
+# Or via kubectl
+kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
+```
+
+### 3. Create a Backup
+
+```bash
+# Trigger manual backup
+./scripts/dev/create-backup.sh
+
+# Check backup status
+./scripts/dev/check-backup-status.sh
+```
+
+### 4. Restore from Backup
+
+```bash
+# Restore to specific backup
+./scripts/dev/restore-from-backup.sh -b {{ project_name }}-postgres-backup-1704326400
+
+# Point-in-time restore
+./scripts/dev/restore-from-backup.sh -t "2024-01-03 15:30:00"
+```
 
 ## Deployment
 
 ### Prerequisites
 
-- Kubernetes cluster (1.28+)
-- `kubectl` configured to access cluster
-- For production: S3 credentials and bucket
+- Kubernetes cluster (Kind, EKS, GKE, etc.)
+- kubectl configured to access cluster
+- StorageClass with PVCs support
+- (Optional) Prometheus Operator for monitoring
 
-### Quick Start (Development)
+### Environment Configurations
 
-Deploy PostgreSQL cluster to development environment:
+| Environment | Cluster Size | Replication | Retention | Storage | Backups |
+|------------|-------------|-------------|-----------|---------|---------|
+| **dev** | 1 instance | async | 7 days | 20Gi | MinIO (gzip) |
+| **staging** | 2 instances | async | 14 days | 100Gi | S3 (zstd-3) |
+| **production** | 3 instances | quorum | 30 days | 200Gi | S3 (zstd-10, SSE-S3) |
 
-```bash
-# 1. Install CloudNativePG operator
-./scripts/dev/deploy-postgres.sh --install-operator
+### Deployment Steps
 
-# 2. Deploy cluster with MinIO backup storage
-./scripts/dev/deploy-postgres.sh
+1. **Set up infrastructure** (one-time):
+   ```bash
+   kubectl apply -k deploy/infrastructure/cloudnative-pg/operator/
+   ```
 
-# 3. Port-forward for local access
-./scripts/dev/port-forward-postgres.sh
+2. **Prepare environment overlay**:
+   ```bash
+   # Dev (already includes MinIO)
+   kubectl apply -k deploy/overlays/dev/
+   
+   # Staging
+   # First create object-storage-secret.yaml from example
+   cp deploy/base/object-storage-secret.yaml.example deploy/overlays/staging/
+   # Edit with staging credentials
+   sops -e -i deploy/overlays/staging/object-storage-secret.yaml
+   kubectl apply -k deploy/overlays/staging/
+   
+   # Production
+   # Similar process with production S3 credentials
+   ```
 
-# 4. Connect with psql
-psql -h localhost -U postgres -d postgres
-```
-
-### Environment-Specific Deployment
-
-Deploy to specific environment using overlay:
-
-```bash
-# Development (1 replica, 512Mi memory, 20Gi storage)
-kubectl apply -k deploy/overlays/dev
-
-# Staging (2 replicas, 1Gi memory, 100Gi storage)
-kubectl apply -k deploy/overlays/staging
-
-# Production (3 replicas, 2Gi memory, 200Gi storage)
-kubectl apply -k deploy/overlays/prod
-```
-
-### Verify Deployment
-
-Check cluster status:
-
-```bash
-# View cluster
-kubectl get cluster.postgresql.cnpg.io -A
-
-# Check pod status
-kubectl get pods -l app.kubernetes.io/name=postgresql
-
-# Detailed cluster info
-./scripts/dev/check-postgres-status.sh
-```
-
-Expected output:
-```
-PostgreSQL Cluster: app-postgres
-Status: Ready
-Primary: app-postgres-1
-Replicas: app-postgres-2, app-postgres-3
-Replication Lag: 0 (in sync)
-```
+3. **Verify deployment**:
+   ```bash
+   kubectl get cluster {{ project_name }}-postgres -o wide
+   kubectl get pods -l postgresql={{ project_name }}-postgres -o wide
+   ```
 
 ## Configuration
 
-### Environment Overlays
+### PostgreSQL Parameters
 
-Configuration varies by environment using Kustomization patches:
-
-#### Development (`deploy/overlays/dev/`)
+Core parameters are set in the base cluster manifest:
 
 ```yaml
-# Cluster patch
-replicas: 1
-resources:
-  requests:
-    cpu: 500m
-    memory: 512Mi
-storage:
-  size: 20Gi
-
-# Backup patch
-schedule: "0 3 * * *"      # 3 AM daily
-retention: 7d              # Keep 7 days
-compression: gzip
+postgresql:
+  parameters:
+    # Memory settings
+    shared_buffers: "2Gi"        # 25% of available memory
+    effective_cache_size: "6Gi"  # 75% of available memory
+    
+    # Connection settings
+    max_connections: "300"
+    
+    # Replication
+    synchronous_commit: "remote_apply"  # Production: zero data loss
+    synchronous_standby_names: "ANY 1 (*)"
+    
+    # Monitoring
+    log_min_duration_statement: "1000"  # Log queries > 1 second
+    shared_preload_libraries: "pg_stat_statements"
 ```
 
-#### Staging (`deploy/overlays/staging/`)
+### Environment-Specific Overrides
+
+Patches in `deploy/overlays/*/` allow environment-specific customization:
+
+- **Dev**: Minimal resources, async replication, single instance
+- **Staging**: Moderate resources, async replication, 2 instances
+- **Production**: Full resources, quorum replication, 3 instances
+
+### Storage Configuration
+
+By default, clusters use the default StorageClass. For production:
 
 ```yaml
-# Cluster patch
-replicas: 2
-resources:
-  requests:
-    cpu: 750m
-    memory: 1Gi
 storage:
-  size: 100Gi
-
-# Backup patch
-schedule: "0 2 * * *"      # 2 AM daily
-retention: 14d             # Keep 14 days
-compression: zstd          # Better compression
+  size: "200Gi"
+  storageClass: "fast-ssd"  # Use SSD for production
 ```
 
-#### Production (`deploy/overlays/prod/`)
+### Resource Limits
 
 ```yaml
-# Cluster patch
-replicas: 3
 resources:
   requests:
-    cpu: 1000m
-    memory: 2Gi
-storage:
-  size: 200Gi
-
-# Backup patch
-schedule: "0 2 * * *"      # 2 AM daily
-retention: 30d             # Keep 30 days
-compression: zstd          # Level 3 compression
-encryption: sse-s3         # Server-side encryption
+    cpu: "1"
+    memory: "2Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
 ```
 
-### Customizing Configuration
+## Operations
 
-Edit overlay patches to customize:
-
-1. **Resource Requests/Limits**
-   - File: `deploy/overlays/[env]/postgres-cluster-patch.yaml.liquid`
-   - Keys: `spec.resources.requests`, `spec.resources.limits`
-
-2. **Backup Schedule**
-   - File: `deploy/overlays/[env]/postgres-backup-patch.yaml.liquid`
-   - Key: `spec.schedule` (cron format)
-
-3. **Storage Size**
-   - File: `deploy/overlays/[env]/postgres-cluster-patch.yaml.liquid`
-   - Key: `spec.storage.size`
-
-4. **Retention Policy**
-   - File: `deploy/overlays/[env]/postgres-backup-patch.yaml.liquid`
-   - Key: `spec.retention` (e.g., `30d`, `180d`)
-
-### Secret Management
-
-PostgreSQL requires secrets for:
-
-1. **Object Storage Credentials** (for backups)
-2. **SSL Certificates** (optional, for encrypted connections)
-3. **Replication Password** (managed by CloudNativePG)
-
-#### Creating Object Storage Secret
-
-```bash
-# 1. Create from template
-cp deploy/base/object-storage-secret.yaml.example \
-   deploy/overlays/dev/object-storage-secret.yaml
-
-# 2. Edit with credentials
-nano deploy/overlays/dev/object-storage-secret.yaml
-
-# Example for MinIO (development):
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aws-creds
-type: Opaque
-stringData:
-  ACCESS_KEY_ID: minioadmin
-  SECRET_ACCESS_KEY: minioadmin
-  BUCKET_NAME: postgres-backups
-  ENDPOINT_URL: http://minio:9000
-
-# Example for AWS S3 (production):
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aws-creds
-type: Opaque
-stringData:
-  ACCESS_KEY_ID: "AKIA..."
-  SECRET_ACCESS_KEY: "..."
-  BUCKET_NAME: my-postgres-backups
-  ENDPOINT_URL: https://s3.us-east-1.amazonaws.com
-
-# 3. Encrypt with SOPS
-sops -e -i deploy/overlays/dev/object-storage-secret.yaml
-
-# 4. Add to kustomization
-# Uncomment in deploy/overlays/dev/kustomization.yaml:
-#   - object-storage-secret.yaml
-```
-
-## Connection
-
-### From Within Cluster
-
-**Service DNS**: `app-postgres.default.svc.cluster.local`
-
-```bash
-# Using psql
-psql -h app-postgres.default.svc.cluster.local -U postgres -d postgres
-
-# From pod
-kubectl exec -it app-postgres-1 -- psql -U postgres -d postgres
-```
-
-**Connection String**:
-```
-postgresql://postgres:password@app-postgres.default.svc.cluster.local:5432/postgres
-```
-
-### From Local Machine
-
-Use port-forward:
-
-```bash
-# 1. Start port-forward in background
-./scripts/dev/port-forward-postgres.sh &
-
-# 2. Connect locally
-psql -h localhost -U postgres -d postgres
-
-# 3. Stop port-forward
-killall kubectl
-```
-
-### From Application
-
-Update application config to connect to PostgreSQL:
-
-```toml
-# config.toml
-[database]
-url = "postgresql://postgres:{{ postgres_password }}@{{ postgres_host }}:5432/{{ postgres_db }}"
-min_connections = 5
-max_connections = 20
-connection_timeout_secs = 30
-```
-
-Environment variables override TOML:
-
-```bash
-export APP__DATABASE__URL="postgresql://..."
-export APP__DATABASE__MAX_CONNECTIONS=50
-```
-
-## Monitoring
-
-See [POSTGRES_MONITORING.md](POSTGRES_MONITORING.md) for detailed monitoring setup and dashboards.
-
-### Quick Health Check
+### Cluster Status
 
 ```bash
 # Check cluster status
-./scripts/dev/check-postgres-status.sh
+kubectl get cluster {{ project_name }}-postgres
 
-# View recent logs
-kubectl logs -l app.kubernetes.io/name=postgresql --tail=100
+# Detailed status
+kubectl describe cluster {{ project_name }}-postgres
 
-# Monitor metrics (if Prometheus installed)
-kubectl port-forward -n monitoring svc/prometheus 9090:9090
-# Visit http://localhost:9090 and search: cnpg_pg_*
+# Check instance status
+kubectl get pods -l postgresql={{ project_name }}-postgres
+
+# Streaming replication status
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
 ```
 
-## Troubleshooting
+### Scaling
 
-### Cluster Not Ready
-
-**Symptoms**: `Status: Not Ready` or pods in `Pending` state
-
-**Diagnosis**:
 ```bash
-# 1. Check pod events
-kubectl describe pod app-postgres-1
+# Scale to 2 instances
+kubectl patch cluster {{ project_name }}-postgres --type='json' -p='[{"op": "replace", "path": "/spec/instances", "value":2}]'
 
-# 2. Check logs
-kubectl logs app-postgres-1
-
-# 3. Check PVC status
-kubectl get pvc -l app=app-postgres
+# Verify scaling
+kubectl get pods -l postgresql={{ project_name }}-postgres --watch
 ```
 
-**Solutions**:
-- **Insufficient resources**: Increase node capacity or adjust resource requests
-- **Storage unavailable**: Check PVC and storage class
-- **Image pull error**: Verify image availability and credentials
+### Backup Operations
 
-### High Replication Lag
-
-**Symptoms**: `Replication Lag: >10s`
-
-**Causes**:
-- Network congestion
-- Heavy write load
-- Replica node under-resourced
-- WAL archiving bottleneck
-
-**Solutions**:
-```bash
-# 1. Check replica resource usage
-kubectl top pod app-postgres-2
-
-# 2. Scale up replica resources
-kubectl patch cluster app-postgres --type merge \
-  -p '{"spec":{"resources":{"limits":{"memory":"4Gi"}}}}'
-
-# 3. Check WAL archiving
-./scripts/dev/check-postgres-status.sh | grep "WAL"
-```
-
-### Backup Failures
-
-**Symptoms**: Backup job fails or backup missing from object storage
-
-**Diagnosis**:
-```bash
-# 1. Check backup job
-kubectl get backups -A
-
-# 2. View job logs
-kubectl logs job/app-postgres-backup-*
-
-# 3. Verify object storage credentials
-kubectl get secret aws-creds -o jsonpath='{.data.ENDPOINT_URL}' | base64 -d
-```
-
-**Solutions**:
-- **Wrong credentials**: Update secret with correct values
-- **Bucket doesn't exist**: Create bucket in object storage
-- **Network unreachable**: Check network policies and security groups
-
-### Connection Refused
-
-**Symptoms**: `psql: could not connect to server: Connection refused`
-
-**Diagnosis**:
-```bash
-# 1. Check service exists
-kubectl get svc app-postgres
-
-# 2. Check port-forward (if using)
-ps aux | grep "kubectl port-forward"
-
-# 3. Test connectivity from pod
-kubectl run -it --rm test --image=postgres:16 --restart=Never -- \
-  pg_isready -h app-postgres -p 5432
-```
-
-**Solutions**:
-- Restart port-forward: `./scripts/dev/port-forward-postgres.sh`
-- Verify service DNS: `nslookup app-postgres.default.svc.cluster.local`
-- Check network policies: `kubectl get networkpolicies`
-
-## Advanced Operations
-
-### Manual Backup
-
-Create ad-hoc backup outside schedule:
+#### Manual Backup
 
 ```bash
+# Create on-demand backup
 ./scripts/dev/create-backup.sh
 
 # Monitor backup progress
 ./scripts/dev/check-backup-status.sh
-```
 
-### List Available Backups
-
-```bash
+# List all backups in object storage
 ./scripts/dev/list-backups.sh
 ```
 
-### Point-in-Time Recovery (PITR)
+#### Scheduled Backups
 
-Restore cluster to specific point in time:
+Defined in `postgres-backup.yaml`:
 
-```bash
-./scripts/dev/restore-from-backup.sh --timestamp "2024-01-03 10:30:00"
+```yaml
+schedule: "0 2 * * *"  # Daily at 2 AM UTC
+target: prefer-standby  # Use standby to reduce primary load
 ```
 
-See [POSTGRES_BACKUP_RESTORE.md](POSTGRES_BACKUP_RESTORE.md) for detailed restore procedures.
+Retention policies are defined in ObjectStore CRD:
 
-### Scaling Replicas
-
-Add or remove read replicas:
-
-```bash
-# Scale to 2 replicas
-kubectl patch cluster app-postgres \
-  -p '{"spec":{"instances":2}}' --type merge
-
-# Scale to 5 replicas
-kubectl patch cluster app-postgres \
-  -p '{"spec":{"instances":5}}' --type merge
-
-# Monitor scaling
-kubectl get pods -w
+```yaml
+retentionPolicy:
+  base: 30     # Keep base backups for 30 days
+  wal: 15      # Keep WAL files for 15 days
 ```
 
-### Accessing Primary Directly
+### Restore Operations
+
+#### From Specific Backup
 
 ```bash
-# Get primary pod name
-PRIMARY=$(kubectl get cluster app-postgres \
-  -o jsonpath='{.status.currentPrimary}')
+# Find backup name
+./scripts/dev/check-backup-status.sh
 
-# Connect to primary
-kubectl exec -it ${PRIMARY} -- psql -U postgres -d postgres
+# Restore to new cluster
+./scripts/dev/restore-from-backup.sh -b <BACKUP_NAME> -n restored-cluster
+
+# Verify restore
+kubectl exec restored-cluster-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
 ```
 
-### Database Maintenance
-
-Perform maintenance operations:
+#### Point-in-Time Recovery
 
 ```bash
-# Connect to cluster
-kubectl exec -it app-postgres-1 -- psql -U postgres
+# Restore to specific timestamp
+./scripts/dev/restore-from-backup.sh -t "2024-01-03 15:30:00" -n pitr-cluster
 
-# Inside psql:
--- Vacuum (cleanup dead tuples)
-VACUUM ANALYZE;
-
--- Check table sizes
-SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) 
-FROM pg_tables 
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
-
--- View connections
-SELECT pid, usename, application_name, state FROM pg_stat_activity;
+# Verification after PITR
+kubectl exec pitr-cluster-1 -- psql -U postgres -d app -c "SELECT NOW();"
 ```
 
-### Enabling Extensions
+### High Availability
 
-Enable PostgreSQL extensions:
+#### Automatic Failover
+
+CloudNativePG automatically promotes standby if primary fails:
+
+1. Primary pod becomes unavailable
+2. Operator detects failure (typically < 30 seconds)
+3. Standby automatically promoted to primary
+4. Applications automatically fail over (within connection timeout)
+
+Monitor failovers:
 
 ```bash
-# Connect to cluster
-kubectl exec -it app-postgres-1 -- psql -U postgres
+# Watch cluster events
+kubectl get events -n default --sort-by='.lastTimestamp' | tail -20
 
-# Inside psql:
-CREATE EXTENSION pg_stat_statements;
-CREATE EXTENSION postgis;
-CREATE EXTENSION uuid-ossp;
+# Check cluster logs for failover
+kubectl logs {{ project_name }}-postgres-1 | grep -i "failover\|promote"
+```
 
--- List installed extensions
-\dx
+#### Manual Failover
+
+```bash
+# Delete primary pod (forces failover)
+kubectl delete pod {{ project_name }}-postgres-1
+
+# Verify new primary elected
+./scripts/dev/check-postgres-status.sh
+```
+
+### Monitoring
+
+See [POSTGRES_MONITORING.md](POSTGRES_MONITORING.md) for:
+
+- Metrics collection and PodMonitor configuration
+- Alert rules and firing conditions
+- Grafana dashboard setup
+- Troubleshooting and performance tuning
+
+### Upgrades
+
+#### Minor Version Upgrade (e.g., 16.0 → 16.1)
+
+```bash
+# CloudNativePG automatically handles minor version upgrades
+# Rolling restarts with no downtime
+
+# Trigger upgrade (optional, automatic on pod restart)
+kubectl rollout restart statefulset {{ project_name }}-postgres
+```
+
+#### Major Version Upgrade (e.g., 15 → 16)
+
+```bash
+# Requires pg_upgrade or dump/restore
+# More complex - beyond scope of this guide
+
+# See CloudNativePG documentation for pg_upgrade approach
+```
+
+## Troubleshooting
+
+### Cluster Not Starting
+
+```bash
+# Check cluster status
+kubectl get cluster {{ project_name }}-postgres
+kubectl describe cluster {{ project_name }}-postgres
+
+# Check operator logs
+kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system -f
+
+# Check pod events
+kubectl describe pod {{ project_name }}-postgres-1
+
+# Check pod logs
+kubectl logs {{ project_name }}-postgres-1
+```
+
+### Pod Stuck in Pending
+
+```bash
+# Check storage availability
+kubectl get pvc
+
+# Check node resources
+kubectl top nodes
+
+# Check node availability
+kubectl get nodes
+
+# Increase PVC size if needed
+kubectl patch pvc {{ project_name }}-postgres-1 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'
+```
+
+### High Replication Lag
+
+```bash
+# Check replication status
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
+
+# Monitor lag in real-time
+watch -n 5 'kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT client_addr, write_lag, flush_lag, replay_lag FROM pg_stat_replication;"'
+
+# Causes and solutions:
+# - Primary load: Increase primary resources or connection pool
+# - Network latency: Check network connectivity between nodes
+# - Standby overloaded: Increase standby resources or reduce client connections
+# - Large transactions: Monitor with log_min_duration_statement
+```
+
+### Backup Failures
+
+```bash
+# Check backup status
+./scripts/dev/check-backup-status.sh
+
+# Check operator logs for backup errors
+kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | grep -i "backup\|error"
+
+# Check object storage connectivity
+# For MinIO:
+kubectl exec {{ project_name }}-postgres-1 -- s3cmd ls s3://postgres-backups/
+
+# Check credentials secret
+kubectl get secret object-storage-secret -o jsonpath='{.data}' | base64 -d
+```
+
+### Connection Issues
+
+```bash
+# Test connectivity from pod
+kubectl exec -it {{ project_name }}-postgres-1 -- psql -U postgres -d postgres -c "SELECT 1;"
+
+# Check service endpoints
+kubectl get endpoints {{ project_name }}-postgres-rw
+kubectl get endpoints {{ project_name }}-postgres-ro
+
+# Port-forward for local testing
+./scripts/dev/port-forward-postgres.sh
+
+# Test local connection
+psql postgresql://app:PASSWORD@localhost:5432/app
+```
+
+### Query Performance
+
+```bash
+# Check slow queries (requires log_min_duration_statement < query_time)
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;"
+
+# Check table sizes
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) FROM pg_tables WHERE schemaname='public' ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
+
+# Check index usage
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT * FROM pg_stat_user_indexes WHERE idx_scan = 0;"
+```
+
+## Advanced Topics
+
+### Connection Pooling with PgBouncer
+
+PgBouncer is optional in the deployment (currently disabled due to CRD size limits). To enable:
+
+```yaml
+# In postgres-cluster.yaml
+pooler:
+  name: pgbouncer
+  parameters:
+    max_client_conn: "1000"
+    default_pool_size: "25"
+    min_pool_size: "5"
+    pool_mode: "transaction"  # Connection pooling mode
+```
+
+### WAL Archiving and Streaming
+
+WAL archiving to S3/MinIO is configured via:
+
+```yaml
+plugins:
+  - name: barman-cloud.cloudnative-pg.io
+    isWALArchiver: true
+    parameters:
+      barmanObjectName: postgres-backup-store
+```
+
+Monitor WAL archiving:
+
+```bash
+# Check WAL archiving status
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_archiver;"
+
+# List archived WAL files
+aws s3 ls s3://postgres-backups/wal/ --recursive
+```
+
+### Binary Replication Slots
+
+For applications needing logical replication:
+
+```bash
+# Create replication slot
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_create_physical_replication_slot('slot_name');"
+
+# Monitor replication slot
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_replication_slots;"
+```
+
+### PITR Window
+
+WAL archiving enables point-in-time recovery to any timestamp within the WAL retention period:
+
+```bash
+# Restore to specific timestamp
+./scripts/dev/restore-from-backup.sh -t "2024-01-03 15:30:00"
+
+# PITR window = Latest backup time + WAL retention days
 ```
 
 ## Best Practices
 
 ### Security
 
-- ✅ Use SOPS for secret encryption in git
-- ✅ Require SSL/TLS for connections
-- ✅ Use strong passwords (generate with: `openssl rand -base64 32`)
-- ✅ Limit database user privileges (principle of least privilege)
-- ✅ Regularly rotate credentials (quarterly minimum)
+1. **Credentials**: Store passwords in Kubernetes Secrets
+   ```bash
+   kubectl create secret generic postgres-password --from-literal=password=$RANDOM_PASSWORD
+   ```
+
+2. **Network Access**: Use NetworkPolicies to restrict traffic
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: NetworkPolicy
+   metadata:
+     name: postgres-network-policy
+   spec:
+     podSelector:
+       matchLabels:
+         postgresql: {{ project_name }}-postgres
+     policyTypes:
+       - Ingress
+     ingress:
+       - from:
+           - podSelector:
+               matchLabels:
+                 app: my-app
+   ```
+
+3. **Encryption**: Enable SSL/TLS for connections
+   - Certificates auto-managed by CloudNativePG
+
+4. **Backup Encryption**: Use S3 server-side encryption in production
+   ```yaml
+   encryptionType: sse-s3
+   ```
 
 ### Performance
 
-- ✅ Monitor replication lag (alert if >10s)
-- ✅ Size resources based on workload (start 512Mi, scale up)
-- ✅ Use PgBouncer for connection pooling (with many connections)
-- ✅ Enable pg_stat_statements to identify slow queries
-- ✅ Archive WAL files to object storage (enable by default)
+1. **Shared Buffers**: Set to 25% of available memory
+2. **Effective Cache Size**: Set to 75% of available memory
+3. **Connection Pooling**: Use PgBouncer for high connection counts
+4. **Asynchronous Commits**: Safe for most workloads, improves throughput
+5. **Monitoring**: Enable `shared_preload_libraries: "pg_stat_statements"`
 
 ### Reliability
 
-- ✅ Keep backups at least 2 weeks (30 days recommended)
-- ✅ Test restore procedures monthly
-- ✅ Monitor backup completion (alert if backup fails)
-- ✅ Verify backup integrity (checksums, size validation)
-- ✅ Document recovery procedures and recovery time objectives (RTO/RPO)
+1. **Backup Retention**: Keep at least 7 days of backups
+2. **Test Restores**: Regularly test restore procedures
+3. **Monitor Replication**: Alert on > 10 second replication lag
+4. **Capacity Planning**: Monitor storage growth and plan accordingly
+5. **Documentation**: Document custom configuration and procedures
 
-### Operations
+### Cost Optimization
 
-- ✅ Use environment overlays for dev/staging/prod separation
-- ✅ Deploy via FluxCD for GitOps (not imperative kubectl apply)
-- ✅ Implement namespace-level RBAC for team access
-- ✅ Document cluster layout (who owns which databases)
-- ✅ Review logs regularly for warnings and errors
+1. **Asynchronous Replication**: Use in non-critical environments
+2. **Smaller Instances**: Use dev/staging overlays for non-production
+3. **Compression**: Enable zstd compression for backups (savings: 50-70%)
+4. **Tiered Storage**: Archive old backups to cheaper storage
+5. **Right-sizing**: Monitor resource usage and adjust requests/limits
 
-## Related Documentation
+## Additional Resources
 
-- [POSTGRES_BACKUP_RESTORE.md](POSTGRES_BACKUP_RESTORE.md) - Backup and restore procedures
-- [POSTGRES_MONITORING.md](POSTGRES_MONITORING.md) - Monitoring and alerting setup
-- [POSTGRES_FLUXCD.md](POSTGRES_FLUXCD.md) - GitOps integration with FluxCD
-- [CloudNativePG Documentation](https://cloudnative-pg.io/documentation/)
-- [PostgreSQL Manual](https://www.postgresql.org/docs/)
+- [CloudNativePG Documentation](https://cloudnative-pg.io/)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
+- [Monitoring Guide](POSTGRES_MONITORING.md)
+- [Backup & Restore Guide](POSTGRES_BACKUP_RESTORE.md)
 
 ## Support
 
 For issues or questions:
 
-1. Check [Troubleshooting](#troubleshooting) section
-2. Review operator logs: `kubectl logs -n cnpg-system deployment/cnpg-controller-manager`
-3. Check cluster events: `kubectl describe cluster app-postgres`
-4. Review GitHub issues: https://github.com/cloudnative-pg/cloudnative-pg/issues
+1. Check the [Troubleshooting](#troubleshooting) section
+2. Review CloudNativePG operator logs
+3. Check PostgreSQL cluster events: `kubectl get events`
+4. Consult official documentation
+5. Open an issue in the repository

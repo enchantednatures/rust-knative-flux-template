@@ -17,6 +17,11 @@ pub enum AppError {
 
     #[error("Internal server error: {0}")]
     Internal(String),
+
+    {%- if features contains "kafka" %}
+    #[error("Kafka error: {0}")]
+    Kafka(#[from] KafkaError),
+    {%- endif %}
 }
 
 impl From<figment::Error> for AppError {
@@ -40,6 +45,12 @@ impl IntoResponse for AppError {
                 tracing::error!(error = %e, "Internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
+            {%- if features contains "kafka" %}
+            AppError::Kafka(ref e) => {
+                tracing::error!(error = %e, "Kafka error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Event publishing failed")
+            }
+            {%- endif %}
         };
 
         let body = Json(json!({
@@ -50,3 +61,76 @@ impl IntoResponse for AppError {
         (status, body).into_response()
     }
 }
+
+{%- if features contains "kafka" %}
+/// Kafka-specific error type with structured context for observability
+#[derive(Error, Debug, Clone)]
+pub enum KafkaError {
+    #[error("Kafka initialization failed: {0}")]
+    InitializationFailed(String),
+
+    #[error("Failed to publish event: {0}")]
+    PublishFailed(String),
+
+    #[error("Event serialization failed: {0}")]
+    SerializationFailed(String),
+
+    /// Broker unreachable error with structured context fields for logging
+    /// Contains both the broker URL and detailed reason for failure
+    #[error("Kafka broker unreachable at {broker}: {reason}")]
+    BrokerUnreachable { broker: String, reason: String },
+
+    #[error("Invalid Kafka configuration: {0}")]
+    InvalidConfiguration(String),
+
+    #[error("Kafka topic not found: {0}")]
+    TopicNotFound(String),
+
+    #[error("Internal Kafka error: {0}")]
+    Internal(String),
+}
+
+impl KafkaError {
+    /// Creates a BrokerUnreachable error with structured context
+    ///
+    /// # Arguments
+    ///
+    /// * `broker` - Broker URL that is unreachable
+    /// * `reason` - Detailed reason for failure (e.g., connection refused, timeout)
+    pub fn broker_unreachable(broker: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::BrokerUnreachable {
+            broker: broker.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// Returns structured error context as a tuple for logging
+    ///
+    /// Useful for adding consistent error context to tracing logs
+    pub fn context(&self) -> (String, String) {
+        match self {
+            Self::BrokerUnreachable { broker, reason } => {
+                ("broker_unreachable".to_string(), format!("{} ({})", broker, reason))
+            }
+            Self::PublishFailed(reason) => {
+                ("publish_failed".to_string(), reason.clone())
+            }
+            Self::SerializationFailed(reason) => {
+                ("serialization_failed".to_string(), reason.clone())
+            }
+            Self::InitializationFailed(reason) => {
+                ("initialization_failed".to_string(), reason.clone())
+            }
+            Self::TopicNotFound(topic) => {
+                ("topic_not_found".to_string(), topic.clone())
+            }
+            Self::InvalidConfiguration(reason) => {
+                ("invalid_configuration".to_string(), reason.clone())
+            }
+            Self::Internal(reason) => {
+                ("internal_error".to_string(), reason.clone())
+            }
+        }
+    }
+}
+{%- endif %}

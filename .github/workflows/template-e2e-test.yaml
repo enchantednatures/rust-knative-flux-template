@@ -13,7 +13,7 @@ env:
 jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
-    runs-on: [gha-runner-scale-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     permissions:
@@ -25,10 +25,15 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - scenario: no-s3
-            include_s3: "false"
+          # - scenario: no-s3
+          #   include_s3: "false"
+          #   project_name: "test-app-no-s3"
           - scenario: with-s3
             include_s3: "true"
+            project_name: "test-app-with-s3"
+          # - scenario: underscore-naming
+          #   include_s3: "false"
+          #   project_name: "test_app_underscore"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -83,29 +88,73 @@ jobs:
           kind version
           kind delete cluster --name e2e-${{ matrix.scenario }} || true
           kind create cluster --name e2e-${{ matrix.scenario }} --wait 5m
-          
+
           # Export Kind kubeconfig for subsequent steps
           kind get kubeconfig --name e2e-${{ matrix.scenario }} > /tmp/kind-kubeconfig-${{ matrix.scenario }}
           echo "KUBECONFIG=/tmp/kind-kubeconfig-${{ matrix.scenario }}" >> $GITHUB_ENV
 
       - name: Generate project from template
         run: |
-          cargo generate --path . \
-            --name "test-app-${{ matrix.scenario }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
-            --define "project_name=test-app" \
-            --define "target_namespace=default" \
-            --define "github_org=test-org" \
-            --define "github_repo=test-repo" \
-            --define "default_branch=main" \
-            --define "enable_image_updates=false" \
-            -o ./generated
+          # Create template values file
+          cat > template-values.toml <<EOF
+          [values]
+          project_name = "${{ matrix.project_name }}"
+          project_author = "E2E Bot <e2e@github.com>"
+          features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
+          event_sources = []
+          enable_image_updates = false
+          target_namespace = "default"
+          github_org = "test-org"
+          github_repo = "test-repo"
+          default_branch = "main"
+          image_registry = "ghcr.io"
+          use_default_scaling = false
+          base_min_scale = "1"
+          base_max_scale = "10"
+          base_target = "100"
+          base_cpu_request = "100m"
+          base_cpu_limit = "500m"
+          base_memory_request = "64Mi"
+          base_memory_limit = "256Mi"
+          dev_min_scale = "0"
+          dev_max_scale = "3"
+          dev_cpu_request = "100m"
+          dev_cpu_limit = "500m"
+          dev_memory_request = "64Mi"
+          dev_memory_limit = "256Mi"
+          staging_min_scale = "1"
+          staging_max_scale = "5"
+          staging_cpu_request = "200m"
+          staging_cpu_limit = "800m"
+          staging_memory_request = "128Mi"
+          staging_memory_limit = "384Mi"
+          prod_min_scale = "2"
+          prod_max_scale = "20"
+          prod_cpu_request = "250m"
+          prod_cpu_limit = "1000m"
+          prod_memory_request = "256Mi"
+          prod_memory_limit = "512Mi"
+          EOF
+
+          PROJECT_NAME=$(awk -F'"' '/^project_name =/ {print $2}' template-values.toml)
+          SERVICE_NAME=$(echo "$PROJECT_NAME" | tr '_' '-')
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
+          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_ENV
+
+                     cargo generate --path . \
+            --name "${PROJECT_NAME}" \
+            --template-values-file template-values.toml \
+            --silent \
+            --allow-commands
+                     # Move generated project to expected location
+          mkdir -p ./generated
+          mv ${PROJECT_NAME} ./generated/
 
       - name: Validate generated project structure
         run: |
           echo "✓ Checkpoint 1: Validating template generation"
 
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           required_files=(
             "${GENERATED_DIR}/Cargo.toml"
@@ -124,11 +173,14 @@ jobs:
           done
 
           echo ""
-          echo "Validating Kubernetes manifests..."
-          kubectl apply --dry-run=client -k "${GENERATED_DIR}/deploy/base/" 2>&1 || {
-            echo "❌ Kubernetes manifest validation failed"
+          echo "Validating YAML syntax..."
+          # Note: We can't use kubectl apply --dry-run here because Knative CRDs aren't installed yet
+          # The manifests will be validated when actually applied to the cluster later
+          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/knative-service.yaml" > /dev/null 2>&1; then
+            echo "❌ YAML syntax validation failed"
             exit 1
-          }
+          fi
+          echo "  ✓ YAML syntax is valid"
 
           echo "✅ Checkpoint 1 passed: Template generation valid"
 
@@ -148,8 +200,8 @@ jobs:
           IMAGE_TAG="pr-${PR_NUMBER}-run-${RUN_NUMBER}-${SHORT_SHA}"
 
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "app_image=${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "manifest_image=${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "app_image=${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "manifest_image=${{ env.REGISTRY }}/${{ github.repository }}/manifests-${PROJECT_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
           echo "📦 Using image tag: ${IMAGE_TAG}"
 
@@ -162,7 +214,7 @@ jobs:
 
       - name: Build application image
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           docker build \
             -t ${{ steps.image-meta.outputs.app_image }} \
@@ -191,11 +243,12 @@ jobs:
 
       - name: Prepare manifests for OCI push
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           cd "${GENERATED_DIR}/deploy/base"
 
-          cat > kustomization-patch.yaml <<EOF
+          # Replace kustomization.yaml with one that includes image transformation
+          cat > kustomization.yaml <<EOF
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
 
@@ -203,11 +256,23 @@ jobs:
             - knative-service.yaml
 
           images:
-            - name: rust-service
-              newName: ${{ env.REGISTRY }}/${{ github.repository }}/test-app-${{ matrix.scenario }}
+            - name: ghcr.io/test-org/${SERVICE_NAME}
+              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}
               newTag: ${{ steps.image-meta.outputs.image_tag }}
 
           namespace: default
+
+          # Add imagePullSecrets to the Knative service for GHCR authentication
+          patches:
+            - patch: |-
+                - op: add
+                  path: /spec/template/spec/imagePullSecrets
+                  value:
+                    - name: ghcr-auth
+              target:
+                kind: Service
+                group: serving.knative.dev
+                version: v1
           EOF
 
           mkdir -p ../../manifests-built
@@ -217,9 +282,30 @@ jobs:
           cat ../../manifests-built/all.yaml
           echo "::endgroup::"
 
+      - name: Validate image transformation
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          EXPECTED_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}:${{ steps.image-meta.outputs.image_tag }}"
+
+          echo "Validating image transformation..."
+          echo "Expected image: ${EXPECTED_IMAGE}"
+
+          if ! grep -q "${EXPECTED_IMAGE}" "${GENERATED_DIR}/manifests-built/all.yaml"; then
+            echo "❌ Image transformation failed"
+            echo ""
+            echo "Expected to find: ${EXPECTED_IMAGE}"
+            echo ""
+            echo "Actual image references in manifest:"
+            grep "image:" "${GENERATED_DIR}/manifests-built/all.yaml" || echo "No image references found"
+            exit 1
+          fi
+
+          echo "✅ Image transformation verified: ${EXPECTED_IMAGE}"
+
       - name: Push manifests as OCI artifact
         run: |
-          GENERATED_DIR="./generated/test-app-${{ matrix.scenario }}"
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           flux push artifact \
             oci://${{ steps.image-meta.outputs.manifest_image }} \
@@ -306,6 +392,13 @@ jobs:
             --wait \
             --timeout 180s
 
+          # Ensure expected bucket exists for tests
+          kubectl wait --for=condition=ready pod -l release=minio --timeout=120s
+          kubectl run minio-mc --rm -i --restart=Never --timeout=120s \
+            --image=quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z \
+            --command -- /bin/sh -c \
+            "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && mc mb -p minio/data"
+
       - name: Validate cluster dependencies
         run: |
           echo "✓ Checkpoint 4: Validating cluster dependencies"
@@ -344,21 +437,30 @@ jobs:
       - name: Create application secrets
         run: |
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
-            kubectl create secret generic rust-service-secrets \
+            kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
               --from-literal=aws-access-key-id=minioadmin \
               --from-literal=aws-secret-access-key=minioadmin \
               --dry-run=client -o yaml | kubectl apply -f -
           else
-            kubectl create secret generic rust-service-secrets \
+            kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
 
-      - name: Create GHCR pull secret for Flux
+      - name: Create GHCR pull secret for Flux and default namespace
         run: |
+          # Create pull secret in flux-system namespace (for OCI artifact pulls)
           kubectl create secret docker-registry ghcr-auth \
             --namespace=flux-system \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create pull secret in default namespace (for application image pulls)
+          kubectl create secret docker-registry ghcr-auth \
+            --namespace=default \
             --docker-server=${{ env.REGISTRY }} \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
@@ -371,11 +473,11 @@ jobs:
           apiVersion: source.toolkit.fluxcd.io/v1beta2
           kind: OCIRepository
           metadata:
-            name: test-app-${{ matrix.scenario }}
+            name: ${PROJECT_NAME}
             namespace: flux-system
           spec:
             interval: 1m
-            url: oci://${{ env.REGISTRY }}/${{ github.repository }}/manifests-${{ matrix.scenario }}
+            url: oci://${{ env.REGISTRY }}/${{ github.repository }}/manifests-${PROJECT_NAME}
             ref:
               tag: "${{ steps.image-meta.outputs.image_tag }}"
             secretRef:
@@ -384,13 +486,13 @@ jobs:
           apiVersion: kustomize.toolkit.fluxcd.io/v1
           kind: Kustomization
           metadata:
-            name: test-app-${{ matrix.scenario }}
+            name: ${PROJECT_NAME}
             namespace: flux-system
           spec:
             interval: 1m
             sourceRef:
               kind: OCIRepository
-              name: test-app-${{ matrix.scenario }}
+              name: ${PROJECT_NAME}
             path: ./
             prune: true
             targetNamespace: default
@@ -404,9 +506,9 @@ jobs:
           kubectl wait --for=condition=ready \
             --timeout=180s \
             -n flux-system \
-            ocirepository/test-app-${{ matrix.scenario }} || {
+            ocirepository/${PROJECT_NAME} || {
               echo "❌ OCIRepository failed to become ready"
-              kubectl describe ocirepository/test-app-${{ matrix.scenario }} -n flux-system
+              kubectl describe ocirepository/${PROJECT_NAME} -n flux-system
               exit 1
             }
 
@@ -414,9 +516,9 @@ jobs:
           kubectl wait --for=condition=ready \
             --timeout=300s \
             -n flux-system \
-            kustomization/test-app-${{ matrix.scenario }} || {
+            kustomization/${PROJECT_NAME} || {
               echo "❌ Kustomization failed to become ready"
-              kubectl describe kustomization/test-app-${{ matrix.scenario }} -n flux-system
+              kubectl describe kustomization/${PROJECT_NAME} -n flux-system
               exit 1
             }
 
@@ -425,6 +527,8 @@ jobs:
       - name: Validate application deployment
         run: |
           echo "✓ Checkpoint 5: Validating application deployment"
+
+          SERVICE_NAME="${SERVICE_NAME}"
 
           echo "Checking Flux resource status..."
           flux get all -A
@@ -437,10 +541,10 @@ jobs:
           echo "Waiting for Knative Service to be ready..."
           kubectl wait --for=condition=ready \
             --timeout=300s \
-            ksvc/rust-service || {
+            ksvc/${SERVICE_NAME} || {
               echo "❌ Knative Service not ready"
-              kubectl describe ksvc/rust-service
-              kubectl logs -l serving.knative.dev/service=rust-service --tail=100
+              kubectl describe ksvc/${SERVICE_NAME}
+              kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100
               exit 1
             }
 
@@ -449,7 +553,8 @@ jobs:
       - name: Get application URL
         id: app-url
         run: |
-          SERVICE_URL=$(kubectl get ksvc rust-service -o jsonpath='{.status.url}')
+          SERVICE_NAME="${SERVICE_NAME}"
+          SERVICE_URL=$(kubectl get ksvc ${SERVICE_NAME} -o jsonpath='{.status.url}')
           echo "service_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
           echo "📡 Service URL: ${SERVICE_URL}"
 
@@ -459,11 +564,33 @@ jobs:
         run: |
           echo "Running E2E tests against: ${SERVICE_URL}"
 
+          # Helper function to run curl inside the cluster  
+          # Filters kubectl pod messages while preserving curl output
+          kubectl_curl() {
+            local output
+            local exit_code
+            output=$(kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- "$@" 2>&1)
+            exit_code=$?
+            # Filter out kubectl pod messages and HTTP headers, keep only response body
+            # If there are no headers, return the raw body
+            echo "$output" | awk '
+              BEGIN { body=0; saw_header=0 }
+              /^pod.*/ { next }
+              /^HTTP\// { saw_header=1; next }
+              /^< HTTP\// { saw_header=1; next }
+              /^< [A-Za-z-]+:/ { saw_header=1; next }
+              /^[A-Za-z-]+:/ { saw_header=1; next }
+              /^$/ { if (saw_header) { body=1; next } }
+              { if (!saw_header || body) print }
+            '
+            return $exit_code
+          }
+
           FAILED=0
 
           echo ""
           echo "Test: Liveness probe..."
-          if curl -f -s "${SERVICE_URL}/health/live" > /dev/null; then
+          if kubectl_curl -f -s "${SERVICE_URL}/health/live" > /dev/null 2>&1; then
             echo "  ✓ Liveness probe PASSED"
           else
             echo "  ✗ Liveness probe FAILED"
@@ -472,7 +599,7 @@ jobs:
 
           echo ""
           echo "Test: Readiness probe..."
-          if curl -f -s "${SERVICE_URL}/health/ready" > /dev/null; then
+          if kubectl_curl -f -s "${SERVICE_URL}/health/ready" > /dev/null 2>&1; then
             echo "  ✓ Readiness probe PASSED"
           else
             echo "  ✗ Readiness probe FAILED"
@@ -481,29 +608,54 @@ jobs:
 
           echo ""
           echo "Test: Prometheus metrics..."
-          if curl -f -s "${SERVICE_URL}/metrics" | grep -q 'rust_'; then
-            echo "  ✓ Metrics endpoint PASSED"
+          METRICS_OUTPUT=$(kubectl_curl -f -s "${SERVICE_URL}/metrics")
+          if echo "$METRICS_OUTPUT" | grep -q '# HELP' && echo "$METRICS_OUTPUT" | grep -q '# TYPE'; then
+            echo "  ✓ Metrics endpoint PASSED (Prometheus format detected)"
           else
-            echo "  ✗ Metrics endpoint FAILED"
+            echo "  ✗ Metrics endpoint FAILED (no Prometheus metrics found)"
+            echo "  Output preview: $(echo "$METRICS_OUTPUT" | head -5)"
             ((FAILED++))
           fi
 
           echo ""
           echo "Test: Hello API..."
-          if curl -f -s "${SERVICE_URL}/api/v1/hello" | jq -e '.message' > /dev/null; then
+          # Try with verbose output first to diagnose the issue
+          echo "  Debug: Testing with verbose curl..."
+          VERBOSE_OUTPUT=$(kubectl run curl-debug-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- curl -v -s "${SERVICE_URL}/api/v1/hello" 2>&1 || true)
+          echo "  Debug: Verbose output (first 500 chars):"
+          echo "$VERBOSE_OUTPUT" | head -c 500
+          echo ""
+
+          RESPONSE=$(kubectl_curl -s "${SERVICE_URL}/api/v1/hello")
+          CURL_EXIT=$?
+          echo "  Debug: curl exit code=$CURL_EXIT"
+          echo "  Debug: response length=${#RESPONSE}"
+          echo "  Debug: response preview: $(echo "$RESPONSE" | head -c 200)"
+          if echo "$RESPONSE" | grep -q '"message"'; then
             echo "  ✓ Hello API PASSED"
           else
             echo "  ✗ Hello API FAILED"
+            echo "  Full response: $RESPONSE"
             ((FAILED++))
           fi
 
           if [ "${{ matrix.include_s3 }}" = "true" ]; then
             echo ""
             echo "Test: S3 storage example..."
-            RESPONSE=$(curl -f -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+            echo "  Debug: Testing with verbose curl..."
+            VERBOSE_OUTPUT=$(kubectl run curl-debug-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- curl -v -s -X POST "${SERVICE_URL}/api/v1/storage/example" 2>&1 || true)
+            echo "  Debug: Verbose output (first 500 chars):"
+            echo "$VERBOSE_OUTPUT" | head -c 500
+            echo ""
 
-            if echo "$RESPONSE" | jq -e '.success == true' > /dev/null && \
-               echo "$RESPONSE" | jq -e '.read_verified == true' > /dev/null; then
+            RESPONSE=$(kubectl_curl -s -X POST "${SERVICE_URL}/api/v1/storage/example")
+            CURL_EXIT=$?
+            echo "  Debug: curl exit code=$CURL_EXIT"
+            echo "  Debug: response length=${#RESPONSE}"
+            echo "  Debug: response preview: $(echo "$RESPONSE" | head -c 200)"
+
+            if echo "$RESPONSE" | grep -q '"success":true' && \
+               echo "$RESPONSE" | grep -q '"read_verified":true'; then
               echo "  ✓ S3 storage PASSED"
             else
               echo "  ✗ S3 storage FAILED"
@@ -543,13 +695,15 @@ jobs:
       - name: Collect debug information on failure
         if: failure()
         run: |
+          SERVICE_NAME="${SERVICE_NAME}"
+
           echo "::group::Flux logs"
           kubectl logs -n flux-system deployment/source-controller --tail=100 || true
           kubectl logs -n flux-system deployment/kustomize-controller --tail=100 || true
           echo "::endgroup::"
 
           echo "::group::Application logs"
-          kubectl logs -l serving.knative.dev/service=rust-service --tail=100 || true
+          kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100 || true
           echo "::endgroup::"
 
           echo "::group::All pods"

@@ -4,7 +4,10 @@
 CLUSTER_NAME := dev
 KUBECONFIG_PATH := .kubeconfig-dev
 REGISTRY_PORT := 5001
-PROJECT_NAME := $(shell grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' || echo "app")
+# Service name (normalized with hyphens for Kubernetes)
+PROJECT_NAME := {{ project_name | replace: "_", "-" }}
+# Binary name (with underscores as per Rust convention)
+CRATE_NAME := {{ crate_name }}
 
 # Colored output
 RED := \033[0;31m
@@ -197,7 +200,7 @@ kafka-list-topics: ## List all Kafka topics
 .PHONY: kafka-consumer-lag
 kafka-consumer-lag: ## Show consumer group lag
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
-		CONSUMER_GROUP=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"')-consumers && \
+		CONSUMER_GROUP=$(CRATE_NAME)-consumers && \
 		kubectl -n kafka exec -it kafka-0 -- kafka-consumer-groups \
 		--bootstrap-server localhost:9092 \
 		--describe \
@@ -211,14 +214,12 @@ kafka-logs: ## View Kafka broker logs
 .PHONY: kafka-source-status
 kafka-source-status: ## Check KafkaSource status
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
-		PROJECT_NAME=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"') && \
-		kubectl get kafkasource -n default $$PROJECT_NAME-kafka-source -o yaml
+		kubectl get kafkasource -n default $(PROJECT_NAME)-kafka-source -o yaml
 
 .PHONY: kafka-dlq-logs
 kafka-dlq-logs: ## View Dead Letter Queue handler logs
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
-		PROJECT_NAME=$$(grep '^name' Cargo.toml.liquid 2>/dev/null | head -1 | sed 's/name = "\(.*\)"/\1/' 2>/dev/null || grep '^name' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr -d '"') && \
-		kubectl logs -f -l serving.knative.dev/service="$$PROJECT_NAME-dlq" -c user-container 2>/dev/null || \
+		kubectl logs -f -l serving.knative.dev/service="$(PROJECT_NAME)-dlq" -c user-container 2>/dev/null || \
 		echo "${RED}DLQ handler not running or no events failed${NC}"
 
 # ============================================================================

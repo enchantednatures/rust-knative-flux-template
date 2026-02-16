@@ -1,0 +1,42 @@
+{% if enable_image_updates %}# =============================================================================
+# NOTE: ImageUpdateAutomation typically lives in your INFRASTRUCTURE repo
+# =============================================================================
+# This is included here for reference and for local testing/development.
+#
+# In a "repo-per-app" pattern:
+#   - App Repo (this one): Contains app code, Dockerfile, Knative manifests
+#   - Infra Repo: Contains ImageUpdateAutomation, cluster-wide Flux config,
+#                 RBAC, networking policies, etc.
+#
+# The ImageUpdateAutomation watches the app repo's {{ default_branch }} branch and commits
+# image updates when new tags are available.
+# =============================================================================
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: {{ project_name | replace: "_", "-" }}
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: {{ project_name | replace: "_", "-" }}
+  git:
+    checkout:
+      ref:
+        branch: {{ default_branch }}
+    commit:
+      author:
+        name: FluxCD
+        email: flux@users.noreply.github.com
+      messageTemplate: |
+        chore: update image to {% raw %}{{.NewImage}}{% endraw %}
+
+        Image: {% raw %}{{.ImageRepository}}{% endraw %}
+        Tag: {% raw %}{{.NewTag}}{% endraw %}
+    push:
+      branch: {{ default_branch }}
+  update:
+    path: ./deploy
+    strategy: Setters
+{% endif %}

@@ -10,24 +10,52 @@ on:
 
 jobs:
   generate-and-validate:
-    name: Generate & Validate (s3=${{ matrix.include_s3 }}, updates=${{ matrix.enable_image_updates }})
-    runs-on: [gha-runner-scale-set]
+    name: Generate & Validate (s3=${{ matrix.include_s3 }}, kafka=${{ matrix.include_kafka }}, updates=${{ matrix.enable_image_updates }})
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - scenario: no-s3
+          # S3: false, Kafka: false, ImageUpdates: false
+          - scenario: no-s3-no-kafka
             include_s3: "false"
+            include_kafka: "false"
             enable_image_updates: "false"
-          - scenario: no-s3
+          # S3: false, Kafka: false, ImageUpdates: true
+          - scenario: no-s3-no-kafka
             include_s3: "false"
+            include_kafka: "false"
             enable_image_updates: "true"
-          - scenario: with-s3
-            include_s3: "true"
+          # S3: false, Kafka: true, ImageUpdates: false
+          - scenario: no-s3-with-kafka
+            include_s3: "false"
+            include_kafka: "true"
             enable_image_updates: "false"
-          - scenario: with-s3
+          # S3: false, Kafka: true, ImageUpdates: true
+          - scenario: no-s3-with-kafka
+            include_s3: "false"
+            include_kafka: "true"
+            enable_image_updates: "true"
+          # S3: true, Kafka: false, ImageUpdates: false
+          - scenario: with-s3-no-kafka
             include_s3: "true"
+            include_kafka: "false"
+            enable_image_updates: "false"
+          # S3: true, Kafka: false, ImageUpdates: true
+          - scenario: with-s3-no-kafka
+            include_s3: "true"
+            include_kafka: "false"
+            enable_image_updates: "true"
+          # S3: true, Kafka: true, ImageUpdates: false
+          - scenario: with-s3-with-kafka
+            include_s3: "true"
+            include_kafka: "true"
+            enable_image_updates: "false"
+          # S3: true, Kafka: true, ImageUpdates: true
+          - scenario: with-s3-with-kafka
+            include_s3: "true"
+            include_kafka: "true"
             enable_image_updates: "true"
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -40,14 +68,19 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install system dependencies for Kafka
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev pkg-config
+        shell: bash
+
       - name: Cache Cargo registry
         uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.include_kafka }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -60,15 +93,44 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           cd "$TEMP_DIR"
 
-          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, kafka=${{ matrix.include_kafka }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+
+          # Build features array based on matrix values
+          FEATURES="[]"
+          if [[ "${{ matrix.include_s3 }}" == "true" && "${{ matrix.include_kafka }}" == "true" ]]; then
+            FEATURES='["s3", "kafka"]'
+          elif [[ "${{ matrix.include_s3 }}" == "true" ]]; then
+            FEATURES='["s3"]'
+          elif [[ "${{ matrix.include_kafka }}" == "true" ]]; then
+            FEATURES='["kafka"]'
+          fi
+
+          # Create template values file
+          cat > template-values.toml << TEMPLATE_EOF
+          [values]
+          project_name = "example-app"
+          project_author = "CI Bot <ci@github.com>"
+          features = $FEATURES
+          event_sources = []
+          enable_image_updates = ${{ matrix.enable_image_updates }}
+          target_namespace = "default"
+          github_org = "enchantednatures"
+          github_repo = "rust-knative-flux-template"
+          default_branch = "main"
+          image_registry = "ghcr.io"
+          use_default_scaling = true
+          TEMPLATE_EOF
+
           cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
-            --define "enable_image_updates=${{ matrix.enable_image_updates }}" \
-            --define "target_namespace=default" \
-            --silent
+            --template-values-file template-values.toml \
+            --silent \
+            --allow-commands
 
           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
           cd "$GENERATED_DIR"
+
+          echo "Cleaning build artifacts from post-generate hook"
+          cargo clean
 
           echo "Running formatting check"
           cargo fmt --all -- --check

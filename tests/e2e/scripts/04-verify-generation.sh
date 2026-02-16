@@ -21,6 +21,7 @@ cargo generate \
   --define github_repo=rust-knative-flux-template \
   --define default_branch=main \
   --define image_registry=ghcr.io \
+  --allow-commands \
   --silent
 
 GENERATED_DIR="${TEMP_DIR}/example-app-${SCENARIO}"

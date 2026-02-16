@@ -4,6 +4,9 @@ use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::state::AppState;
+{%- if features contains "kafka" %}
+use std::sync::Arc;
+{%- endif %}
 
 #[derive(Serialize, ToSchema)]
 pub struct HelloResponse {
@@ -40,6 +43,46 @@ pub async fn hello(
     axum::extract::Query(query): axum::extract::Query<HelloQuery>,
 ) -> Json<HelloResponse> {
     let name = query.name.unwrap_or_else(|| "World".into());
+
+    {%- if features contains "kafka" %}
+    // Publish event to Kafka asynchronously (non-blocking)
+    if let Some(publisher) = &_state.kafka_publisher {
+        let publisher = Arc::clone(publisher);
+        let broker_url = publisher.config.broker_url.clone();
+        let topic = publisher.config.topic.clone();
+        
+        tokio::spawn(async move {
+            let event = crate::handlers::kafka::create_dummy_event(
+                &publisher.config,
+                "/api/v1/hello"
+            );
+            let event_id = event.id().to_string();
+            
+            match publisher.publish(&event).await {
+                Ok((partition, offset)) => {
+                    tracing::debug!(
+                        event_id = %event_id,
+                        partition = partition,
+                        offset = offset,
+                        "Event published to Kafka"
+                    );
+                }
+                Err(e) => {
+                    let (error_type, error_context) = e.context();
+                    tracing::error!(
+                        error = %e,
+                        error_type = %error_type,
+                        error_context = %error_context,
+                        event_id = %event_id,
+                        broker = %broker_url,
+                        topic = %topic,
+                        "Failed to publish event to Kafka"
+                    );
+                }
+            }
+        });
+    }
+    {%- endif %}
 
     Json(HelloResponse {
         message: format!("Hello, {}!", name),

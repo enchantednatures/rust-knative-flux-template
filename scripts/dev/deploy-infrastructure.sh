@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
 
 # Colors
 GREEN='\033[0;32m'
@@ -11,13 +10,16 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-if [[ ! -f "$KUBECONFIG_PATH" ]]; then
-  echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
-  echo "Run 'make dev-cluster' first"
-  exit 1
+# Use existing KUBECONFIG if set, otherwise use local dev config
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  KUBECONFIG_PATH="${PROJECT_ROOT}/.kubeconfig-dev"
+  if [[ ! -f "$KUBECONFIG_PATH" ]]; then
+    echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
+    echo "Run 'make dev-cluster' first"
+    exit 1
+  fi
+  export KUBECONFIG="$KUBECONFIG_PATH"
 fi
-
-export KUBECONFIG="$KUBECONFIG_PATH"
 
 echo "Deploying infrastructure services..."
 echo ""
@@ -39,11 +41,17 @@ echo -e "${YELLOW}→${NC} Waiting for Redis to be ready..."
 if ! kubectl wait --for=condition=Ready pod -l app=redis -n redis --timeout=3m; then
   echo -e "${RED}✗ Error: Redis failed to become ready${NC}"
   echo ""
-  echo "Pod status:"
+  echo "=== Pod Status ==="
   kubectl get pods -n redis -l app=redis
   echo ""
-  echo "Recent logs:"
-  kubectl logs -l app=redis -n redis --tail=50
+  echo "=== Pod Logs ==="
+  kubectl logs -l app=redis -n redis --tail=100 --all-containers=true 2>&1 || true
+  echo ""
+  echo "=== Pod Descriptions ==="
+  kubectl describe pods -l app=redis -n redis | head -100
+  echo ""
+  echo "=== Events ==="
+  kubectl get events -n redis --sort-by='.lastTimestamp' | tail -20
   exit 1
 fi
 
@@ -53,11 +61,17 @@ if kubectl get statefulset minio -n minio 2>/dev/null || kubectl get deployment 
   if ! kubectl wait --for=condition=Ready pod -l app=minio -n minio --timeout=5m; then
     echo -e "${RED}✗ Error: MinIO failed to become ready${NC}"
     echo ""
-    echo "Pod status:"
+    echo "=== Pod Status ==="
     kubectl get pods -n minio -l app=minio
     echo ""
-    echo "Recent logs:"
-    kubectl logs -l app=minio -n minio --tail=50
+    echo "=== Pod Logs ==="
+    kubectl logs -l app=minio -n minio --tail=100 --all-containers=true 2>&1 || true
+    echo ""
+    echo "=== Pod Descriptions ==="
+    kubectl describe pods -l app=minio -n minio | head -100
+    echo ""
+    echo "=== Events ==="
+    kubectl get events -n minio --sort-by='.lastTimestamp' | tail -20
     exit 1
   fi
   
@@ -74,11 +88,17 @@ if kubectl get statefulset kafka -n kafka 2>/dev/null; then
   if ! kubectl wait --for=condition=Ready pod -l app=kafka -n kafka --timeout=5m; then
     echo -e "${RED}✗ Error: Kafka failed to become ready${NC}"
     echo ""
-    echo "Pod status:"
+    echo "=== Pod Status ==="
     kubectl get pods -n kafka -l app=kafka
     echo ""
-    echo "Recent logs:"
-    kubectl logs -l app=kafka -n kafka --tail=50
+    echo "=== Pod Logs ==="
+    kubectl logs -l app=kafka -n kafka --tail=100 --all-containers=true 2>&1 || true
+    echo ""
+    echo "=== Pod Descriptions ==="
+    kubectl describe pods -l app=kafka -n kafka | head -100
+    echo ""
+    echo "=== Events ==="
+    kubectl get events -n kafka --sort-by='.lastTimestamp' | tail -20
     exit 1
   fi
   

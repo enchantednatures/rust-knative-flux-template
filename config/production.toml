@@ -1,0 +1,21 @@
+# Production environment configuration
+
+[telemetry]
+service_name = "{{ project_name | kebab_case }}-prod"
+log_level = "info"
+otlp_endpoint = "http://otel-collector.observability.svc.cluster.local:4317"
+
+{% if features contains "s3" %}
+[s3]
+endpoint = "{{ s3_endpoint | default: "https://s3.amazonaws.com" }}"
+bucket = "{{ s3_bucket }}"
+region = "{{ s3_region }}"
+{% endif %}
+
+{% if features contains "kafka" %}
+[kafka]
+broker_url = "{{ kafka_broker_url }}"
+topic = "{{ kafka_topic }}"
+timeout_ms = 30000  # Longer timeout for prod reliability
+retries = 5
+{% endif %}

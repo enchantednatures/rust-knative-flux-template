@@ -79,6 +79,95 @@ make dev-logs
 make dev-down
 ```
 
+## Naming Conventions
+
+### Project Name Handling
+
+The template uses consistent naming conventions across Rust code, Kubernetes resources, and Docker images:
+
+**Key Principle**: Kubernetes and Docker require hyphens, Rust prefers underscores. The template normalizes this during generation.
+
+#### Template Generation (cargo-generate)
+
+When generating a project, the template automatically handles naming:
+
+- **User input** (project_name): Can use any format
+  - `"my-service"` (hyphens)
+  - `"my_service"` (underscores)
+  - `"myservice"` (single word)
+
+- **Generated names**:
+  - **Cargo.toml crate name** (`crate_name`): Automatically converted to snake_case (underscores)
+    - Example: `"my_service"`, `"myservice"`
+    - Used in: Binary names, Rust module paths, internal code
+  
+  - **Kubernetes service name** (`project_name | replace: "_", "-"`): Normalized to kebab-case (hyphens)
+    - Example: `"my-service"`, `"myservice"`
+    - Used in: Knative service names, Docker image tags, K8s resource labels
+    - **Critical**: Knative services CANNOT contain underscores - violations cause `ImagePullBackOff` errors
+
+#### Template Files
+
+Files that handle name normalization:
+
+- **Makefile.liquid**: Templated with `PROJECT_NAME` (hyphens) and `CRATE_NAME` (underscores)
+  - `PROJECT_NAME := {{ project_name | replace: "_", "-" }}`
+  - `CRATE_NAME := {{ crate_name }}`
+
+- **scripts/dev/build-and-deploy.sh.liquid**: Hardcoded service and binary names at generation time
+  - `SERVICE_NAME="{{ project_name | replace: "_", "-" }}"`  (for Docker tags, Kubernetes)
+  - `CRATE_NAME="{{ crate_name }}"`  (for binary verification)
+
+- **deploy/base/knative-service.yaml.liquid**: Uses `{{ project_name | replace: "_", "-" }}` for service name
+  - `name: {{ project_name | replace: "_", "-" }}`
+
+#### Common Issues and Solutions
+
+**Issue**: `ImagePullBackOff` when deploying to Knative
+- **Cause**: Image tag name doesn't match Knative service name (usually underscores vs hyphens)
+- **Solution**: Ensure templated scripts use `PROJECT_NAME` for Kubernetes and `CRATE_NAME` for Rust
+
+**Issue**: Docker image tag doesn't match Kustomization reference
+- **Cause**: Build script extracts name from Cargo.toml at runtime (gets underscores), but Kustomization expects hyphens
+- **Solution**: Use templated build script that has names baked in at generation time
+
+**Issue**: Knative service won't start with name containing underscores
+- **Cause**: Knative spec forbids underscores in service names
+- **Solution**: Always use hyphens in Kubernetes resource names (automatic with this template)
+
+#### Testing Naming Conventions
+
+Run the naming convention e2e tests to verify correct behavior:
+
+```bash
+# GitHub Actions workflow tests all naming styles:
+# - kebab-case: test-service
+# - snake_case: test_service
+# - single-word: testservice
+
+# Tests verify:
+# ✓ Crate name matches Cargo.toml
+# ✓ Knative service name uses hyphens (no underscores)
+# ✓ Docker image tag uses hyphens
+# ✓ Makefile PROJECT_NAME uses hyphens
+# ✓ Build script correctly handles SERVICE_NAME and CRATE_NAME
+```
+
+#### Why This Matters
+
+This naming normalization prevents a critical class of deployment failures:
+
+1. **Kubernetes Constraint**: Service names must match DNS subdomain rules (`[a-z0-9]([-a-z0-9]*[a-z0-9])?`)
+   - Hyphens are allowed, underscores are NOT
+
+2. **Docker Convention**: Image tags should use hyphens for consistency
+   - Underscores work but violate conventions
+
+3. **Rust Convention**: Crate names use underscores in Cargo.toml
+   - This is the Rust package naming standard
+
+The template bridges these conventions so generated projects work seamlessly across all layers.
+
 ## Code Style Guidelines
 
 ### File Organization
@@ -333,6 +422,181 @@ async fn test_endpoint() {
 }
 ```
 
+## Kafka Event Publishing Patterns
+
+When Kafka event publishing is enabled (`enable_kafka_publishing = true`), use these patterns:
+
+### Non-Blocking Event Publishing from Handlers
+
+Publish events asynchronously without blocking HTTP responses:
+
+```rust
+use std::sync::Arc;
+
+pub async fn my_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<MyRequest>,
+) -> Json<MyResponse> {
+    // Handle the request
+    let response = MyResponse { /* ... */ };
+
+    // Publish event to Kafka (non-blocking via tokio::spawn)
+    if let Some(publisher) = &state.kafka_publisher {
+        let publisher = Arc::clone(publisher);
+        let broker_url = publisher.config.broker_url.clone();
+        let topic = publisher.config.topic.clone();
+
+        tokio::spawn(async move {
+            let event = crate::handlers::kafka::create_dummy_event(
+                &publisher.config,
+                "/api/v1/my-handler"
+            );
+            let event_id = event.id().to_string();
+
+            match publisher.publish(&event).await {
+                Ok((partition, offset)) => {
+                    tracing::debug!(
+                        event_id = %event_id,
+                        partition = partition,
+                        offset = offset,
+                        "Event published"
+                    );
+                }
+                Err(e) => {
+                    let (error_type, error_context) = e.context();
+                    tracing::error!(
+                        error = %e,
+                        error_type = %error_type,
+                        error_context = %error_context,
+                        event_id = %event_id,
+                        broker = %broker_url,
+                        topic = %topic,
+                        "Failed to publish event"
+                    );
+                    // Note: HTTP response already sent, error logged for monitoring
+                }
+            }
+        });
+    }
+
+    // Return 200 OK immediately, regardless of event publishing result
+    Json(response)
+}
+```
+
+### Distributed Tracing for Event Publishing
+
+The `KafkaPublisher::publish()` method is instrumented with:
+
+```rust
+#[tracing::instrument(
+    skip(self, event),
+    fields(
+        event_id = %event.id(),
+        topic = %self.config.topic,
+        event_type = %event.type_(),
+        source = %event.source()
+    ),
+    err(Debug)
+)]
+pub async fn publish(&self, event: &CloudEvent) -> Result<(i32, i64), KafkaError> {
+    // Implementation...
+}
+```
+
+This automatically creates spans with:
+- **event_id**: Unique event identifier (searchable in Jaeger)
+- **topic**: Kafka topic name
+- **event_type**: CloudEvents type
+- **source**: Handler path or source
+- **partition** & **offset**: Added on success for audit trails
+- **error details**: Captured on failure for debugging
+
+View in Jaeger by searching for operation name `KafkaPublisher::publish`.
+
+### Error Handling Patterns
+
+Always handle publishing errors gracefully:
+
+```rust
+// Pattern 1: Log and ignore (safe for non-critical events)
+match publisher.publish(&event).await {
+    Ok(_) => tracing::info!("Event published"),
+    Err(e) => {
+        let (error_type, ctx) = e.context();
+        tracing::warn!(error_type, error_context = ctx, "Event publish failed");
+        // Handler continues normally - user gets 200 OK
+    }
+}
+
+// Pattern 2: Log with context for monitoring
+if let Err(e) = publisher.publish(&event).await {
+    let (error_type, ctx) = e.context();
+    tracing::error!(
+        error = %e,
+        error_type = %error_type,
+        error_context = %ctx,
+        event_id = %event.id(),
+        broker = %publisher.config.broker_url,
+        "Critical event publish failed"
+    );
+    // Alert on repeated failures via metrics
+}
+
+// Never block handler on publishing errors
+// Handler always returns 200 OK (event delivery is best-effort)
+```
+
+### Prometheus Metrics for Event Publishing
+
+Metrics are automatically recorded by `KafkaPublisher`:
+
+```rust
+// Query success rate
+rate(kafka_events_published_total{topic="your-topic"}[5m])
+
+// Query failure rate by type
+rate(kafka_events_failed_total{topic="your-topic", error_type="broker_unreachable"}[5m])
+
+// Query latency percentiles
+histogram_quantile(0.99, kafka_publish_latency_ms{topic="your-topic"})
+
+// Alert on high failure rate
+(rate(kafka_events_failed_total[5m]) / rate(kafka_events_published_total[5m])) > 0.01
+```
+
+### Cold Start Impact
+
+Event publishing adds minimal cold start overhead:
+
+- **Kafka producer initialization**: ~100-200ms (happens once at startup)
+- **Per-publish latency**: ~10-50ms typical (non-blocking, does not affect HTTP response)
+- **Memory overhead**: ~5-10 MB for rdkafka producer
+
+Optimization tips:
+- Keep Kafka broker accessible with low latency (<50ms)
+- Use SNI/TLS caching for broker connections
+- Monitor cold start times in production (`container_runtime_duration_seconds` metric)
+
+### Configuration for Publishing
+
+When generating project, provide:
+
+```
+Enable Kafka event publishing? yes
+Kafka broker URL: kafka.example.com:9092
+Kafka topic name: my-service-events
+CloudEvents event name: com.example.myservice.event.published
+```
+
+These configure:
+- `broker_url`: Kafka broker address for publishing
+- `topic`: Kafka topic where events are sent
+- `event_name`: CloudEvents type field for your events
+- `compression`: Snappy (default, adjustable)
+- `linger_ms`: 5ms default (batch small messages)
+- `timeout_ms`: 10s default (fail-fast on unreachable broker)
+
 ## Knative-Specific Constraints
 
 - **Port 8080**: Always use port 8080 (required by Knative)
@@ -340,6 +604,43 @@ async fn test_endpoint() {
 - **Graceful shutdown**: Handle SIGTERM for zero-downtime deployments
 - **Fast startup**: Optimize cold start time (<2 seconds preferred)
 - **B3 propagation**: Use B3 headers for distributed tracing (via opentelemetry-zipkin)
+
+## Local Development Image Override
+
+When working with the local development environment, images are built and pushed to a local Docker registry running at `localhost:5001`.
+
+### Image Tagging Convention
+
+- **Development builds**: Use `dev` tag (e.g., `localhost:5001/my-service:dev`)
+- **Production builds**: Use `latest` or semantic version tags (e.g., `ghcr.io/org/my-service:1.0.0`)
+
+### Kustomize Image Override Pattern
+
+The dev overlay automatically overrides the GHCR image reference with the local registry:
+
+```yaml
+# deploy/overlays/dev/kustomization.yaml
+images:
+  - name: ghcr.io/org/my-service      # Base image reference
+    newName: localhost:5001/my-service # Local registry
+    newTag: dev                         # Development tag
+```
+
+This allows:
+- Base manifests reference production registry (GHCR)
+- Dev overlay automatically uses local registry (no GHCR auth needed)
+- Staging/prod overlays use production images unchanged
+- `make dev-restart` rebuilds and deploys with local image
+
+### Build Process
+
+The `scripts/dev/build-and-deploy.sh` script:
+1. Builds Docker image: `docker build -t localhost:5001/my-service:dev .`
+2. Pushes to local registry: `docker push localhost:5001/my-service:dev`
+3. Applies Kustomize overlay: `kubectl apply -k deploy/overlays/dev`
+4. Kustomize substitutes image → Knative pulls from local registry
+
+**No imagePullSecrets needed** for local development!
 
 ## Configuration
 

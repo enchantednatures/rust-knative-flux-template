@@ -7,8 +7,49 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use metrics_exporter_prometheus::PrometheusHandle;
+use metrics::{describe_counter, describe_histogram};
 
 use crate::config::TelemetryConfig;
+
+/// Initialize metrics collection with Prometheus export
+///
+/// Returns a PrometheusHandle that can be used to render metrics at the /metrics endpoint.
+///
+/// Sets up Prometheus metrics for:
+/// - kafka_events_published_total: Counter for successfully published events
+/// - kafka_events_failed_total: Counter for failed publish attempts
+/// - kafka_publish_latency_ms: Histogram for publishing latency
+/// - HTTP request metrics (via tower-http)
+{%- if features contains "kafka" %}
+///
+/// Kafka metrics are tagged with:
+/// - topic: The Kafka topic where events are published
+/// - error_type: Type of error (broker_unreachable, publish_failed, etc.)
+{%- endif %}
+pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
+    // Initialize the metrics-exporter-prometheus and get the handle for rendering
+    let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .add_global_label("service", env!("CARGO_PKG_NAME"))
+        .install_recorder()?;
+
+    // Pre-register metrics with descriptions to ensure Prometheus format is emitted
+    // even before any requests are made
+    describe_counter!("http_requests_total", "Total number of HTTP requests");
+    describe_counter!("app_info", "Application information and version");
+    {%- if features contains "kafka" %}
+    describe_counter!("kafka_events_published_total", "Total number of Kafka events published successfully");
+    describe_counter!("kafka_events_failed_total", "Total number of Kafka event publish failures");
+    describe_histogram!("kafka_publish_latency_ms", "Kafka event publishing latency in milliseconds");
+    {%- endif %}
+
+    // Record an initial metric to ensure the exporter has something to render
+    let app_info = metrics::counter!("app_info");
+    app_info.increment(1);
+
+    tracing::info!("Prometheus metrics exporter initialized");
+    Ok(handle)
+}
 
 /// Initialize OpenTelemetry with B3 propagation for Knative compatibility
 ///

@@ -1,14 +1,50 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: default
+namespace: production
 
 resources:
   - ../../base
 
+patches:
+  - target:
+      kind: Service
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "{% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}"
+      - op: add
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "{% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "{% if use_default_scaling %}250m{% else %}{{ prod_cpu_request }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "{% if use_default_scaling %}256Mi{% else %}{{ prod_memory_request }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "{% if use_default_scaling %}1000m{% else %}{{ prod_cpu_limit }}{% endif %}"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
+
+ {% if features contains "s3" %}
+# Production S3 configuration (typically AWS S3 or managed MinIO)
+configMapGenerator:
+  - name: s3-config
+    behavior: create
+    literals:
+      - S3_ENDPOINT=https://s3.amazonaws.com  # or your MinIO endpoint
+      - S3_BUCKET=data-prod
+      - S3_REGION=us-east-1
+ {% endif %}
+
+{% if event_sources contains "kafka" %}
 patchesStrategicMerge:
-  - postgres-cluster-patch.yaml.liquid
-  - postgres-backup-patch.yaml.liquid
+  - kafka-source-patch.yaml
+{% endif %}
 
 # =============================================================================
 # Grafana Configuration

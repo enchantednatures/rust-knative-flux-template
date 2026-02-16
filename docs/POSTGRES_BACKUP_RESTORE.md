@@ -1,834 +1,533 @@
-# PostgreSQL Backup and Restore Guide
+# PostgreSQL Backup and Restore Procedures
 
-Comprehensive guide for managing PostgreSQL backups and recovery operations using CloudNativePG's Barman integration.
+Complete guide for backing up, restoring, and performing point-in-time recovery of PostgreSQL databases.
 
 ## Table of Contents
 
 1. [Backup Overview](#backup-overview)
 2. [Backup Configuration](#backup-configuration)
-3. [Scheduled Backups](#scheduled-backups)
-4. [Manual Backups](#manual-backups)
-5. [Backup Verification](#backup-verification)
-6. [Restore Operations](#restore-operations)
-7. [Point-in-Time Recovery (PITR)](#point-in-time-recovery-pitr)
-8. [Disaster Recovery](#disaster-recovery)
-9. [Backup Troubleshooting](#backup-troubleshooting)
+3. [Manual Backup Procedures](#manual-backup-procedures)
+4. [Scheduled Backups](#scheduled-backups)
+5. [Restore Procedures](#restore-procedures)
+6. [Point-in-Time Recovery](#point-in-time-recovery)
+7. [Disaster Recovery](#disaster-recovery)
+8. [Backup Verification](#backup-verification)
+9. [Troubleshooting](#troubleshooting)
 
 ## Backup Overview
 
-### Backup Strategy
+### Backup Methods
 
-CloudNativePG uses **Barman Cloud Plugin** for backup management:
+CloudNativePG uses **Barman Cloud Plugin** for backups to object storage:
 
-```
-PostgreSQL Cluster
-    ↓
-Continuous WAL Archiving (5-minute intervals)
-    ↓
-Scheduled Full Backups (daily)
-    ↓
-Object Storage (S3/MinIO)
-```
-
-**Key Features**:
-- ✅ **Continuous WAL Archiving**: Every 5 minutes, ensuring minimal data loss
-- ✅ **Full Backups**: Daily backups of entire database cluster
-- ✅ **Compression**: Zstandard (zstd) compression reduces storage by 70-80%
-- ✅ **Retention**: Automated cleanup of old backups (configurable)
-- ✅ **Encryption**: Optional server-side encryption for S3 backups
-- ✅ **Verification**: Automatic integrity checks via checksums
+- **Method**: Plugin (Barman Cloud Plugin)
+- **Transport**: Streaming WAL archiving + base backups
+- **Compression**: Configurable (gzip, zstd)
+- **Encryption**: Optional (SSE-S3 for AWS S3)
+- **Retention**: Automatic cleanup based on retention policy
 
 ### Backup Components
 
-1. **ScheduledBackup CRD**: Defines backup schedule and retention
-2. **Barman Cloud Plugin**: Handles backup creation and upload
-3. **Object Storage**: MinIO (dev) or AWS S3 (prod)
-4. **WAL Archiving**: Continuous transaction log streaming
+1. **Base Backup**: Full database snapshot (binary copy)
+2. **WAL Archive**: Transaction logs for recovery between base backups
+3. **Backup Metadata**: Timestamps, checksums, catalog
 
-### Backup Frequency & Retention
+### Backup Types
 
-| Environment | Schedule | Retention | Size Estimate |
-|------------|----------|-----------|----------------|
-| **Development** | Daily @ 3 AM | 7 days | ~500 MB/day |
-| **Staging** | Daily @ 2 AM | 14 days | ~2 GB/day |
-| **Production** | Daily @ 2 AM | 30 days | ~10 GB/day |
+| Type | Trigger | Duration | Use Case |
+|------|---------|----------|----------|
+| **Scheduled** | Cron schedule | Minutes to hours | Routine backups |
+| **Manual** | On-demand | Same as scheduled | Immediate backup needs |
+| **Continuous WAL** | Automatic | N/A | Enables PITR |
 
 ## Backup Configuration
 
-### Default Configuration (Base)
+### Environment Configurations
 
-**File**: `deploy/base/postgres-backup.yaml.liquid`
+#### Development
 
 ```yaml
+schedule: "0 3 * * *"  # Daily at 3 AM UTC
+retentionPolicy:
+  base: 7      # 7 days
+  wal: 3       # 3 days
+compressionAlgorithm: gzip
+endpoint: "minio.minio.svc.cluster.local:9000"
+```
+
+#### Staging
+
+```yaml
+schedule: "0 2 * * *"  # Daily at 2 AM UTC
+retentionPolicy:
+  base: 14     # 14 days
+  wal: 7       # 7 days
+compressionAlgorithm: zstd
+compressionLevel: 3
+```
+
+#### Production
+
+```yaml
+schedule: "0 2 * * *"  # Daily at 2 AM UTC
+retentionPolicy:
+  base: 30     # 30 days
+  wal: 15      # 15 days
+compressionAlgorithm: zstd
+compressionLevel: 10
+encryptionType: sse-s3    # Server-side encryption
+```
+
+### Object Storage Configuration
+
+#### MinIO (Development)
+
+```yaml
+endpointURL: "http://minio.minio.svc.cluster.local:9000"
+region: "us-east-1"
+credentials:
+  accessKey: minioadmin
+  secretKey: minioadmin
+```
+
+#### AWS S3 (Production)
+
+```yaml
+region: "us-east-1"
+# AWS defaults to S3 endpoint
+credentials:
+  accessKey: <IAM_ACCESS_KEY>
+  secretKey: <IAM_SECRET_KEY>
+```
+
+## Manual Backup Procedures
+
+### Quick Backup
+
+```bash
+# Create on-demand backup
+./scripts/dev/create-backup.sh
+
+# Output:
+# Creating manual backup: {{ project_name }}-postgres-backup-1704326400
+# Backup job created: {{ project_name }}-postgres-backup-1704326400
+# Waiting for backup to complete...
+# ✓ Backup completed successfully!
+```
+
+### Backup with Custom Name
+
+```bash
+# Trigger backup with custom name
+kubectl apply -f - <<EOF
 apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
+kind: Backup
 metadata:
-  name: {{ project_name }}-backup
+  name: {{ project_name }}-postgres-backup-before-upgrade
+  namespace: {{ target_namespace }}
 spec:
-  schedule: "0 2 * * *"              # 2 AM UTC daily
   cluster:
     name: {{ project_name }}-postgres
-  backupOwnerReference: self          # Cleanup with cluster
-  compression: zstd                   # zstd compression
-  retentionPolicy: "30d"              # Keep 30 days
-  target: primary                     # Backup from primary
-  immediate: true                     # Backup on creation
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: postgres-backup-store
+  target: prefer-standby  # Use standby to reduce primary load
+EOF
+
+# Monitor
+kubectl get backup {{ project_name }}-postgres-backup-before-upgrade -w
+kubectl describe backup {{ project_name }}-postgres-backup-before-upgrade
 ```
 
-### Environment-Specific Configuration
-
-Edit overlay patches to customize per environment:
-
-#### Development Backup Patch
-
-**File**: `deploy/overlays/dev/postgres-backup-patch.yaml.liquid`
-
-```yaml
-spec:
-  schedule: "0 3 * * *"      # 3 AM daily (after primary backup)
-  retentionPolicy: "7d"      # Keep only 7 days (save space)
-  compression: gzip          # Faster compression
-```
-
-#### Staging Backup Patch
-
-**File**: `deploy/overlays/staging/postgres-backup-patch.yaml.liquid`
-
-```yaml
-spec:
-  schedule: "0 2 * * *"      # 2 AM daily
-  retentionPolicy: "14d"     # Keep 14 days
-  compression: zstd          # Better compression
-```
-
-#### Production Backup Patch
-
-**File**: `deploy/overlays/prod/postgres-backup-patch.yaml.liquid`
-
-```yaml
-spec:
-  schedule: "0 2 * * *"      # 2 AM daily
-  retentionPolicy: "30d"     # Keep 30 days
-  compression: zstd          # Maximum compression
-  barmanObjectStoreConfig:
-    s3Credentials:
-      accessKeyId:
-        name: aws-creds
-        key: ACCESS_KEY_ID
-      secretAccessKey:
-        name: aws-creds
-        key: SECRET_ACCESS_KEY
-    endpointURL: https://s3.us-east-1.amazonaws.com
-    s3Bucket: my-postgres-backups
-    sse: AES256              # Server-side encryption
-```
-
-### Customizing Backup Settings
-
-#### Change Backup Schedule
+### Check Backup Status
 
 ```bash
-# Edit the patch file
-nano deploy/overlays/prod/postgres-backup-patch.yaml.liquid
+# List all backups
+./scripts/dev/check-backup-status.sh
 
-# Change schedule to 1 AM
-spec:
-  schedule: "0 1 * * *"
-
-# Apply changes
-kubectl apply -k deploy/overlays/prod
+# Output:
+# === PostgreSQL Scheduled Backups ===
+# NAME                           SCHEDULE     CLUSTER         SUSPEND
+# {{ project_name }}-postgres-daily-backup      0 2 * * *    {{ project_name }}-postgres    False
+#
+# === PostgreSQL Manual Backups ===
+# NAME                                  PHASE       STARTTIME             ENDTIME
+# {{ project_name }}-postgres-backup-1704326400       completed   2024-01-03T16:30:45Z  2024-01-03T16:42:22Z
 ```
 
-**Schedule Format** (cron): `minute hour day month weekday`
-
-Examples:
-- `0 2 * * *` → Every day at 2 AM
-- `0 3 * * 0` → Sundays at 3 AM (full weekly backup)
-- `0 */4 * * *` → Every 4 hours
-- `0 2 1 * *` → First day of month at 2 AM (monthly)
-
-#### Change Retention Policy
+### List Backups in Object Storage
 
 ```bash
-# Keep only 7 days
-spec:
-  retentionPolicy: "7d"
+# List backups in MinIO/S3
+./scripts/dev/list-backups.sh
 
-# Keep 60 days
-spec:
-  retentionPolicy: "60d"
+# Or with AWS CLI
+aws s3 ls s3://postgres-backups/dev/ --recursive --human-readable
 
-# Keep only 5 backups (regardless of age)
-spec:
-  retentionPolicy: "5 backups"
-```
-
-#### Enable Encryption (Production Only)
-
-```bash
-spec:
-  barmanObjectStoreConfig:
-    s3Credentials: {...}
-    sse: AES256              # Enable server-side encryption
+# Output example:
+# 2024-01-03 16:42:22      10.5 MiB postgres-backups/dev/base/000000010000000000000001
+# 2024-01-03 16:42:22   2.1 GiB postgres-backups/dev/wal/000000010000000000000002
 ```
 
 ## Scheduled Backups
 
 ### How Scheduled Backups Work
 
-1. **CloudNativePG Controller** watches ScheduledBackup CRD
-2. **At scheduled time**: Triggers Barman backup job
-3. **Barman** creates full backup of entire cluster
-4. **Upload**: Backup compressed and uploaded to object storage
-5. **Retention**: Old backups automatically deleted after retention period
-6. **Metrics**: Backup metrics recorded in Prometheus
+1. **ScheduledBackup CRD** defines the schedule
+2. **CloudNativePG Operator** creates a Backup CRD at scheduled time
+3. **Barman Cloud Plugin** executes the backup
+4. **Backup completes** and results stored in object storage
+5. **Retention policy** automatically removes old backups
 
 ### Monitoring Scheduled Backups
 
-#### Check Next Scheduled Backup
+```bash
+# Check scheduled backup definition
+kubectl get schedulebackup -A
+
+# Watch backup execution (as it runs)
+watch kubectl get backup -A
+
+# Check next scheduled backup time
+kubectl get schedulebackup {{ project_name }}-postgres-daily-backup -o jsonpath='{.status.lastScheduleTime}'
+
+# List recent backup executions
+kubectl get backup --sort-by='.metadata.creationTimestamp' -o wide
+```
+
+### Modifying Schedule
 
 ```bash
-kubectl get scheduledbacked
+# Change backup time to 1 AM
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
+  -p '{"spec":{"schedule":"0 1 * * *"}}'
 
-# Output:
-NAME            SCHEDULE      SUSPEND   AGE
-app-postgres    0 2 * * *     false     15d
+# Disable scheduled backups (one-time)
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
+  -p '{"spec":{"suspend":true}}'
 
-# View details
-kubectl describe scheduledbacked app-postgres
+# Re-enable
+kubectl patch schedulebackup {{ project_name }}-postgres-daily-backup \
+  -p '{"spec":{"suspend":false}}'
 ```
 
-#### View Backup History
+## Restore Procedures
+
+### Full Restore from Latest Backup
 
 ```bash
-./scripts/dev/check-backup-status.sh
-```
-
-Expected output:
-```
-PostgreSQL Cluster: app-postgres
-Current Backups:
-  Backup: app-postgres-20240103-1
-  Status: Succeeded
-  Size: 2.5 GB
-  Duration: 12 minutes
-  Timestamp: 2024-01-03 02:00:00 UTC
-  
-Previous Backups (last 5):
-  - app-postgres-20240102-1 (Success, 2.4 GB, 2024-01-02)
-  - app-postgres-20240101-1 (Success, 2.3 GB, 2024-01-01)
-  - app-postgres-20231231-1 (Success, 2.6 GB, 2023-12-31)
-```
-
-#### View Backups in Object Storage
-
-```bash
-./scripts/dev/list-backups.sh
-```
-
-Expected output:
-```
-Backups in Object Storage (MinIO):
-  postgres-backups/app-postgres/20240103-020000-1 (2.5 GB)
-  postgres-backups/app-postgres/20240102-020000-1 (2.4 GB)
-  postgres-backups/app-postgres/20240101-020000-1 (2.3 GB)
-  
-Total: 7.2 GB (3 backups)
-Oldest: 2024-01-01 02:00:00
-Latest: 2024-01-03 02:00:00
-```
-
-## Manual Backups
-
-### Trigger Manual Backup
-
-Create ad-hoc backup outside regular schedule:
-
-```bash
-./scripts/dev/create-backup.sh
-```
-
-Script automatically:
-1. Creates Backup CRD with unique timestamp
-2. Waits for backup to complete (<10 minutes typical)
-3. Verifies backup in object storage
-4. Checks backup integrity (checksum validation)
-
-### Monitor Manual Backup Progress
-
-```bash
-# Watch backup progress
-kubectl get backup -w
-
-# View backup logs
-kubectl logs -f job/app-postgres-backup-*
-
-# Check final status
-./scripts/dev/check-backup-status.sh
-```
-
-### Script: create-backup.sh
-
-Located at: `scripts/dev/create-backup.sh`
-
-**Usage**:
-```bash
-./scripts/dev/create-backup.sh [OPTIONS]
-
-Options:
-  --cluster=NAME     PostgreSQL cluster name (default: app-postgres)
-  --namespace=NS     Kubernetes namespace (default: default)
-  --wait             Wait for backup completion (default: true)
-  --timeout=SECS     Max wait time in seconds (default: 600)
-```
-
-**Example**:
-```bash
-# Create and wait for backup
-./scripts/dev/create-backup.sh --wait --timeout=900
-
-# Create without waiting
-./scripts/dev/create-backup.sh --wait=false
-```
-
-## Backup Verification
-
-### Verify Backup Integrity
-
-```bash
-# Automated verification (part of create-backup.sh)
-./scripts/dev/create-backup.sh
-
-# Manual verification
-kubectl get backup app-postgres-20240103-1 \
-  -o jsonpath='{.status.phase}' 
-
-# Should output: "completed"
-```
-
-### Check Backup Checksum
-
-```bash
-# List backups with checksums
-kubectl get backup -o wide
-
-# Example output:
-NAME                      BACKUP-ID     PHASE          CHECKSUM
-app-postgres-20240103-1   1...          completed      c7f...
-```
-
-### Verify Backup Accessibility
-
-```bash
-# Try restore from backup (dry-run)
-./scripts/dev/restore-from-backup.sh \
-  --backup-id=app-postgres-20240103-1 \
-  --dry-run
-```
-
-## Restore Operations
-
-### Full Cluster Restore
-
-Restore entire database cluster from backup:
-
-```bash
-# 1. List available backups
-./scripts/dev/list-backups.sh
-
-# 2. Restore from latest backup
+# Restore to new cluster
 ./scripts/dev/restore-from-backup.sh
 
-# 3. Monitor restore progress
-kubectl get cluster app-postgres-restore -w
-
-# 4. Verify restore completed
-kubectl get pods -l postgresql-restore=true
+# This creates:
+# 1. New cluster: "postgres-restored"
+# 2. Uses latest available backup
+# 3. Waits for cluster to be healthy (~5-10 minutes)
+# 4. Verifies restored data
 ```
 
-### Restore to New Cluster Name
+### Restore from Specific Backup
 
 ```bash
-# Restore to new cluster with different name
+# Find backup name
+kubectl get backup --sort-by='.metadata.creationTimestamp' -o jsonpath='{.items[-3:].metadata.name}'
+
+# Restore from specific backup
 ./scripts/dev/restore-from-backup.sh \
-  --backup-id=app-postgres-20240103-1 \
-  --target-cluster=app-postgres-restored
+  -b {{ project_name }}-postgres-backup-1704326400 \
+  -n my-restored-cluster
 
-# Connect to restored cluster
-psql -h app-postgres-restored.default.svc.cluster.local -U postgres
+# Monitor restore progress
+kubectl get cluster my-restored-cluster -w
 ```
 
-### Step-by-Step Restore Procedure
+### Restore Configuration
 
-#### 1. Verify Backup Exists
+The restore creates a new cluster with:
 
-```bash
-./scripts/dev/list-backups.sh | grep "20240103"
-# Should show: postgres-backups/app-postgres/20240103-020000-1 (2.5 GB)
+```yaml
+bootstrap:
+  recovery:
+    method: object_store
+    object_store:
+      name: postgres-backup-store  # Reference to ObjectStore CRD
+    backupId: <BACKUP_NAME>  # Specific backup to restore from
 ```
 
-#### 2. Create Restore Cluster Manifest
+### Post-Restore Steps
 
-```bash
-# Script automatically creates manifest
-./scripts/dev/restore-from-backup.sh
+1. **Verify data integrity**:
+   ```bash
+   kubectl exec -it restored-cluster-1 -- psql -U postgres -d app
+   
+   # Check table counts
+   SELECT COUNT(*) FROM important_table;
+   
+   # Check data consistency
+   SELECT * FROM backup_marker ORDER BY id DESC LIMIT 1;
+   ```
 
-# Or manually create (see template below)
-cat <<EOF | kubectl apply -f -
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: app-postgres-restore
-spec:
-  instances: 3
-  postgresql:
-    parameters:
-      max_connections: "200"
-  bootstrap:
-    recovery:
-      source: clusterBackupObjectStoreConfig
-      recoveryTarget:
-        # Restore to specific point in time (optional)
-        # timeline: "1"
-        # xid: "123456789"
-      sourceClusterExternalSnapshotRecoveryTarget:
-        snapshotName: app-postgres-backup-20240103
-        namespaceMapping:
-          source: default
-          target: default
-  externalClusters:
-    - name: clusterBackupObjectStoreConfig
-      barmanObjectStoreConfig:
-        destinationDirectoryWAL: wal_archive
-        s3Credentials:
-          accessKeyId:
-            name: aws-creds
-            key: ACCESS_KEY_ID
-          secretAccessKey:
-            name: aws-creds
-            key: SECRET_ACCESS_KEY
-        endpointURL: http://minio:9000
-        s3Bucket: postgres-backups
-        wal_restore_command: 'barman-cloud-wal-restore ...'
-  storage:
-    size: 100Gi
-EOF
-```
+2. **Scale cluster** if needed:
+   ```bash
+   kubectl patch cluster restored-cluster --type='json' \
+     -p='[{"op":"replace","path":"/spec/instances","value":3}]'
+   ```
 
-#### 3. Monitor Restore Progress
+3. **Enable backups**:
+   ```bash
+   # Apply backup schedule to restored cluster
+   kubectl apply -f deploy/base/postgres-backup.yaml
+   ```
 
-```bash
-# Watch pod creation
-kubectl get pods -w -l postgresql=app-postgres-restore
+4. **Switch application traffic** (after verification):
+   ```bash
+   # Update application connection string
+   # Or update Kubernetes Service endpoints
+   ```
 
-# View restore logs
-kubectl logs app-postgres-restore-1
-
-# Check restore phase
-kubectl get cluster app-postgres-restore -o jsonpath='{.status.phase}'
-```
-
-#### 4. Verify Restored Data
-
-```bash
-# Connect to restored cluster
-psql -h app-postgres-restore.default.svc.cluster.local -U postgres
-
-# Inside psql:
--- Check database size
-SELECT pg_size_pretty(pg_database_size('postgres'));
-
--- Check table count
-SELECT count(*) FROM information_schema.tables 
-WHERE table_schema = 'public';
-
--- Verify data integrity
-SELECT count(*) FROM your_table;
-```
-
-#### 5. Optional: Promote Restore Cluster to Primary
-
-After verification, if you want to use restored cluster as new primary:
-
-```bash
-# 1. Update application connection string
-kubectl set env deployment/app \
-  DATABASE_URL="postgresql://postgres:...@app-postgres-restore:5432/postgres"
-
-# 2. Delete old cluster
-kubectl delete cluster app-postgres
-
-# 3. Rename restored cluster
-kubectl patch cluster app-postgres-restore \
-  -p '{"metadata":{"name":"app-postgres"}}'
-```
-
-## Point-in-Time Recovery (PITR)
+## Point-in-Time Recovery
 
 ### PITR Overview
 
-Restore database to exact point in time using archived WAL files:
+**Point-in-Time Recovery** (PITR) allows restoring database to any moment within WAL retention period:
 
-```
-Backup (2024-01-03 02:00)
-    ↓
-WAL Archive (5-minute intervals)
-    ↓
-Restore to timestamp (2024-01-03 14:30:45)
-```
+- **Restore Window**: Latest backup time + WAL retention days
+- **Precision**: Second-level granularity
+- **Method**: Restore from base backup + replay WAL to target time
 
-### Requirements for PITR
+### PITR Prerequisites
 
-- ✅ Backup from before target time
-- ✅ WAL archives from before target time
-- ✅ WAL archiving enabled (enabled by default)
-- ✅ Target time within retention window (30 days typical)
+1. Base backups available (at least one)
+2. WAL files archived (not older than retention period)
+3. Target recovery time within PITR window
 
-### Perform PITR
-
-#### Method 1: Using Script
+### PITR Procedure
 
 ```bash
-# Restore to specific timestamp
+# Restore to specific point in time
 ./scripts/dev/restore-from-backup.sh \
-  --timestamp="2024-01-03 14:30:45" \
-  --target-cluster=app-postgres-pitr
+  -t "2024-01-03 15:30:00" \
+  -n pitr-cluster
 
-# Wait for restore to complete
-kubectl get cluster app-postgres-pitr -w
+# Monitoring
+kubectl get cluster pitr-cluster -w
 
-# Verify data as of that time
-psql -h app-postgres-pitr.default.svc.cluster.local -U postgres
+# Verification - query database as of that time
+kubectl exec pitr-cluster-1 -- psql -U postgres -d app
+SELECT * FROM events WHERE created_at > '2024-01-03 15:30:00';  -- Should be empty
 ```
 
-#### Method 2: Manual PITR Manifest
+### Example Scenarios
+
+#### Before Application Bug
 
 ```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: app-postgres-pitr
-spec:
-  instances: 1
-  bootstrap:
-    recovery:
-      source: clusterBackupObjectStoreConfig
-      recoveryTarget:
-        # Restore to this timestamp
-        targetTime: "2024-01-03T14:30:45Z"
-        # Use immediate (without archive recovery)
-        # timeline: "1"
-  externalClusters:
-    - name: clusterBackupObjectStoreConfig
-      barmanObjectStoreConfig:
-        # ... (same as full restore above)
-EOF
+# Bug introduced at 3:45 PM
+# Backup exists from 2:00 AM
+# PITR window: 2:00 AM - 2:00 AM (next day) + 14 days WAL
+
+# Restore to 3:44:59 PM (before bug)
+./scripts/dev/restore-from-backup.sh -t "2024-01-03 15:44:59" -n pre-bug
+
+# Verify bug not present
+kubectl exec pre-bug-1 -- psql -U postgres -d app -c "SELECT * FROM buggy_table;"
 ```
 
-### PITR Examples
-
-#### Recover to Morning Before Data Loss
+#### After Accidental Data Deletion
 
 ```bash
-# Data loss occurred at 9:30 AM
-# Recover to 9:00 AM same day
+# Data deleted at 2:30 PM
+# Recovery time: 2:29 PM
 
-./scripts/dev/restore-from-backup.sh \
-  --timestamp="2024-01-03 09:00:00" \
-  --target-cluster=app-postgres-recovered
-```
+./scripts/dev/restore-from-backup.sh -t "2024-01-03 14:29:00" -n recovered
 
-#### Recover to Yesterday Midnight
-
-```bash
-# Recover to start of yesterday
-./scripts/dev/restore-from-backup.sh \
-  --timestamp="2024-01-02 00:00:00" \
-  --target-cluster=app-postgres-yesterday
-```
-
-#### Find Deletion Timestamp
-
-```bash
-# If you don't know exact time:
-# 1. Check application logs for error time
-# 2. Check PostgreSQL logs for drop table command
-# 3. Use timestamp 1 minute before deletion occurred
-
-./scripts/dev/restore-from-backup.sh \
-  --timestamp="2024-01-03 15:29:00" \
-  --target-cluster=app-postgres-before-delete
+# Restore deleted data
+kubectl exec recovered-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM deleted_table;"
 ```
 
 ## Disaster Recovery
 
-### Disaster Recovery Plan
-
-**Scenario**: Primary node failure with data corruption
-
-**Recovery Steps**:
-
-1. **Assessment** (~5 minutes)
-   ```bash
-   ./scripts/dev/check-postgres-status.sh
-   # Confirm cluster unhealthy
-   ```
-
-2. **Backup Verification** (~5 minutes)
-   ```bash
-   ./scripts/dev/list-backups.sh
-   # Verify recent backup exists
-   ```
-
-3. **Restore Cluster** (~15 minutes)
-   ```bash
-   ./scripts/dev/restore-from-backup.sh \
-     --backup-id=app-postgres-20240103-1 \
-     --target-cluster=app-postgres-recovered
-   # Monitor: kubectl get pods -w
-   ```
-
-4. **Data Verification** (~5 minutes)
-   ```bash
-   # Verify data integrity
-   psql -h app-postgres-recovered -U postgres -c \
-     "SELECT count(*) FROM your_critical_table;"
-   ```
-
-5. **Cutover** (~10 minutes)
-   ```bash
-   # Update connection strings to restored cluster
-   kubectl set env deployment/app \
-     DATABASE_URL="postgresql://...@app-postgres-recovered:5432/postgres"
-   # Verify application connects successfully
-   ```
-
-**Total RTO (Recovery Time Objective)**: ~40 minutes  
-**RPO (Recovery Point Objective)**: ~5 minutes (latest WAL archive)
-
-### Backup Strategy for Compliance
-
-#### Financial Services (99.99% uptime requirement)
-
-```yaml
-# Backup configuration
-schedule: "0 * * * *"          # Every hour
-retentionPolicy: "90d"         # 3 months
-compression: zstd
-target: primary
-redundancy: 3                  # Multiple storage locations
-```
-
-#### Healthcare (HIPAA compliant)
-
-```yaml
-schedule: "0 2,14 * * *"       # Twice daily (2 AM, 2 PM)
-retentionPolicy: "365d"        # 1 year
-compression: zstd
-encryption: AES256             # Server-side encryption
-audit: enabled                 # Log all backup operations
-```
-
-#### Development/Testing
-
-```yaml
-schedule: "0 3 * * *"          # Daily @ 3 AM
-retentionPolicy: "7d"          # 1 week
-compression: gzip              # Faster compression
-target: primary
-```
-
-### Testing Disaster Recovery
-
-**Recommended**: Test restore monthly
+### Complete Cluster Loss
 
 ```bash
-# 1. Create test restore cluster
+# 1. Create new cluster namespace
+kubectl create namespace postgres-recovery
+
+# 2. Restore from backup in new namespace
 ./scripts/dev/restore-from-backup.sh \
-  --target-cluster=app-postgres-test \
-  --verbose
+  -s postgres-recovery \
+  -n {{ project_name }}-postgres \
+  -b <latest-backup-name>
 
-# 2. Run integrity checks
-psql -h app-postgres-test -U postgres <<EOF
--- Table counts match
-SELECT count(*) FROM your_table;
+# 3. Verify restored cluster
+kubectl get cluster -n postgres-recovery
 
--- Indexes exist
-\di
-
--- Constraints intact
-\d your_table
-
--- Data types correct
-SELECT column_name, data_type FROM information_schema.columns 
-WHERE table_name='your_table';
-EOF
-
-# 3. Run application test suite
-kubectl run -it --rm test-app \
-  --image=your-app:test \
-  --env=DATABASE_URL=postgresql://...@app-postgres-test:5432/postgres \
-  -- pytest
-
-# 4. Clean up test cluster
-kubectl delete cluster app-postgres-test
+# 4. Restore applications pointing to new location
+# Update connection strings or update Service endpoints
 ```
 
-## Backup Troubleshooting
+### Partial Data Loss
 
-### Backup Failed
-
-**Symptoms**: Backup stuck in pending or failed status
-
-**Diagnosis**:
 ```bash
-# 1. Check ScheduledBackup status
-kubectl get scheduledbacked -o wide
+# 1. Create PITR cluster to specific time
+./scripts/dev/restore-from-backup.sh \
+  -t "2024-01-03 before-bad-update" \
+  -n recovered-cluster
 
-# 2. View event logs
-kubectl describe scheduledbacked app-postgres
+# 2. Extract needed data
+kubectl exec recovered-cluster-1 -- pg_dump -U postgres -d app -t lost_table \
+  > lost_table.sql
 
-# 3. Check operator logs
-kubectl logs -n cnpg-system deployment/cnpg-controller-manager | grep backup
-
-# 4. Check if backup job exists
-kubectl get jobs | grep backup
+# 3. Restore data to production
+psql -U postgres -d app < lost_table.sql
 ```
 
-**Common Causes & Solutions**:
+### Corrupted Index
 
-| Cause | Symptom | Solution |
-|-------|---------|----------|
-| Wrong S3 credentials | Auth error | Update secret: `kubectl edit secret aws-creds` |
-| Bucket doesn't exist | 404 error | Create bucket in MinIO/S3 |
-| Network blocked | Connection timeout | Check network policies, security groups |
-| Insufficient disk | Disk full | Delete old backups or increase storage |
-| Operator not ready | Job stuck pending | Wait for operator, check: `kubectl get deployment -n cnpg-system` |
-
-### Backup Taking Too Long
-
-**Symptoms**: Backup > 30 minutes for database expected to backup in < 10 minutes
-
-**Investigation**:
 ```bash
-# Check backup job CPU/memory
-kubectl top pod app-postgres-backup-*
+# Reindex on restored cluster (without affecting production)
+# Create PITR to before corruption occurred
 
-# Check network throughput
-kubectl exec app-postgres-1 -- nstat | grep -i "tcp"
+# Or reindex in place (if downtime acceptable):
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "REINDEX INDEX CONCURRENTLY idx_name;"
+```
 
-# Check object storage performance
+## Backup Verification
+
+### Automated Verification
+
+```bash
+# CloudNativePG automatically verifies backups:
+# 1. Checksum validation after backup completes
+# 2. Metadata integrity checks
+# 3. Object storage accessibility
+
+# Check for failures
+./scripts/dev/check-backup-status.sh | grep -i "failed\|error"
+```
+
+### Manual Verification
+
+```bash
+# Test restore (create test cluster)
+./scripts/dev/restore-from-backup.sh \
+  -b {{ project_name }}-postgres-backup-1704326400 \
+  -n test-restore
+
+# Verify data matches expectations
+kubectl exec test-restore-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
+
+# Compare with production
+kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -d app -c "SELECT COUNT(*) FROM my_table;"
+
+# If counts match, backup is valid
+# Delete test cluster
+kubectl delete cluster test-restore
+```
+
+### Backup Integrity Checks
+
+```bash
+# List backup files with checksums
+aws s3 ls s3://postgres-backups/dev/base/ --recursive
+
+# Verify backup metadata
+kubectl get backup {{ project_name }}-postgres-backup-1704326400 -o yaml | grep -E "checksum|phase|size"
+
+# Check WAL file integrity
+kubectl exec {{ project_name }}-postgres-1 -- pg_checkpoints
+```
+
+## Troubleshooting
+
+### Backup Hangs
+
+```bash
+# Check operator logs
+kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | tail -50
+
+# Check backup pod logs (if exists)
+kubectl logs {{ project_name }}-postgres-backup-pod
+
+# Kill stuck backup (forces retry)
+kubectl delete backup {{ project_name }}-postgres-backup-<name>
+```
+
+### Backup Fails with Timeout
+
+```bash
+# Increase backup timeout (default 300s per WAL)
+# For large databases, increase operator configMap
+
+# Or trigger backup during low-activity period
+./scripts/dev/create-backup.sh  # Run during maintenance window
+```
+
+### Restore Fails
+
+```bash
+# Check cluster logs
+kubectl describe cluster restored-cluster
+
+# Check PostgreSQL logs
+kubectl logs restored-cluster-1
+
+# Verify backup exists
 ./scripts/dev/check-backup-status.sh
+
+# Try restoring from different backup
+./scripts/dev/restore-from-backup.sh -b <older-backup>
 ```
 
-**Solutions**:
-- Increase object storage bandwidth (AWS S3 region closer to cluster)
-- Decrease backup compression level (edit patch `compression: gzip`)
-- Scale up barman pod resources (edit ScheduledBackup)
+### PITR Restores to Wrong Time
 
-### Backup Missing from Object Storage
-
-**Symptoms**: Backup reports "Succeeded" but file not in MinIO/S3
-
-**Diagnosis**:
 ```bash
-# 1. Verify backup CRD exists
-kubectl get backup | grep "20240103"
+# Verify target time is within PITR window
+# PITR window = Latest backup + WAL retention days
 
-# 2. Check backup CRD details
-kubectl describe backup app-postgres-20240103-1
+# List available backups to check dates
+./scripts/dev/check-backup-status.sh
 
-# 3. List files in storage
-./scripts/dev/list-backups.sh
-
-# 4. Check barman logs
-kubectl logs -l app=barman --all-containers=true
+# If target time is outside window, use full restore instead
+./scripts/dev/restore-from-backup.sh -b <latest-backup>
 ```
 
-**Solutions**:
-- Verify object storage credentials
-- Check network connectivity to object storage
-- Review barman logs for upload failures
-- Increase backup timeout if storage is slow
+### Out of Object Storage Space
 
-### WAL Archiving Not Working
-
-**Symptoms**: 
-- Backup status shows "WAL archiving failed"
-- Cannot restore to timestamp
-
-**Diagnosis**:
 ```bash
-# Check WAL archiving configuration
-kubectl get cluster app-postgres -o jsonpath='{.spec.postgresql.parameters.archive_command}'
+# Check storage usage
+aws s3 ls s3://postgres-backups/ --summarize --human-readable
 
-# View WAL archiving logs
-kubectl logs app-postgres-1 | grep -i "archive"
+# Reduce retention policy
+kubectl patch objectstore postgres-backup-store \
+  -p '{"spec":{"retentionPolicy":{"base":14,"wal":7}}}'
 
-# Check WAL files in object storage
-aws s3 ls s3://postgres-backups/app-postgres/wal/
+# Manually delete old backups (use with caution!)
+# This is automatic - manual deletion not recommended
+
+# Add more storage to object store
+# For MinIO: Expand PVC or add new nodes
 ```
 
-**Solutions**:
-- Verify object storage credentials are accessible from pod
-- Check network policies don't block access to object storage
-- Review barman cloud configuration in cluster manifest
+## Best Practices
 
-### Old Backups Not Being Deleted
+1. **Test Restores Regularly**: Monthly restore tests to catch issues early
+2. **Document Recovery Procedures**: Keep runbooks updated
+3. **Monitor Backup Completion**: Alert on failed backups within 5 minutes
+4. **Verify Data Integrity**: Spot-check restored data for accuracy
+5. **Plan Capacity**: Backups consume storage - plan accordingly
+6. **Secure Credentials**: Use Kubernetes Secrets for S3 credentials
+7. **Enable Encryption**: Use SSE-S3 for production backups
+8. **Archive Old Backups**: Move old backups to cheaper storage (Glacier, etc.)
+9. **Document Retention**: Clearly document why you keep backups for X days
+10. **Test Disaster Recovery**: Annually perform full DR test
 
-**Symptoms**: Retention policy not enforced, old backups still present
-
-**Diagnosis**:
-```bash
-# Check retention policy configured
-kubectl get scheduledbacked -o jsonpath='{.spec.retentionPolicy}'
-
-# Check backup ages
-./scripts/dev/list-backups.sh | head -10
-
-# View controller logs
-kubectl logs -n cnpg-system deployment/cnpg-controller-manager | grep retention
-```
-
-**Solutions**:
-- Update retention policy: edit `deploy/overlays/ENV/postgres-backup-patch.yaml.liquid`
-- Manually delete old backups: `kubectl delete backup app-postgres-20231215-1`
-- Restart operator to trigger cleanup: `kubectl rollout restart deployment/cnpg-controller-manager -n cnpg-system`
-
-## Backup Best Practices
-
-✅ **Schedule During Low-Traffic Windows**
-- Avoid business hours when possible
-- Stagger schedules (primary 2 AM, standby 3 AM)
-
-✅ **Monitor Backup Success Rate**
-- Alert if backup fails 2+ times in a row
-- Track backup duration trends (anomaly detection)
-- Validate backup size (detect if undersized)
-
-✅ **Test Restores Regularly**
-- Monthly restore tests (minimum)
-- Document PITR scenarios
-- Validate data integrity post-restore
-
-✅ **Maintain Backup Inventory**
-- Keep backup manifest in git
-- Document backup schedule and retention
-- Track object storage costs
-
-✅ **Secure Backups**
-- Enable encryption for production
-- Limit backup access via IAM policies
-- Audit backup operations
-
-✅ **Document Recovery Procedures**
-- Write runbooks for different failure scenarios
-- Document RTO/RPO for each environment
-- Include contact escalation procedures
-
-## References
+## Additional Resources
 
 - [CloudNativePG Backup Documentation](https://cloudnative-pg.io/documentation/current/backup_recovery/)
-- [Barman Cloud Documentation](https://docs.pgbarman.org/release/barman-cloud/)
-- [PostgreSQL WAL Archiving](https://www.postgresql.org/docs/current/wal-archiving.html)
+- [Barman Cloud Plugin Guide](https://pgbarman.org/barman-cloud/)
+- [PostgreSQL Recovery Documentation](https://www.postgresql.org/docs/current/continuous-archiving.html)
+- [Operations Guide](POSTGRES.md)
+- [Monitoring Guide](POSTGRES_MONITORING.md)

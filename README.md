@@ -1,101 +1,813 @@
-# Template Configuration Guide
+# {{ project_name }}
 
-This is a `cargo-generate` template. It supports conditional features that are applied during project generation.
+A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
+{% if features contains "s3" or features contains "kafka" or event_sources contains "kafka" %}
 ## Features
 
-This template includes:
+- 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
+{% if features contains "s3" %}
+- 📦 **S3-Compatible Storage**: Integrated OpenDAL for MinIO/AWS S3 object storage
+{% endif %}
+{% if event_sources contains "kafka" %}
+- 📨 **Kafka Event Source**: Knative KafkaSource for consuming Kafka events
+- 🔁 **Topic-Per-Source Pattern**: One KafkaSource per topic for independent scaling
+- ⚰️ **Dead Letter Queue**: Automatic DLQ handling for failed events
+{% endif %}
+{% if features contains "kafka" %}
+- 📤 **Kafka Event Publishing**: Optional event publishing from HTTP handlers
+- 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 spec compliance via vendored axum-cloudevents
+- 📊 **Publisher Metrics**: Built-in Prometheus metrics for event publishing
+{% endif %}
+- 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
+- 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
+- 🏗️ **Infrastructure as Code**: Terraform modules for resource management
+- 🧪 **Fully Tested**: Integration tests with Redis{% if features contains "s3" %}, MinIO{% endif %}{% if features contains "kafka" %}, and Kafka{% endif %}
+- 📝 **Type-Safe**: Rust with strict compiler checks
+- ⚡ **Fast**: Built on Tokio async runtime
 
-- **Rust Axum Web Framework**: High-performance async web service
-- **Knative Serverless**: Cloud-native serverless deployment
-- **Kafka Event Streaming**: Event-driven architectures
-- **CloudNativePG Database**: Production-grade PostgreSQL with HA, backups, and PITR
-- **FluxCD GitOps**: Infrastructure as code with Kubernetes
-- **OpenTelemetry Observability**: Distributed tracing and metrics
+## Quick Start
 
-## PostgreSQL Support
+### Local Development
 
-This template includes comprehensive PostgreSQL database support with:
+1. **Prerequisites**
+   - Docker & Docker Compose
+   - Rust 1.92+
+   - cargo-generate (optional, for new projects)
 
-- **High Availability**: Multi-instance clusters with automatic failover
-- **Automated Backups**: Scheduled backups to S3/MinIO with retention policies
-- **Point-in-Time Recovery**: Restore to any moment within retention window
-- **Monitoring & Alerting**: Prometheus metrics and alert rules for backup/replication
-- **Disaster Recovery**: Complete procedures and testing
+2. **Start Local Services**
+   ```bash
+   docker-compose up -d
+   ```
 
-### PostgreSQL Quick Start
+   This starts:
+   - Redis (port 6379)
+   - MinIO with S3-compatible API (port 9000)
+   - MinIO Web Console (port 9001)
+   - Jaeger tracing (port 16686)
+   - Prometheus metrics (port 9090)
+   - OpenTelemetry Collector
 
-```bash
-# Deploy PostgreSQL cluster with HA
-make dev-up
+3. **Run the Service**
+   ```bash
+   # Configure environment (optional, defaults work)
+   export APP__SERVER__PORT=8080
+   export APP__REDIS__URL=redis://localhost:6379
+   
+   # Run with auto-reload
+   cargo watch -q -c -w src -x run
+   ```
 
-# Connect to database
-./scripts/dev/port-forward-postgres.sh
-psql postgresql://app:PASSWORD@localhost:5432/app
+4. **Test S3 Integration**
+   ```bash
+   # Write object
+   curl -X POST http://localhost:8080/api/upload \
+     -H "Content-Type: application/json" \
+     -d '{"key": "test.txt", "data": "Hello MinIO"}'
+   
+   # List objects
+   curl http://localhost:8080/api/objects
+   
+   # Download object
+   curl http://localhost:8080/api/download/test.txt
+   ```
 
-# Create backup
-./scripts/dev/create-backup.sh
+5. **View Traces & Metrics**
+   - Jaeger: http://localhost:16686
+   - Prometheus: http://localhost:9090
+   - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
 
-# Restore from backup
-./scripts/dev/restore-from-backup.sh
+### Kubernetes Deployment
+
+1. **Prerequisites**
+    - Kubernetes 1.24+
+    - Knative 1.5+
+    - FluxCD
+
+2. **Deploy with FluxCD**
+    ```bash
+    kubectl apply -f deploy/flux/git-repository.yaml
+    kubectl apply -f deploy/flux/kustomization.yaml
+    ```
+
+{% if event_sources contains "kafka" %}
+#### Kafka Event Source Deployment
+
+The KafkaSource and DLQ handler are automatically deployed with the application.
+
+For production/staging, ensure external Kafka is configured:
+- Update `deploy/overlays/staging/kafka-source-patch.yaml` with staging Kafka servers
+- Update `deploy/overlays/prod/kafka-source-patch.yaml` with production Kafka servers
+{% endif %}
+
+3. **Deploy Directly**
+   ```bash
+   # Development environment
+   kubectl apply -k deploy/overlays/dev
+   
+   # Staging environment
+   kubectl apply -k deploy/overlays/staging
+   
+   # Production environment
+   kubectl apply -k deploy/overlays/prod
+   ```
+
+4. **Configure S3 Credentials**
+   ```bash
+   kubectl create secret generic {{ project_name }}-s3 \
+     --from-literal=s3-endpoint=s3.amazonaws.com \
+     --from-literal=s3-bucket=my-bucket \
+     --from-literal=s3-region=us-east-1 \
+     --from-literal=aws-access-key-id=$AWS_ACCESS_KEY_ID \
+     --from-literal=aws-secret-access-key=$AWS_SECRET_ACCESS_KEY
+   ```
+
+## Project Structure
+
+```
+{{ project_name }}/
+├── src/
+│   ├── main.rs           # Application entry point{% if features contains "s3" %} with S3 setup{% endif %}{% if features contains "kafka" %} and Kafka publisher{% endif %}
+│   ├── lib.rs            # Module exports
+│   ├── config.rs         # Configuration{% if features contains "s3" %} with S3Config{% endif %}{% if features contains "kafka" %} and KafkaConfig{% endif %}
+│   ├── state.rs          # AppState with Redis{% if features contains "s3" %}, storage Operator{% endif %}{% if features contains "kafka" %}, and Kafka publisher{% endif %}
+│   ├── error.rs          # Error handling
+│   ├── observability.rs  # OpenTelemetry setup (B3 propagation for Knative)
+│   ├── routes.rs         # Route definitions
+│   ├── handlers/
+│   │   ├── api.rs        # API handlers{% if features contains "s3" %} with S3 operations{% endif %}
+│   │   ├── health.rs     # Health check endpoints
+{% if features contains "kafka" %}│   │   ├── kafka.rs       # Kafka event publishing handlers
+{% endif %}│   │   └── mod.rs        # Handler exports
+│
+├── crates/               # Vendored local dependencies
+│   ├── axum-cloudevents/ # CloudEvents extractor for Axum (vendored)
+│   │   ├── src/
+│   │   │   ├── extractor.rs  # CloudEvent extractor implementation
+│   │   │   ├── headers.rs    # CloudEvents HTTP header mapping
+│   │   │   ├── metadata.rs   # CloudEvent metadata types
+│   │   │   └── error.rs      # Error types
+│   │   └── Cargo.toml
+│   └── axum-cloudevents-macros/  # Proc macros for CloudEvents
+│
+├── config/
+│   ├── default.toml      # Default configuration with S3 settings
+│   └── development.toml  # Development overrides
+│
+├── deploy/
+│   ├── base/
+│   │   ├── knative-service.yaml     # Knative Service with S3 env vars
+│   │   ├── secret.yaml.example      # Secret template for credentials
+│   │   └── kustomization.yaml       # Base Kustomize config
+│   ├── overlays/
+│   │   ├── dev/          # Development environment patches
+│   │   ├── staging/      # Staging environment patches
+│   │   └── prod/         # Production environment patches
+│   └── flux/             # FluxCD GitRepository and Kustomization
+│
+├── terraform/
+│   ├── main.tf           # Root module with MinIO module
+│   ├── variables.tf      # Input variables
+│   └── modules/minio/
+│       ├── main.tf       # MinIO bucket resources
+│       └── outputs.tf    # Bucket names output
+│
+├── tests/
+│   ├── health_test.rs    # Health endpoint tests
+│   ├── storage_test.rs   # S3 integration tests
+│   └── common/mod.rs     # Test utilities
+│
+├── docker/
+│   ├── otel-collector-config.yaml  # OpenTelemetry configuration
+│   └── prometheus.yaml             # Prometheus config
+│
+├── Cargo.toml            # Rust dependencies with conditional S3
+├── Dockerfile            # Multi-stage Docker build
+├── docker-compose.yaml   # Local development services with MinIO
+└── README.md             # This file
 ```
 
-### PostgreSQL Documentation
+## Configuration
 
-- [Operations Guide](docs/POSTGRES.md) - Deployment, configuration, scaling
-- [Backup & Restore Guide](docs/POSTGRES_BACKUP_RESTORE.md) - Backup procedures, PITR, disaster recovery
-- [Monitoring Guide](docs/POSTGRES_MONITORING.md) - Metrics, alerts, Grafana setup
+### Environment Variables
 
-## Template Structure
+**Server:**
+- `APP__SERVER__HOST`: Server bind address (default: 0.0.0.0)
+- `APP__SERVER__PORT`: Server port (default: 8080)
 
-All files with `.liquid` extension are template files using Shopify Liquid syntax. They are automatically renamed (`.liquid` removed) during generation.
+**Redis:**
+- `APP__REDIS__URL`: Redis connection URL (default: redis://localhost:6379)
 
-### Liquid Variables
+**S3/MinIO:**
+- `APP__S3__ENDPOINT`: S3 endpoint (default: http://minio:9000)
+- `APP__S3__BUCKET`: Bucket name (default: data)
+- `APP__S3__REGION`: AWS region (default: us-east-1)
+- `AWS_ACCESS_KEY_ID`: S3 access key
+- `AWS_SECRET_ACCESS_KEY`: S3 secret key
 
-The template supports these variables:
+{% if features contains "kafka" %}
+**Kafka Event Publishing:**
+- `APP__KAFKA__BROKER_URL`: Kafka broker address (default: kafka.kafka.svc.cluster.local:9092)
+- `APP__KAFKA__TOPIC`: Kafka topic for publishing (default: events)
+- `APP__KAFKA__EVENT_NAME`: CloudEvents type for published events (default: com.{{ project_name }}.event.published)
+- `APP__KAFKA__COMPRESSION`: Compression type (default: snappy, options: none, gzip, snappy, lz4, zstd)
+- `APP__KAFKA__LINGER_MS`: Batch linger time in milliseconds (default: 5)
+- `APP__KAFKA__TIMEOUT_MS`: Request timeout in milliseconds (default: 10000)
 
-| Variable | Source | Example |
-|----------|--------|---------|
-| project_name | User prompt | my-awesome-service |
-| crate_name | Auto-derived | my_awesome_service |
-| if features contains "s3" | User prompt | true or false |
-| enable_image_updates | User prompt | true or false |
-| target_namespace | User prompt | default |
-| github_org | User prompt | enchantednatures |
-| github_repo | User prompt | rust-knative-flux-template |
-| default_branch | User prompt | main |
+{% endif %}
+**Observability:**
+- `APP__TELEMETRY__OTLP_ENDPOINT`: OpenTelemetry collector (default: http://localhost:4317)
+- `APP__TELEMETRY__SERVICE_NAME`: Service name for traces (default: {{ project_name }})
+- `APP__TELEMETRY__LOG_LEVEL`: Log level (default: info)
+- `RUST_LOG`: Rust log filter (default: info)
 
-## Generation Flow
+### Configuration Files
 
-When you run:
+**config/default.toml**
+```toml
+[server]
+host = "0.0.0.0"
+port = 8080
 
-```bash
-cargo generate --git https://github.com/your-org/rust-knative-flux-template
+[redis]
+url = "redis://localhost:6379"
+
+[s3]
+endpoint = "http://minio:9000"
+bucket = "data"
+region = "us-east-1"
+
+[telemetry]
+otlp_endpoint = "http://localhost:4317"
+service_name = "{{ project_name }}"
+log_level = "info"
 ```
 
-Cargo-generate:
+**config/development.toml** (environment overrides)
+```toml
+[server]
+host = "127.0.0.1"
+port = 8080
 
-1. **Prompts for values**:
-   - `project_name`: Your project name
-   - `if features contains "s3"`: Whether to include S3 support
-   - `enable_image_updates`: Enable automated image updates with FluxCD
-   - `target_namespace`: Kubernetes namespace for deployment
-   - `github_org`: GitHub organization or username
-   - `github_repo`: GitHub repository name
-   - `default_branch`: Git branch for Flux to monitor
+[telemetry]
+log_level = "debug"
+```
 
-2. **Processes template files**:
-   - Evaluates all `*.liquid` files with your values
-   - Renames files (removes `.liquid` extension)
-   - Removes conditionally excluded content
+## API Endpoints
 
-3. **Non-liquid files** are copied as-is
+### Health Checks
 
-## References
+- `GET /health/live` - Liveness probe (always 200)
+- `GET /health/ready` - Readiness probe (checks Redis and S3)
 
-- [cargo-generate docs](https://cargo-generate.github.io/cargo-generate/)
-- [Liquid template language](https://shopify.github.io/liquid/)
-- [CloudNativePG Documentation](https://cloudnative-pg.io/)
-- [Knative Documentation](https://knative.dev/)
-- [FluxCD Documentation](https://fluxcd.io/)
+### S3 Storage (if enabled)
 
+- `POST /api/upload` - Upload object to S3
+  ```json
+  {
+    "key": "path/to/object",
+    "data": "base64-encoded-data"
+  }
+  ```
+
+- `GET /api/download/:key` - Download object from S3
+
+- `GET /api/objects` - List all objects in bucket
+
+- `DELETE /api/delete/:key` - Delete object from S3
+
+- `HEAD /api/stat/:key` - Get object metadata
+
+{% if features contains "kafka" %}
+### Kafka Event Publishing (if enabled)
+
+- `POST /api/v1/publish-event` - Publish a CloudEvent to Kafka (example endpoint)
+  ```json
+  {
+    "data": {
+      "key": "value"
+    }
+  }
+  ```
+  Response includes event ID for tracking:
+  ```json
+  {
+    "event_id": "uuid-here",
+    "status": "published"
+  }
+  ```
+
+**Note**: Events are published asynchronously (non-blocking). The HTTP response returns immediately while the event is published in the background via `tokio::spawn`.
+
+**Metrics Available**:
+- `kafka_events_published_total`: Total events published (by topic)
+- `kafka_events_failed_total`: Total failed publishes (by topic and error_type)
+- `kafka_publish_latency_ms`: Publish latency histogram
+
+{% endif %}
+### Metrics
+
+- `GET /metrics` - Prometheus metrics in OpenMetrics format
+
+## Storage Integration (S3/MinIO)
+
+{% if features contains "s3" %}
+See [STORAGE.md](./STORAGE.md) for detailed S3/MinIO integration guide covering:
+- Architecture and design patterns
+- Configuration for MinIO and AWS S3
+- Code examples for CRUD operations
+- Testing with integration tests
+- Terraform bucket management
+- Production deployment
+{% endif %}
+
+{% if event_sources contains "kafka" %}
+## Kafka Event Source Integration
+
+See [docs/KAFKA_EVENTING.md](./docs/KAFKA_EVENTING.md) for detailed Kafka event source guide covering:
+- Architecture and topic-per-source pattern
+- Knative Kafka controller setup
+- Event type routing examples
+- Subscribing to multiple topics
+- Dead Letter Queue configuration
+- Production deployment with external Kafka
+- Monitoring and troubleshooting
+- Best practices for idempotency and error handling
+{% endif %}
+
+{% if features contains "kafka" %}
+## Kafka Event Publishing
+
+See [docs/KAFKA_PUBLISHING.md](./docs/KAFKA_PUBLISHING.md) for detailed Kafka event publishing guide covering:
+- Publishing events from HTTP handlers
+- CloudEvents format and compliance
+- Non-blocking publish patterns with tokio::spawn
+- Error handling and retry strategies
+- Prometheus metrics for publisher monitoring
+- Configuration and performance tuning
+- Cold start impact and optimization
+{% endif %}
+
+## Vendored Dependencies
+
+This template includes vendored (local) crates in the `crates/` directory:
+
+### axum-cloudevents
+
+A custom CloudEvents integration for Axum that provides:
+- **CloudEvent Extractor**: Automatically parse CloudEvents from HTTP requests
+- **Header Mapping**: Convert CloudEvents HTTP headers to CloudEvent fields
+- **Structured & Binary Modes**: Support for both CloudEvents content modes
+- **Type Safety**: Full Rust type safety for CloudEvents metadata
+
+This crate is vendored to provide:
+1. **Custom functionality** tailored for this template's needs
+2. **No external dependencies** on unmaintained or incompatible crates
+3. **Full control** over CloudEvents implementation
+4. **Easy customization** for your specific use case
+
+The crate is referenced as a path dependency in `Cargo.toml`:
+```toml
+axum-cloudevents = { path = "crates/axum-cloudevents" }
+```
+
+You can modify the vendored crate directly in `crates/axum-cloudevents/` to add custom functionality.
+
+## Development
+
+### Adding New Routes
+
+Edit `src/routes.rs`:
+```rust
+use axum::{Router, routing::get};
+use crate::handlers;
+
+pub fn routes() -> Router {
+    Router::new()
+        .route("/api/new", get(handlers::new_handler))
+}
+```
+
+Edit `src/handlers/api.rs`:
+```rust
+pub async fn new_handler(State(state): State<AppState>) -> impl IntoResponse {
+    // Your handler logic
+}
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run with output
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_name
+
+# Integration tests with services
+docker-compose up -d && cargo test --test '*'
+```
+
+### Code Quality
+
+```bash
+# Format code
+cargo fmt
+
+# Lint with clippy
+cargo clippy -- -D warnings
+
+# Check documentation
+cargo doc --no-deps --open
+```
+
+### Building for Production
+
+```bash
+# Build optimized binary
+cargo build --release
+
+# Build Docker image
+docker build -t {{ project_name }}:latest .
+
+# Build with musl for Alpine
+cargo build --release --target x86_64-unknown-linux-musl
+```
+
+## Kubernetes Configuration
+
+### Knative Service (deploy/base/knative-service.yaml)
+
+The service is configured with:
+- Auto-scaling: min 0, max 100 replicas
+- Health checks: liveness and readiness probes
+- Resource limits: 512Mi memory, 1000m CPU
+- CloudEvents: Full support for event-driven workloads
+- S3 credentials: Mounted from Kubernetes Secret
+
+### Environment Overlays
+
+**dev/** - Development settings
+- 1-10 replicas
+- Debug logging
+- MinIO endpoint
+
+**staging/** - Staging settings
+- 2-20 replicas
+- Info logging
+- AWS S3 with credentials from secret
+
+**prod/** - Production settings
+- 5-100 replicas
+- Warn logging
+- AWS S3 with secret management
+
+Apply with:
+```bash
+kubectl apply -k deploy/overlays/prod
+```
+
+## FluxCD GitOps
+
+### Initial Setup
+
+1. Create Git repository with this template
+2. Configure FluxCD to watch the repository:
+   ```bash
+   flux bootstrap github \
+     --owner=your-org \
+     --repo=your-repo \
+     --personal \
+     --path=clusters/production
+   ```
+
+3. Create FluxCD Kustomization:
+   ```bash
+   kubectl apply -f deploy/flux/git-repository.yaml
+   kubectl apply -f deploy/flux/kustomization.yaml
+   ```
+
+### Automated Deployments
+
+The `deploy/flux/image-update-automation.yaml` automatically:
+- Monitors container registry for new images
+- Updates image references in manifests
+- Commits changes to Git
+- Triggers Knative service updates
+
+## Observability
+
+### Jaeger Tracing
+
+View distributed traces: http://localhost:16686
+
+The service instruments:
+- HTTP requests (Axum integration)
+- Redis operations
+- S3/OpenDAL operations (custom spans)
+- Custom business logic spans
+
+### Prometheus Metrics
+
+View metrics: http://localhost:9090
+
+Exported metrics:
+- HTTP request duration and count (by method, path, status)
+- Redis connection pool stats
+- Custom application metrics
+
+### Logs
+
+Structured logging with:
+- Request ID tracing
+- Service context
+- Correlation IDs for distributed tracing
+
+View with:
+```bash
+RUST_LOG=debug cargo run
+docker logs <container-id>
+```
+
+## Terraform Infrastructure
+
+### Deploy Buckets
+
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+Variables:
+```hcl
+minio_endpoint = "http://minio:9000"
+minio_access_key = "minioadmin"
+minio_secret_key = "minioadmin"
+```
+
+Output:
+```hcl
+bucket_names = ["data", "data-staging", "data-prod"]
+```
+
+## Troubleshooting
+
+### Redis Connection Fails
+```bash
+# Check Redis is running
+docker-compose ps redis
+
+# Verify connection
+redis-cli -h localhost ping
+```
+
+### MinIO Access Issues
+```bash
+# Check MinIO is healthy
+curl http://localhost:9000/minio/health/live
+
+# Check credentials in environment
+echo $AWS_ACCESS_KEY_ID
+echo $AWS_SECRET_ACCESS_KEY
+```
+
+### Knative Service Not Ready
+```bash
+# Check service status
+kubectl get ksvc {{ project_name }}
+
+# View service details
+kubectl describe ksvc {{ project_name }}
+
+# Check pods
+kubectl get pods -l serving.knative.dev/service={{ project_name }}
+
+# View logs
+kubectl logs -f deployment/<deployment-name>
+```
+
+### S3 Integration Tests Fail
+```bash
+# Ensure MinIO is running and healthy
+docker-compose logs minio
+
+# Check test output
+cargo test --test '*' -- --nocapture --test-threads=1
+```
+
+## Performance Tuning
+
+### Redis Connection Pool
+Edit `src/main.rs`:
+```rust
+let manager = redis::aio::MultiplexedConnection::new(client);
+```
+
+### S3 Operator Configuration
+Edit `src/main.rs` S3 initialization to add:
+```rust
+let builder = http_backend::HttpBuilder::default()
+    .client(client)
+    .root(&bucket);
+```
+
+### Knative Auto-scaling
+Edit `deploy/base/knative-service.yaml`:
+```yaml
+autoscaling.knative.dev/minScale: "1"
+autoscaling.knative.dev/maxScale: "100"
+autoscaling.knative.dev/targetUtilizationPercentage: "70"
+```
+
+## Security
+
+### Secret Management
+- Use Kubernetes Secrets for sensitive data
+- S3 credentials stored in encrypted Secret
+- No hardcoded secrets in config files
+- Credentials rotated via GitOps
+
+### Container Security
+- Non-root user in Dockerfile
+- Read-only root filesystem
+- Security context in Knative manifests
+- Network policies via Istio/Cilium
+
+### Code Security
+- Dependencies: Regular `cargo audit`
+- SAST: Integrated in CI with clippy
+- Container scanning: Use your registry's scanner
+- Supply chain: Signed commits recommended
+
+## Contributing
+
+See the root TEMPLATE.md for:
+- How to extend the template
+- Adding new configuration options
+- Customizing for your team
+
+## License
+
+MIT License - See LICENSE file
+
+## Support
+
+For issues or questions:
+1. Check [STORAGE.md](./STORAGE.md) for S3-specific issues
+2. Review [GETTING_STARTED.md](./GETTING_STARTED.md) for setup help
+3. Check [TEMPLATE.md](./TEMPLATE.md) for template structure
+4. Review service logs: `kubectl logs -f svc/{{ project_name }}`
+
+{% else %}
+## Features
+
+- 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
+- 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
+- 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
+- 🏗️ **Infrastructure as Code**: Terraform configuration for deployments
+- 🧪 **Fully Tested**: Integration tests with Redis
+- 📝 **Type-Safe**: Rust with strict compiler checks
+- ⚡ **Fast**: Built on Tokio async runtime
+
+## Quick Start
+
+### Local Development
+
+1. **Prerequisites**
+   - Docker & Docker Compose
+   - Rust 1.92+
+
+2. **Start Local Services**
+   ```bash
+   docker-compose up -d
+   ```
+
+   This starts:
+   - Redis (port 6379)
+   - Jaeger tracing (port 16686)
+   - Prometheus metrics (port 9090)
+   - OpenTelemetry Collector
+
+3. **Run the Service**
+   ```bash
+   export APP__SERVER__PORT=8080
+   export APP__REDIS__URL=redis://localhost:6379
+   cargo watch -q -c -w src -x run
+   ```
+
+4. **Health Check**
+   ```bash
+   curl http://localhost:8080/health/live
+   curl http://localhost:8080/health/ready
+   ```
+
+5. **View Traces & Metrics**
+   - Jaeger: http://localhost:16686
+   - Prometheus: http://localhost:9090
+
+### Kubernetes Deployment
+
+```bash
+# Development
+kubectl apply -k deploy/overlays/dev
+
+# Staging
+kubectl apply -k deploy/overlays/staging
+
+# Production
+kubectl apply -k deploy/overlays/prod
+```
+
+## Project Structure
+
+```
+{{ project_name }}/
+├── src/
+│   ├── main.rs           # Application entry point
+│   ├── lib.rs            # Module exports
+│   ├── config.rs         # Configuration
+│   ├── state.rs          # AppState with Redis
+│   ├── error.rs          # Error handling
+│   ├── observability.rs  # OpenTelemetry setup
+│   ├── routes.rs         # Route definitions
+│   ├── handlers/
+│   │   ├── api.rs        # API handlers
+│   │   ├── health.rs     # Health check endpoints
+│   │   └── mod.rs        # Handler exports
+│
+├── config/
+│   ├── default.toml      # Default configuration
+│   └── development.toml  # Development overrides
+│
+├── deploy/
+│   ├── base/
+│   │   ├── knative-service.yaml     # Knative Service
+│   │   └── kustomization.yaml       # Base Kustomize config
+│   ├── overlays/
+│   │   ├── dev/          # Development environment
+│   │   ├── staging/      # Staging environment
+│   │   └── prod/         # Production environment
+│   └── flux/             # FluxCD configuration
+│
+├── tests/
+│   ├── health_test.rs    # Health endpoint tests
+│   └── common/mod.rs     # Test utilities
+│
+├── docker/
+│   ├── otel-collector-config.yaml  # OpenTelemetry config
+│   └── prometheus.yaml             # Prometheus config
+│
+├── Cargo.toml            # Rust dependencies
+├── Dockerfile            # Multi-stage Docker build
+├── docker-compose.yaml   # Local development services
+└── README.md             # This file
+```
+
+## Configuration
+
+### Environment Variables
+
+- `APP__SERVER__HOST`: Bind address (default: 0.0.0.0)
+- `APP__SERVER__PORT`: Server port (default: 8080)
+- `APP__REDIS__URL`: Redis URL (default: redis://localhost:6379)
+- `RUST_LOG`: Log filter (default: info)
+
+### API Endpoints
+
+- `GET /health/live` - Liveness probe
+- `GET /health/ready` - Readiness probe (checks Redis)
+- `GET /metrics` - Prometheus metrics
+
+## Development
+
+```bash
+# Format
+cargo fmt
+
+# Lint
+cargo clippy -- -D warnings
+
+# Test
+cargo test
+
+# Run
+cargo run
+```
+
+## Kubernetes Deployment
+
+Apply manifests with:
+```bash
+kubectl apply -k deploy/overlays/prod
+```
+
+## License
+
+MIT License - See LICENSE file
+
+{% endif %}

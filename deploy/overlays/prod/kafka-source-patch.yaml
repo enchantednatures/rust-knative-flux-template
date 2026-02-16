@@ -1,0 +1,22 @@
+{% if event_sources contains "kafka" %}
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-kafka-source
+  namespace: {{ target_namespace }}
+spec:
+  bootstrapServers:
+  - {{ kafka_bootstrap_servers_prod }}
+  consumers: 10
+  initialOffset: earliest
+  
+  delivery:
+    retry: 10
+    backoffPolicy: exponential
+    backoffDelay: PT2S
+    deadLetterSink:
+      ref:
+        apiVersion: serving.knative.dev/v1
+        kind: Service
+        name: {{ project_name | replace: "_", "-" }}-dlq
+{% endif %}

@@ -1,5 +1,6 @@
 [template]
 cargo_generate_version = ">=0.23.0"
+subfolder = "."
 ignore = [
   ".git",
   "tests/e2e",
@@ -7,14 +8,25 @@ ignore = [
   ".specify",
   "target",
   "Cargo.lock",
+  "specs",
+  "audio-stream-exporter",
   "crates/axum-cloudevents/target",
   "crates/axum-cloudevents-macros/target",
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
-  ".github/workflows/ci.yaml.liquid",
-  "docs/MONITORING.md.liquid",
-  "docs/TESTING.md.liquid",
+  ".github/workflows/naming-convention-tests.yaml",
+  ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
+  "docs/LOCAL_E2E_TESTING.md",
+  "docs/E2E_TROUBLESHOOTING.md",
+  "docs/VERSION_COMPATIBILITY.md",
+  "scripts/test-template-e2e-local.sh",
+  "scripts/cleanup-e2e-local.sh",
+  "scripts/README.md",
+  "CHANGELOG-LOCAL-E2E.md",
 ]
+
+[hooks]
+post = ["post-generate.rhai"]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
@@ -22,6 +34,7 @@ project_author = { prompt = "Project authors", type = "string", default = "Your 
 features = { prompt = "Select default features", type = "array", choices = [
   "s3",
   "postgres",
+  "kafka",
 ], default = [
 ] }
 event_sources = { prompt = "Select event sources", type = "array", choices = [
@@ -34,40 +47,43 @@ github_org = { prompt = "GitHub organization or username", type = "string", defa
 github_repo = { prompt = "GitHub repository name", type = "string", default = "your-repo" }
 default_branch = { prompt = "Default git branch for Flux", type = "string", default = "main" }
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
-use_default_scaling = { prompt = "Use the default scaling parameters", type = "bool", default = true }
+
+# Scaling configuration
+use_default_scaling = { prompt = "Use default scaling parameters?", type = "bool", default = true }
 
 [conditional.'!use_default_scaling'.placeholders]
-base_min_scale = { prompt = "Base minimum scale", type = "string", default = "1" }
-base_max_scale = { prompt = "Base maximum scale", type = "string", default = "10" }
-base_target = { prompt = "Base autoscaling target (concurrency)", type = "string", default = "100" }
-base_cpu_request = { prompt = "Base CPU request", type = "string", default = "100m" }
-base_cpu_limit = { prompt = "Base CPU limit", type = "string", default = "500m" }
-base_memory_request = { prompt = "Base memory request", type = "string", default = "64Mi" }
-base_memory_limit = { prompt = "Base memory limit", type = "string", default = "256Mi" }
-dev_min_scale = { prompt = "Dev minimum scale", type = "string", default = "0" }
-dev_max_scale = { prompt = "Dev maximum scale", type = "string", default = "3" }
-dev_cpu_request = { prompt = "Dev CPU request", type = "string", default = "100m" }
-dev_cpu_limit = { prompt = "Dev CPU limit", type = "string", default = "500m" }
-dev_memory_request = { prompt = "Dev memory request", type = "string", default = "64Mi" }
-dev_memory_limit = { prompt = "Dev memory limit", type = "string", default = "256Mi" }
-staging_min_scale = { prompt = "Staging minimum scale", type = "string", default = "1" }
-staging_max_scale = { prompt = "Staging maximum scale", type = "string", default = "5" }
-staging_cpu_request = { prompt = "Staging CPU request", type = "string", default = "200m" }
-staging_cpu_limit = { prompt = "Staging CPU limit", type = "string", default = "800m" }
-staging_memory_request = { prompt = "Staging memory request", type = "string", default = "128Mi" }
-staging_memory_limit = { prompt = "Staging memory limit", type = "string", default = "384Mi" }
-prod_min_scale = { prompt = "Prod minimum scale", type = "string", default = "2" }
-prod_max_scale = { prompt = "Prod maximum scale", type = "string", default = "20" }
-prod_cpu_request = { prompt = "Prod CPU request", type = "string", default = "250m" }
-prod_cpu_limit = { prompt = "Prod CPU limit", type = "string", default = "1000m" }
-prod_memory_request = { prompt = "Prod memory request", type = "string", default = "256Mi" }
-prod_memory_limit = { prompt = "Prod memory limit", type = "string", default = "512Mi" }
+# Scaling parameters (only prompted when use_default_scaling = false)
+base_min_scale = { prompt = "Base minimum scale", type = "string" }
+base_max_scale = { prompt = "Base maximum scale", type = "string" }
+base_target = { prompt = "Base autoscaling target (concurrency)", type = "string" }
+base_cpu_request = { prompt = "Base CPU request", type = "string" }
+base_cpu_limit = { prompt = "Base CPU limit", type = "string" }
+base_memory_request = { prompt = "Base memory request", type = "string" }
+base_memory_limit = { prompt = "Base memory limit", type = "string" }
+dev_min_scale = { prompt = "Dev minimum scale", type = "string" }
+dev_max_scale = { prompt = "Dev maximum scale", type = "string" }
+dev_cpu_request = { prompt = "Dev CPU request", type = "string" }
+dev_cpu_limit = { prompt = "Dev CPU limit", type = "string" }
+dev_memory_request = { prompt = "Dev memory request", type = "string" }
+dev_memory_limit = { prompt = "Dev memory limit", type = "string" }
+staging_min_scale = { prompt = "Staging minimum scale", type = "string" }
+staging_max_scale = { prompt = "Staging maximum scale", type = "string" }
+staging_cpu_request = { prompt = "Staging CPU request", type = "string" }
+staging_cpu_limit = { prompt = "Staging CPU limit", type = "string" }
+staging_memory_request = { prompt = "Staging memory request", type = "string" }
+staging_memory_limit = { prompt = "Staging memory limit", type = "string" }
+prod_min_scale = { prompt = "Prod minimum scale", type = "string" }
+prod_max_scale = { prompt = "Prod maximum scale", type = "string" }
+prod_cpu_request = { prompt = "Prod CPU request", type = "string" }
+prod_cpu_limit = { prompt = "Prod CPU limit", type = "string" }
+prod_memory_request = { prompt = "Prod memory request", type = "string" }
+prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
 
 [conditional.'!if features contains "s3"']
 ignore = [
-  "src/handlers/storage.rs.liquid",
-  "tests/storage_test.rs.liquid",
-  "STORAGE.md.liquid",
+  "src/handlers/storage.rs",
+  "tests/storage_test.rs",
+  "STORAGE.md",
   "terraform/modules/minio",
 ]
 
@@ -79,13 +95,13 @@ kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type
 
 [conditional.'!if event_sources contains "kafka"']
 ignore = [
-  "deploy/base/kafka-source.yaml.liquid",
-  "deploy/base/dlq-handler.yaml.liquid",
-  "deploy/dev/infrastructure/kafka.yaml.liquid",
+  "deploy/base/kafka-source.yaml",
+  "deploy/base/dlq-handler.yaml",
+  "deploy/dev/infrastructure/kafka.yaml",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",
-  "docs/KAFKA_EVENTING.md.liquid",
+  "docs/KAFKA_EVENTING.md",
   "tests/e2e/fixtures/kafka",
 ]
 
@@ -102,29 +118,37 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 
 [conditional.'!if features contains "postgres"']
 ignore = [
-  "deploy/base/postgres-cluster.yaml.liquid",
-  "deploy/base/postgres-backup.yaml.liquid",
-  "deploy/base/postgres-pooler.yaml.liquid",
-  "deploy/base/postgres-objectstore.yaml.liquid",
-  "deploy/base/postgres-podmonitor.yaml.liquid",
-  "deploy/base/postgres-alerts.yaml.liquid",
-  "deploy/flux/postgres-kustomization.yaml.liquid",
-  "deploy/overlays/dev/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/dev/postgres-backup-patch.yaml.liquid",
-  "deploy/overlays/staging/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/staging/postgres-backup-patch.yaml.liquid",
-  "deploy/overlays/prod/postgres-cluster-patch.yaml.liquid",
-  "deploy/overlays/prod/postgres-backup-patch.yaml.liquid",
-  "scripts/dev/deploy-postgres.sh.liquid",
-  "scripts/dev/check-postgres-status.sh.liquid",
-  "scripts/dev/port-forward-postgres.sh.liquid",
-  "scripts/dev/create-backup.sh.liquid",
-  "scripts/dev/check-backup-status.sh.liquid",
-  "scripts/dev/list-backups.sh.liquid",
-  "scripts/dev/restore-from-backup.sh.liquid",
-  "scripts/validate-postgres-manifests.sh.liquid",
-  "docs/POSTGRES.md.liquid",
-  "docs/POSTGRES_BACKUP_RESTORE.md.liquid",
-  "docs/POSTGRES_MONITORING.md.liquid",
+  "deploy/base/postgres-cluster.yaml",
+  "deploy/base/postgres-backup.yaml",
+  "deploy/base/postgres-pooler.yaml",
+  "deploy/base/postgres-objectstore.yaml",
+  "deploy/base/postgres-podmonitor.yaml",
+  "deploy/base/postgres-alerts.yaml",
+  "deploy/flux/postgres-kustomization.yaml",
+  "deploy/overlays/dev/postgres-cluster-patch.yaml",
+  "deploy/overlays/dev/postgres-backup-patch.yaml",
+  "deploy/overlays/staging/postgres-cluster-patch.yaml",
+  "deploy/overlays/staging/postgres-backup-patch.yaml",
+  "deploy/overlays/prod/postgres-cluster-patch.yaml",
+  "deploy/overlays/prod/postgres-backup-patch.yaml",
+  "scripts/dev/deploy-postgres.sh",
+  "scripts/dev/check-postgres-status.sh",
+  "scripts/dev/port-forward-postgres.sh",
+  "scripts/dev/create-backup.sh",
+  "scripts/dev/check-backup-status.sh",
+  "scripts/dev/list-backups.sh",
+  "scripts/dev/restore-from-backup.sh",
+  "scripts/validate-postgres-manifests.sh",
+  "docs/POSTGRES.md",
+  "docs/POSTGRES_BACKUP_RESTORE.md",
+  "docs/POSTGRES_MONITORING.md",
   "specs/001-cloudnative-postgres-backups",
 ]
+
+[conditional.'if features contains "kafka"'.placeholders]
+kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
+kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
+kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
+
+[conditional.'!if features contains "kafka"']
+ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]

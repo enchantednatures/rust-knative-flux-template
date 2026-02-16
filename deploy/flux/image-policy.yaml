@@ -1,0 +1,38 @@
+{% if enable_image_updates %}# =============================================================================
+# ImagePolicy for sha-based continuous deployment
+# =============================================================================
+# This policy selects the latest sha-based image tag (e.g., sha-a1b2c3d)
+# allowing continuous deployment on every successful build
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_name | replace: "_", "-" }}
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_name | replace: "_", "-" }}
+  filterTags:
+    pattern: '^sha-[a-f0-9]{7}$'
+  policy:
+    alphabetical:
+      order: asc
+
+---
+# =============================================================================
+# Alternative: ImagePolicy for SemVer releases
+# =============================================================================
+# Uncomment this if you prefer semantic versioning releases (e.g., v1.0.0)
+# instead of continuous deployment
+#
+# apiVersion: image.toolkit.fluxcd.io/v1beta2
+# kind: ImagePolicy
+# metadata:
+#   name: {{ project_name | replace: "_", "-" }}-semver
+#   namespace: flux-system
+# spec:
+#   imageRepositoryRef:
+#     name: {{ project_name | replace: "_", "-" }}
+#   policy:
+#     semver:
+#       range: ">=1.0.0"
+{% endif %}
