@@ -271,7 +271,44 @@ spec:
   policy:
     semver:
       range: ">=1.0.0"
+
+# Alternative: Use the 'release' tag for stable deployments
+# This tag is automatically applied by the release workflow
+# deploy/flux/image-policy-release.yaml
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_name }}-release
+  namespace: {{ project_name }}
+spec:
+  imageRepositoryRef:
+    name: {{ project_name }}
+  filterTags:
+    pattern: '^release$'
+  policy:
+    alphabetical:
+      order: asc
 ```
+
+**Image Policy Options:**
+
+1. **SHA-based (Continuous Deployment)**: Automatically deploy every commit to main
+   - Pattern: `sha-[a-f0-9]{7}`
+   - Use case: Dev/staging environments
+   - Pros: Immediate feedback, automated
+   - Cons: May deploy broken builds
+
+2. **Release tag (Stable Deployment)**: Deploy only when you create a release
+   - Pattern: `release`
+   - Use case: Production environments
+   - Pros: Controlled, stable, tested
+   - Cons: Manual release process
+
+3. **SemVer (Version-based)**: Deploy specific semantic versions
+   - Pattern: Semver range (e.g., `>=1.0.0`)
+   - Use case: Production with version control
+   - Pros: Explicit versioning, rollback-friendly
+   - Cons: Requires version management
 
 ### Step 4: Apply Deployment
 
@@ -606,55 +643,150 @@ kubectl logs -n knative-serving deployment/autoscaler
 
 ## CI/CD Pipeline
 
-### GitHub Actions Example
+### Continuous Integration (CI)
 
-`.github/workflows/deploy.yaml`:
+The CI workflow runs on every push to main and on pull requests:
+
 ```yaml
-name: Deploy
+# .github/workflows/ci.yaml
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  build-and-push:
+  lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Build Docker image
-      run: docker build -t ${{ secrets.REGISTRY }}/{{ project_name }}:${{ github.sha }} .
-
-    - name: Login to registry
-      run: echo ${{ secrets.REGISTRY_PASSWORD }} | docker login -u ${{ secrets.REGISTRY_USER }} --password-stdin ${{ secrets.REGISTRY }}
-
-    - name: Push image
-      run: docker push ${{ secrets.REGISTRY }}/{{ project_name }}:${{ github.sha }}
-
-    - name: Tag as latest
-      run: docker tag ${{ secrets.REGISTRY }}/{{ project_name }}:${{ github.sha }} ${{ secrets.REGISTRY }}/{{ project_name }}:latest && docker push ${{ secrets.REGISTRY }}/{{ project_name }}:latest
-
-  deploy-staging:
-    needs: build-and-push
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+  
+  test:
     runs-on: ubuntu-latest
-    environment: staging
     steps:
-    - name: Deploy to staging
-      run: |
-        flux reconcile kustomization {{ project_name }}-staging \
-          --with-source=false \
-          --namespace {{ project_name }}-staging
-
-  deploy-production:
-    needs: build-and-push
+      - uses: actions/checkout@v6
+      - name: Run tests
+        run: cargo test --all-features
+  
+  build:
+    needs: [lint, test]
     runs-on: ubuntu-latest
-    environment: production
     steps:
-    - name: Deploy to production
-      run: |
-        flux reconcile kustomization {{ project_name }}-prod \
-          --with-source=false \
-          --namespace {{ project_name }}-prod
+      - uses: actions/checkout@v6
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}:latest
+```
+
+### Release Workflow
+
+The release workflow is triggered when you push a Git tag (e.g., `v1.0.0`):
+
+```yaml
+# .github/workflows/release.yaml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref }}
+  
+  build-release:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ github.repository }}:release
+          build-args: |
+            RUST_BASE_IMAGE_TAG=release
+```
+
+**Creating a Release:**
+
+```bash
+# Tag your commit
+git tag -a v1.0.0 -m "Release version 1.0.0"
+
+# Push the tag to trigger the release workflow
+git push origin v1.0.0
+
+# The release workflow will:
+# 1. Create a GitHub release
+# 2. Build a Docker image with Rust 'release' base image if available
+# 3. Tag the image with version (1.0.0) and 'release'
+# 4. Run security scans
+```
+
+**Base Image Policy:**
+
+The release workflow uses a policy-driven approach for selecting Rust base images:
+
+- **Development builds**: Use versioned Rust image (e.g., `rust:1.92-slim`)
+- **Release builds**: Prefer `rust:release` tag if available, otherwise fall back to versioned tag
+- **Benefits**: 
+  - Stable, tested Rust versions for releases
+  - Reproducible builds across environments
+  - Security patches applied to release images
+
+### FluxCD Integration
+
+Once images are pushed, FluxCD can automatically deploy them based on your ImagePolicy:
+
+```bash
+# Deploy using the 'release' tag (recommended for production)
+kubectl apply -f - <<EOF
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_name }}-release
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_name }}
+  filterTags:
+    pattern: '^release$'
+EOF
+
+# Deploy using semver (alternative for version-controlled deployments)
+kubectl apply -f - <<EOF
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_name }}-semver
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_name }}
+  policy:
+    semver:
+      range: ">=1.0.0"
+EOF
 ```
 
 ---
