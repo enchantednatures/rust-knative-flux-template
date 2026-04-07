@@ -1,31 +1,30 @@
+use std::net::SocketAddr;
+use std::num::NonZeroU32;
+use std::sync::Arc;
+
 use axum::{
     Router,
-    routing::{get, post},
-    middleware::Next,
-    http::Request,
     body::Body,
+    http::Request,
+    middleware::Next,
+    routing::{get, post},
 };
-use tower_http::trace::TraceLayer;
+use governor::{
+    Quota, RateLimiter,
+    clock::DefaultClock,
+    middleware::NoOpMiddleware,
+    state::InMemoryState,
+};
+use metrics::counter;
 use tower::ServiceBuilder;
+use tower_governor::{GovernorConfigBuilder, GovernorLayer, errors::display_error};
+use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use metrics::counter;
-use std::net::SocketAddr;
-use std::sync::Arc;
 
 use crate::handlers::{api, events, health};
 use crate::middleware::{common_middleware, request_id_middleware, security_headers_middleware};
 use crate::state::AppState;
-
-// Rate limiting imports
-use governor::{
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
-    state::InMemoryState,
-    Quota, RateLimiter,
-};
-use std::num::NonZeroU32;
-use tower_governor::{errors::display_error, GovernorLayer, GovernorConfigBuilder};
 
 /// Rate limiter configuration
 /// 

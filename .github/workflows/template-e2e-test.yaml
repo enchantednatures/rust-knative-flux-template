@@ -25,15 +25,13 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          # - scenario: no-s3
-          #   include_s3: "false"
-          #   project_name: "test-app-no-s3"
           - scenario: with-s3
-            include_s3: "true"
+            feature_s3: "true"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "false"
             project_name: "test-app-with-s3"
-          # - scenario: underscore-naming
-          #   include_s3: "false"
-          #   project_name: "test_app_underscore"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -100,8 +98,11 @@ jobs:
           [values]
           project_name = "${{ matrix.project_name }}"
           project_author = "E2E Bot <e2e@github.com>"
-          features = $(if [[ "${{ matrix.include_s3 }}" == "true" ]]; then echo '["s3"]'; else echo '[]'; fi)
-          event_sources = []
+          feature_s3 = ${{ matrix.feature_s3 }}
+          feature_kafka = ${{ matrix.feature_kafka }}
+          feature_postgres = ${{ matrix.feature_postgres }}
+          feature_flagger = ${{ matrix.feature_flagger }}
+          event_source_kafka = ${{ matrix.event_source_kafka }}
           enable_image_updates = false
           target_namespace = "default"
           github_org = "test-org"
@@ -378,7 +379,7 @@ jobs:
             --timeout 120s
 
       - name: Install MinIO (if needed)
-        if: matrix.include_s3 == 'true'
+        if: matrix.feature_s3 == 'true'
         run: |
           helm repo add minio https://charts.min.io/
           helm repo update
@@ -423,7 +424,7 @@ jobs:
             --timeout=60s || { echo "❌ Redis not ready"; exit 1; }
           echo "  ✓ Redis healthy"
 
-          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+          if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             echo ""
             echo "Checking MinIO..."
             kubectl wait --for=condition=ready pod \
@@ -436,7 +437,7 @@ jobs:
 
       - name: Create application secrets
         run: |
-          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+          if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
               --from-literal=aws-access-key-id=minioadmin \
@@ -639,7 +640,7 @@ jobs:
             ((FAILED++))
           fi
 
-          if [ "${{ matrix.include_s3 }}" = "true" ]; then
+          if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             echo ""
             echo "Test: S3 storage example..."
             echo "  Debug: Testing with verbose curl..."

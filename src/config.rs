@@ -67,11 +67,11 @@ pub struct Config {
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
     {%- if feature_s3 %}
-     pub s3: S3Config,
-     {%- endif %}
-     {%- if feature_kafka %}
-     pub kafka: Option<KafkaConfig>,
-     {%- endif %}
+    pub s3: S3Config,
+    {%- endif %}
+    {%- if feature_kafka %}
+    pub kafka: Option<KafkaConfig>,
+    {%- endif %}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -117,11 +117,11 @@ impl Default for Config {
                 endpoint: "http://localhost:9000".into(),
                 bucket: "data".into(),
                 region: "us-east-1".into(),
-             },
-             {%- endif %}
-             {%- if feature_kafka %}
-             kafka: None,
-             {%- endif %}
+            },
+            {%- endif %}
+            {%- if feature_kafka %}
+            kafka: None,
+            {%- endif %}
         }
     }
 }
@@ -134,13 +134,13 @@ impl Config {
     ///
     /// # Example Environment Variables
     /// - APP__SERVER__PORT=9000
-     /// - APP__REDIS__URL=redis://:password@host:6379/0
-     /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
-     {%- if feature_kafka %}
-     /// - APP__KAFKA__BROKER_URL=kafka.kafka.svc.cluster.local:9092
-     /// - APP__KAFKA__TOPIC=events
-     /// - APP__KAFKA__EVENT_NAME=com.example.service.event.published
-     {%- endif %}
+    /// - APP__REDIS__URL=redis://:password@host:6379/0
+    /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
+    {%- if feature_kafka %}
+    /// - APP__KAFKA__BROKER_URL=kafka.kafka.svc.cluster.local:9092
+    /// - APP__KAFKA__TOPIC=events
+    /// - APP__KAFKA__EVENT_NAME=com.example.service.event.published
+    {%- endif %}
     #[allow(clippy::result_large_err)]
     pub fn load() -> Result<Self, figment::Error> {
         let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
@@ -187,21 +187,21 @@ impl Config {
             return Err(figment::Error::from(
                 "s3.bucket must be set (via config file or APP__S3__BUCKET)",
             ));
-         }
-         {%- endif %}
+        }
+        {%- endif %}
 
-         {%- if feature_kafka %}
-         if let Some(kafka) = &self.kafka {
-             kafka.validate()?;
-         }
-         {%- endif %}
+        {%- if feature_kafka %}
+        if let Some(kafka) = &self.kafka {
+            kafka.validate()?;
+        }
+        {%- endif %}
 
         Ok(())
-     }
- }
+    }
+}
 
- {%- if feature_kafka %}
- impl KafkaConfig {
+{%- if feature_kafka %}
+impl KafkaConfig {
     /// Validate Kafka configuration
     /// Ensures required fields are non-empty and optional fields are within valid ranges
     #[allow(clippy::result_large_err)]
@@ -256,10 +256,10 @@ impl Config {
             ));
         }
 
-         Ok(())
-     }
- }
- {%- endif %}
+        Ok(())
+    }
+}
+{%- endif %}
 
 #[cfg(test)]
 mod tests {

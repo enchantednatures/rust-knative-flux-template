@@ -1,14 +1,17 @@
-{%- if feature_s3 -%}
-use opendal::Operator;
-use redis::aio::MultiplexedConnection;
-{%- else %}
-use redis::aio::MultiplexedConnection;
-{%- endif %}
 {%- if feature_kafka %}
-use crate::handlers::kafka::KafkaPublisher;
 use std::sync::Arc;
 {%- endif %}
+
 use metrics_exporter_prometheus::PrometheusHandle;
+{%- if feature_s3 %}
+use opendal::Operator;
+{%- endif %}
+use redis::aio::MultiplexedConnection;
+{%- if feature_kafka %}
+
+use crate::handlers::kafka::KafkaPublisher;
+{%- endif %}
+
 /// Application state shared across all handlers
 /// Uses dependency injection pattern - accepts pre-configured dependencies
 #[derive(Clone)]
@@ -46,22 +49,51 @@ impl AppState {
     /// ```
     {%- if feature_s3 %}
     {%- if feature_kafka %}
-    pub fn new(redis: MultiplexedConnection, storage: Operator, kafka_publisher: Option<Arc<KafkaPublisher>>, metrics_handle: PrometheusHandle) -> Self {
-        Self { redis, storage, kafka_publisher, metrics_handle }
+    pub fn new(
+        redis: MultiplexedConnection,
+        storage: Operator,
+        kafka_publisher: Option<Arc<KafkaPublisher>>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            storage,
+            kafka_publisher,
+            metrics_handle,
+        }
     }
     {%- else %}
-    pub fn new(redis: MultiplexedConnection, storage: Operator, metrics_handle: PrometheusHandle) -> Self {
-        Self { redis, storage, metrics_handle }
+    pub fn new(
+        redis: MultiplexedConnection,
+        storage: Operator,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            storage,
+            metrics_handle,
+        }
     }
     {%- endif %}
     {%- else %}
     {%- if feature_kafka %}
-    pub fn new(redis: MultiplexedConnection, kafka_publisher: Option<Arc<KafkaPublisher>>, metrics_handle: PrometheusHandle) -> Self {
-        Self { redis, kafka_publisher, metrics_handle }
+    pub fn new(
+        redis: MultiplexedConnection,
+        kafka_publisher: Option<Arc<KafkaPublisher>>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            kafka_publisher,
+            metrics_handle,
+        }
     }
     {%- else %}
     pub fn new(redis: MultiplexedConnection, metrics_handle: PrometheusHandle) -> Self {
-        Self { redis, metrics_handle }
+        Self {
+            redis,
+            metrics_handle,
+        }
     }
     {%- endif %}
     {%- endif %}

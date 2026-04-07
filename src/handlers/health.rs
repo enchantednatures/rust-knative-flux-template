@@ -130,13 +130,13 @@ pub async fn readiness(
 #[instrument(level = "info", skip(state))]
 pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let metrics_text = state.metrics_handle.render();
-    
+
     tracing::info!(
         metrics_length = metrics_text.len(),
         has_content = !metrics_text.is_empty(),
         "Rendering Prometheus metrics"
     );
-    
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],

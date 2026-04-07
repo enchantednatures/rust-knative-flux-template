@@ -1,10 +1,14 @@
+{%- if feature_kafka %}
+use metrics::{describe_counter, describe_histogram};
+{%- else %}
+use metrics::describe_counter;
+{%- endif %}
+use metrics_exporter_prometheus::PrometheusHandle;
 use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::{global, trace::TracerProvider};
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use metrics_exporter_prometheus::PrometheusHandle;
-use metrics::{describe_counter, describe_histogram};
 
 use crate::config::TelemetryConfig;
 
