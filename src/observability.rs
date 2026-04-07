@@ -1,10 +1,6 @@
-use opentelemetry::{global, trace::TracerProvider};
 use opentelemetry::propagation::TextMapCompositePropagator;
-use opentelemetry_sdk::{
-    Resource,
-    propagation::TraceContextPropagator,
-    trace::SdkTracerProvider,
-};
+use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -92,9 +88,11 @@ pub fn init_telemetry(config: &TelemetryConfig) -> anyhow::Result<Option<SdkTrac
 
         // OpenTelemetry 0.31: Use SdkTracerProvider, no runtime parameter for batch exporter
         let provider = SdkTracerProvider::builder()
-            .with_resource(Resource::builder()
-                .with_service_name(config.service_name.clone())
-                .build())
+            .with_resource(
+                Resource::builder()
+                    .with_service_name(config.service_name.clone())
+                    .build(),
+            )
             .with_batch_exporter(exporter)
             .build();
 
