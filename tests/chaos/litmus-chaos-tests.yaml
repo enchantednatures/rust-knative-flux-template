@@ -1,0 +1,348 @@
+# Chaos Engineering Tests using Litmus
+#
+# These tests verify the resilience of the service under various failure conditions.
+# Apply with: kubectl apply -f tests/chaos/
+#
+# Prerequisites:
+# - Litmus Chaos Operator installed: https://litmuschaos.io/
+# - Chaos experiments available in the cluster
+
+---
+# Pod Delete Chaos Experiment
+# Simulates pod failures to test auto-recovery
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-pod-delete
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  # Run during off-peak hours
+  engineState: 'active'
+  # Don't stop on first failure - let it run
+  annotationCheck: 'true'
+  # Service account for chaos experiments
+  auxiliaryAppInfo: ''
+  # Define the chaos experiment
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            # Total duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '30'
+            # Interval between pod deletions
+            - name: CHAOS_INTERVAL
+              value: '10'
+            # Force delete (don't wait for graceful shutdown)
+            - name: FORCE
+              value: 'false'
+            # Target specific pod
+            - name: PODS_AFFECTED_PERC
+              value: '50'
+            # Random or serial deletion
+            - name: RANDOMNESS
+              value: 'true'
+        # Probe to verify service recovers
+        probe:
+          - name: "service-health-check"
+            type: "httpProbe"
+            mode: "Continuous"
+            runProperties:
+              probePollingInterval: '5s'
+              initialDelay: '5s'
+              retry: 3
+              probeTimeout: '3s'
+            httpProbe/inputs:
+              url: "http://{{ project_name | replace: "_", "-" }}.default.svc.cluster.local:8080/health/live"
+              insecureSkipVerify: false
+              method:
+                get:
+                  criteria: "=="
+                  responseCode: "200"
+
+---
+# Network Latency Chaos Experiment
+# Simulates network delays to test timeout handling
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-network-latency
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  engineState: 'active'
+  annotationCheck: 'true'
+  experiments:
+    - name: network-latency
+      spec:
+        components:
+          env:
+            # Network interface to target
+            - name: NETWORK_INTERFACE
+              value: 'eth0'
+            # Latency to add (in ms)
+            - name: NETWORK_LATENCY
+              value: '2000'
+            # Duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Target container
+            - name: TARGET_CONTAINER
+              value: 'service'
+        probe:
+          - name: "readiness-check"
+            type: "httpProbe"
+            mode: "Edge"
+            runProperties:
+              probePollingInterval: '5s'
+              initialDelay: '10s'
+              retry: 5
+              probeTimeout: '10s'
+            httpProbe/inputs:
+              url: "http://{{ project_name | replace: "_", "-" }}.default.svc.cluster.local:8080/health/ready"
+              insecureSkipVerify: false
+              method:
+                get:
+                  criteria: "=="
+                  responseCode: "200"
+
+---
+# CPU Hog Chaos Experiment
+# Simulates high CPU load to test resource limits
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-cpu-hog
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  engineState: 'active'
+  annotationCheck: 'true'
+  experiments:
+    - name: pod-cpu-hog
+      spec:
+        components:
+          env:
+            # Number of CPU cores to stress
+            - name: CPU_CORES
+              value: '1'
+            # CPU load percentage
+            - name: CPU_LOAD
+              value: '80'
+            # Duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Target container
+            - name: TARGET_CONTAINER
+              value: 'service'
+        probe:
+          - name: "metrics-check"
+            type: "promProbe"
+            mode: "Edge"
+            runProperties:
+              probePollingInterval: '10s'
+              initialDelay: '5s'
+              retry: 3
+              probeTimeout: '5s'
+            promProbe/inputs:
+              endpoint: "http://prometheus.observability.svc.cluster.local:9090"
+              query: |
+                sum(rate(container_cpu_usage_seconds_total{pod=~"{{ project_name | replace: "_", "-" }}-.*"}[1m])) by (pod)
+              comparator:
+                criteria: ">"
+                value: "0.5"
+
+---
+# Memory Hog Chaos Experiment
+# Simulates memory pressure to test OOM handling
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-memory-hog
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  engineState: 'active'
+  annotationCheck: 'true'
+  experiments:
+    - name: pod-memory-hog
+      spec:
+        components:
+          env:
+            # Memory to consume (in MB)
+            - name: MEMORY_CONSUMPTION
+              value: '100'
+            # Duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Target container
+            - name: TARGET_CONTAINER
+              value: 'service'
+            # Memory consumption percentage
+            - name: MEMORY_CONSUMPTION_PERCENTAGE
+              value: '50'
+
+---
+# IO Stress Chaos Experiment
+# Simulates disk IO pressure
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-io-stress
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  engineState: 'active'
+  annotationCheck: 'true'
+  experiments:
+    - name: pod-io-stress
+      spec:
+        components:
+          env:
+            # Mount path for volume
+            - name: VOLUME_MOUNT_PATH
+              value: '/tmp'
+            # Size of files to create (in MB)
+            - name: FILESYSTEM_UTILIZATION_BYTES
+              value: '100'
+            # Number of workers
+            - name: NUMBER_OF_WORKERS
+              value: '4'
+            # Duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Target container
+            - name: TARGET_CONTAINER
+              value: 'service'
+
+---
+# Redis Failure Chaos Experiment
+# Simulates Redis connectivity issues
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: {{ project_name }}-redis-failure
+  namespace: litmus
+spec:
+  appinfo:
+    appns: 'default'
+    applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+    appkind: 'deployment'
+  engineState: 'active'
+  annotationCheck: 'true'
+  experiments:
+    - name: pod-network-partition
+      spec:
+        components:
+          env:
+            # Target destination IPs (Redis service)
+            - name: TARGET_IPS
+              value: 'redis.services.svc.cluster.local'
+            # Target destination ports
+            - name: TARGET_PORTS
+              value: '6379'
+            # Duration of chaos
+            - name: TOTAL_CHAOS_DURATION
+              value: '30'
+            # Network interface
+            - name: NETWORK_INTERFACE
+              value: 'eth0'
+        probe:
+          - name: "readiness-degraded"
+            type: "httpProbe"
+            mode: "Edge"
+            runProperties:
+              probePollingInterval: '5s'
+              initialDelay: '5s'
+              retry: 3
+              probeTimeout: '5s'
+            httpProbe/inputs:
+              url: "http://{{ project_name | replace: "_", "-" }}.default.svc.cluster.local:8080/health/ready"
+              insecureSkipVerify: false
+              method:
+                get:
+                  # Should return 503 when Redis is unavailable
+                  criteria: "=="
+                  responseCode: "503"
+
+---
+# Chaos Schedule for Continuous Testing
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosSchedule
+metadata:
+  name: {{ project_name }}-weekly-chaos
+  namespace: litmus
+spec:
+  schedule:
+    type: "repeat"
+    startTime: "2024-01-01T00:00:00Z"
+    endTime: "2024-12-31T23:59:59Z"
+    minChaosInterval: "168h"  # Weekly
+  engineTemplateSpec:
+    appinfo:
+      appns: 'default'
+      applabel: 'app.kubernetes.io/name={{ project_name | replace: "_", "-" }}'
+      appkind: 'deployment'
+    engineState: 'active'
+    annotationCheck: 'true'
+    experiments:
+      - name: pod-delete
+        spec:
+          components:
+            env:
+              - name: TOTAL_CHAOS_DURATION
+                value: '30'
+              - name: CHAOS_INTERVAL
+                value: '10'
+
+---
+# Workflow for Chaos Testing Pipeline
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: {{ project_name }}-chaos-pipeline
+  namespace: litmus
+spec:
+  entrypoint: chaos-tests
+  templates:
+    - name: chaos-tests
+      steps:
+        - - name: pod-delete-test
+            templateRef:
+              name: {{ project_name }}-pod-delete
+              template: pod-delete
+        - - name: wait-for-recovery
+            template: sleep
+        - - name: network-latency-test
+            templateRef:
+              name: {{ project_name }}-network-latency
+              template: network-latency
+        - - name: wait-for-recovery
+            template: sleep
+        - - name: cpu-hog-test
+            templateRef:
+              name: {{ project_name }}-cpu-hog
+              template: pod-cpu-hog
+    
+    - name: sleep
+      container:
+        image: alpine:latest
+        command: [sh, -c]
+        args: ["sleep 60"]

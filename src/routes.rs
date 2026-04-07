@@ -10,9 +10,52 @@ use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use metrics::counter;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use crate::handlers::{api, events, health};
+use crate::middleware::{common_middleware, request_id_middleware, security_headers_middleware};
 use crate::state::AppState;
+
+// Rate limiting imports
+use governor::{
+    clock::DefaultClock,
+    middleware::NoOpMiddleware,
+    state::InMemoryState,
+    Quota, RateLimiter,
+};
+use std::num::NonZeroU32;
+use tower_governor::{errors::display_error, GovernorLayer, GovernorConfigBuilder};
+
+/// Rate limiter configuration
+/// 
+/// Default: 100 requests per second per IP with burst of 50
+pub fn rate_limit_config() -> GovernorConfigBuilder<InMemoryState, DefaultClock, NoOpMiddleware> {
+    GovernorConfigBuilder::default()
+        .per_second(100)
+        .burst_size(50)
+        .use_headers()
+}
+
+/// Key extractor for rate limiting by IP address
+#[derive(Clone)]
+pub struct RateLimitKeyExtractor;
+
+impl tower_governor::key_extractor::KeyExtractor for RateLimitKeyExtractor {
+    type Key = SocketAddr;
+
+    fn extract<B>(&self, req: &Request<B>) -> Result<Self::Key, axum::response::Response> {
+        req.extensions()
+            .get::<SocketAddr>()
+            .cloned()
+            .ok_or_else(|| {
+                axum::response::Response::builder()
+                    .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(axum::body::Body::from("Could not extract client IP"))
+                    .unwrap()
+            })
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -30,6 +73,7 @@ use crate::state::AppState;
             health::HealthResponse,
             api::HelloResponse,
             api::HelloQuery,
+            crate::error::ValidationErrorResponse,
             {%- if feature_s3 %}
             crate::handlers::storage::StorageTestData,
             crate::handlers::storage::StorageExampleResponse,
@@ -46,7 +90,7 @@ use crate::state::AppState;
     info(
         title = "Rust Knative Service",
         version = env!("CARGO_PKG_VERSION"),
-        description = "Template microservice for Knative + FluxCD"
+        description = "Template microservice for Knative + FluxCD with rate limiting, validation, and security headers"
     )
 )]
 struct ApiDoc;
@@ -60,6 +104,13 @@ async fn metrics_middleware(req: Request<Body>, next: Next) -> axum::response::R
 }
 
 pub fn create_router(state: AppState) -> Router {
+    // Configure rate limiting
+    let governor_conf = Arc::new(
+        rate_limit_config()
+            .finish()
+            .expect("Failed to build rate limiter configuration")
+    );
+
     Router::new()
         // CloudEvents endpoint (Knative sink)
         .route("/", post(events::handle_event))
@@ -72,6 +123,14 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/v1", api_v1_routes())
         // OpenAPI documentation
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        // Add request ID propagation middleware (first to capture request ID)
+        .layer(axum::middleware::from_fn(request_id_middleware))
+        // Add security headers middleware
+        .layer(axum::middleware::from_fn(security_headers_middleware))
+        // Add rate limiting middleware
+        .layer(GovernorLayer {
+            config: governor_conf,
+        })
         // Add simple metrics middleware (records HTTP request counts)
         .layer(ServiceBuilder::new()
             .layer(axum::middleware::from_fn(metrics_middleware)))

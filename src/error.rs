@@ -3,8 +3,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use serde::Serialize;
 use serde_json::json;
 use thiserror::Error;
+use validator::ValidationErrors;
 
 /// Application-wide error type
 #[derive(Error, Debug)]
@@ -18,6 +20,12 @@ pub enum AppError {
     #[error("Internal server error: {0}")]
     Internal(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Rate limit exceeded")]
+    RateLimit,
+
     {%- if feature_kafka %}
     #[error("Kafka error: {0}")]
     Kafka(#[from] KafkaError),
@@ -30,32 +38,78 @@ impl From<figment::Error> for AppError {
     }
 }
 
+impl From<ValidationErrors> for AppError {
+    fn from(err: ValidationErrors) -> Self {
+        AppError::Validation(err.to_string())
+    }
+}
+
+/// Response structure for validation errors
+#[derive(Serialize)]
+pub struct ValidationErrorResponse {
+    pub error: String,
+    pub details: Vec<String>,
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
+        let (status, error_message, details) = match &self {
             AppError::Redis(ref e) => {
-                tracing::error!(error = %e, "Redis error");
-                (StatusCode::SERVICE_UNAVAILABLE, "Service unavailable")
+                tracing::error!(error = %e, error_type = "redis", "Redis error");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Service unavailable",
+                    vec![e.to_string()],
+                )
             }
             AppError::Config(ref e) => {
-                tracing::error!(error = %e, "Configuration error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Configuration error")
+                tracing::error!(error = %e, error_type = "config", "Configuration error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Configuration error",
+                    vec![e.to_string()],
+                )
             }
             AppError::Internal(ref e) => {
-                tracing::error!(error = %e, "Internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+                tracing::error!(error = %e, error_type = "internal", "Internal error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error",
+                    vec![e.to_string()],
+                )
+            }
+            AppError::Validation(ref e) => {
+                tracing::warn!(error = %e, error_type = "validation", "Validation error");
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid input",
+                    vec![e.to_string()],
+                )
+            }
+            AppError::RateLimit => {
+                tracing::warn!(error_type = "rate_limit", "Rate limit exceeded");
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "Rate limit exceeded",
+                    vec!["Too many requests. Please try again later.".to_string()],
+                )
             }
             {%- if feature_kafka %}
             AppError::Kafka(ref e) => {
-                tracing::error!(error = %e, "Kafka error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Event publishing failed")
+                tracing::error!(error = %e, error_type = "kafka", "Kafka error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Event publishing failed",
+                    vec![e.to_string()],
+                )
             }
             {%- endif %}
         };
 
         let body = Json(json!({
             "error": error_message,
-            "details": self.to_string(),
+            "details": details,
+            "request_id": None::<String>, // Will be populated by middleware
         }));
 
         (status, body).into_response()
