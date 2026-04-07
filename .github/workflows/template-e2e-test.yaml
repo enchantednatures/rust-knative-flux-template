@@ -471,7 +471,7 @@ jobs:
         run: |
           cat <<EOF | kubectl apply -f -
           ---
-          apiVersion: source.toolkit.fluxcd.io/v1beta2
+          apiVersion: source.toolkit.fluxcd.io/v1
           kind: OCIRepository
           metadata:
             name: ${PROJECT_NAME}
