@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use axum::{
@@ -9,49 +7,17 @@ use axum::{
     middleware::Next,
     routing::{get, post},
 };
-use governor::{
-    Quota, RateLimiter, clock::DefaultClock, middleware::NoOpMiddleware, state::InMemoryState,
-};
 use metrics::counter;
 use tower::ServiceBuilder;
-use tower_governor::{GovernorConfigBuilder, GovernorLayer, errors::display_error};
+use tower_governor::GovernorLayer;
+use tower_governor::governor::GovernorConfigBuilder;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handlers::{api, events, health};
-use crate::middleware::{common_middleware, request_id_middleware, security_headers_middleware};
+use crate::middleware::{request_id_middleware, security_headers_middleware};
 use crate::state::AppState;
-
-/// Rate limiter configuration
-///
-/// Default: 100 requests per second per IP with burst of 50
-pub fn rate_limit_config() -> GovernorConfigBuilder<InMemoryState, DefaultClock, NoOpMiddleware> {
-    GovernorConfigBuilder::default()
-        .per_second(100)
-        .burst_size(50)
-        .use_headers()
-}
-
-/// Key extractor for rate limiting by IP address
-#[derive(Clone)]
-pub struct RateLimitKeyExtractor;
-
-impl tower_governor::key_extractor::KeyExtractor for RateLimitKeyExtractor {
-    type Key = SocketAddr;
-
-    fn extract<B>(&self, req: &Request<B>) -> Result<Self::Key, axum::response::Response> {
-        req.extensions()
-            .get::<SocketAddr>()
-            .cloned()
-            .ok_or_else(|| {
-                axum::response::Response::builder()
-                    .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(axum::body::Body::from("Could not extract client IP"))
-                    .unwrap()
-            })
-    }
-}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -91,7 +57,6 @@ impl tower_governor::key_extractor::KeyExtractor for RateLimitKeyExtractor {
 )]
 struct ApiDoc;
 
-/// Simple metrics middleware that records HTTP request counts
 async fn metrics_middleware(req: Request<Body>, next: Next) -> axum::response::Response {
     let counter = counter!("http_requests_total");
     counter.increment(1);
@@ -100,9 +65,10 @@ async fn metrics_middleware(req: Request<Body>, next: Next) -> axum::response::R
 }
 
 pub fn create_router(state: AppState) -> Router {
-    // Configure rate limiting
     let governor_conf = Arc::new(
-        rate_limit_config()
+        GovernorConfigBuilder::default()
+            .per_second(100)
+            .burst_size(50)
             .finish()
             .expect("Failed to build rate limiter configuration"),
     );

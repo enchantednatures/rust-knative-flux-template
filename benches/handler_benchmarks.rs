@@ -4,10 +4,9 @@
 //!
 //! These benchmarks measure the performance of critical paths in the application.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use tokio::runtime::Runtime;
 
-/// Benchmark for the hello handler
 fn benchmark_hello_handler(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
@@ -16,7 +15,6 @@ fn benchmark_hello_handler(c: &mut Criterion) {
 
     group.bench_function("hello_world", |b| {
         b.to_async(&rt).iter(|| async {
-            // Simulate the hello handler logic
             let name = "World";
             let message = format!("Hello, {}!", name);
             black_box(message)
@@ -34,7 +32,6 @@ fn benchmark_hello_handler(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark for input validation
 fn benchmark_validation(c: &mut Criterion) {
     let mut group = c.benchmark_group("validation");
 
@@ -77,13 +74,11 @@ fn benchmark_validation(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark for serialization/deserialization
 fn benchmark_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization");
 
     group.bench_function("health_response_serialize", |b| {
         use {{ crate_name }}::handlers::health::HealthResponse;
-        use serde_json;
 
         let response = HealthResponse {
             status: "ready".to_string(),
@@ -94,7 +89,6 @@ fn benchmark_serialization(c: &mut Criterion) {
 
     group.bench_function("health_response_deserialize", |b| {
         use {{ crate_name }}::handlers::health::HealthResponse;
-        use serde_json;
 
         let json = r#"{"status":"ready"}"#;
 
@@ -118,7 +112,6 @@ fn benchmark_serialization(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark for error handling
 fn benchmark_error_handling(c: &mut Criterion) {
     let mut group = c.benchmark_group("error_handling");
 
@@ -146,10 +139,7 @@ fn benchmark_error_handling(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark for middleware operations
 fn benchmark_middleware(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-
     let mut group = c.benchmark_group("middleware");
 
     group.bench_function("request_id_generation", |b| {
@@ -181,7 +171,6 @@ fn benchmark_middleware(c: &mut Criterion) {
 }
 
 {%- if feature_s3 %}
-/// Benchmark for S3 operations (when S3 feature is enabled)
 fn benchmark_s3_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
@@ -202,7 +191,6 @@ fn benchmark_s3_operations(c: &mut Criterion) {
 
     group.bench_function("json_serialization", |b| {
         use {{ crate_name }}::handlers::storage::StorageTestData;
-        use serde_json;
 
         let data = StorageTestData {
             message: "Test message".to_string(),
@@ -217,7 +205,6 @@ fn benchmark_s3_operations(c: &mut Criterion) {
 }
 {%- endif %}
 
-/// Benchmark for rate limiting operations
 fn benchmark_rate_limiting(c: &mut Criterion) {
     let mut group = c.benchmark_group("rate_limiting");
 
@@ -235,7 +222,6 @@ fn benchmark_rate_limiting(c: &mut Criterion) {
     group.finish();
 }
 
-// Group all benchmarks
 criterion_group!(
     benches,
     benchmark_hello_handler,

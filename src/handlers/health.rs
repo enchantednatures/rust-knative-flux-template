@@ -4,13 +4,13 @@ use axum::{
     http::{StatusCode, header},
     response::IntoResponse,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use utoipa::ToSchema;
 
 use crate::state::AppState;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
 }

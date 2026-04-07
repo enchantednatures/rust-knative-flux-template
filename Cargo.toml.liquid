@@ -68,9 +68,6 @@ rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
 
 # Time handling (for Kafka event timestamps)
 chrono = { version = "0.4", features = ["serde"] }
-
-# UUID generation (for Kafka event IDs)
-uuid = { version = "1.0", features = ["v4", "serde"] }
 {% endif %}
 
 {% if feature_s3 %}
@@ -80,11 +77,11 @@ opendal = { version = "0.55", default-features = false, features = ["services-s3
 {%- unless feature_kafka %}
 # Time handling (for S3)
 chrono = { version = "0.4", features = ["serde"] }
-
-# UUID generation (for S3)
-uuid = { version = "1.0", features = ["v4", "serde"] }
 {%- endunless %}
 {% endif %}
+
+# UUID generation (for request IDs, event IDs)
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Utilities
 thiserror = "2.0"
@@ -100,8 +97,10 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json"
 # Property-based testing
 proptest = "1.0"
 # Contract testing
-pact_consumer = "0.10"
-pact_models = "1.0"
+pact_consumer = "1.4"
+pact_models = "1.3"
+# HTTP client for contract testing
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 # Benchmarking
 criterion = { version = "0.5", features = ["async_tokio"] }
 {%- if feature_s3 %}

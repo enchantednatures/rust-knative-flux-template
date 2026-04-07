@@ -9,10 +9,10 @@ use thiserror::Error;
 use validator::ValidationErrors;
 
 /// Application-wide error type
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum AppError {
     #[error("Redis error: {0}")]
-    Redis(#[from] redis::RedisError),
+    Redis(String),
 
     #[error("Configuration error: {0}")]
     Config(String),
@@ -38,6 +38,12 @@ impl From<figment::Error> for AppError {
     }
 }
 
+impl From<redis::RedisError> for AppError {
+    fn from(err: redis::RedisError) -> Self {
+        AppError::Redis(err.to_string())
+    }
+}
+
 impl From<ValidationErrors> for AppError {
     fn from(err: ValidationErrors) -> Self {
         AppError::Validation(err.to_string())
@@ -45,7 +51,7 @@ impl From<ValidationErrors> for AppError {
 }
 
 /// Response structure for validation errors
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ValidationErrorResponse {
     pub error: String,
     pub details: Vec<String>,
@@ -54,7 +60,7 @@ pub struct ValidationErrorResponse {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message, details) = match &self {
-            AppError::Redis(ref e) => {
+            AppError::Redis(e) => {
                 tracing::error!(error = %e, error_type = "redis", "Redis error");
                 (
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -62,7 +68,7 @@ impl IntoResponse for AppError {
                     vec![e.to_string()],
                 )
             }
-            AppError::Config(ref e) => {
+            AppError::Config(e) => {
                 tracing::error!(error = %e, error_type = "config", "Configuration error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -70,7 +76,7 @@ impl IntoResponse for AppError {
                     vec![e.to_string()],
                 )
             }
-            AppError::Internal(ref e) => {
+            AppError::Internal(e) => {
                 tracing::error!(error = %e, error_type = "internal", "Internal error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -78,7 +84,7 @@ impl IntoResponse for AppError {
                     vec![e.to_string()],
                 )
             }
-            AppError::Validation(ref e) => {
+            AppError::Validation(e) => {
                 tracing::warn!(error = %e, error_type = "validation", "Validation error");
                 (
                     StatusCode::BAD_REQUEST,
@@ -95,7 +101,7 @@ impl IntoResponse for AppError {
                 )
             }
             {%- if feature_kafka %}
-            AppError::Kafka(ref e) => {
+            AppError::Kafka(e) => {
                 tracing::error!(error = %e, error_type = "kafka", "Kafka error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

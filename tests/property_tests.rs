@@ -4,7 +4,7 @@
 
 use proptest::prelude::*;
 
-/// Test that name validation works correctly for various inputs
+// Name validation tests
 proptest! {
     #[test]
     fn test_safe_name_validation(name in "[a-zA-Z0-9\\s\\-_]{1,100}") {
@@ -31,7 +31,7 @@ proptest! {
     }
 }
 
-/// Property-based tests for serialization/deserialization
+// Serialization/deserialization tests
 proptest! {
     #[test]
     fn test_hello_query_serialization(name in "[a-zA-Z0-9\\s\\-_]{1,100}") {
@@ -40,13 +40,11 @@ proptest! {
 
         let query = HelloQuery { name: Some(name) };
 
-        // Should validate successfully for safe names
         if let Err(e) = query.validate() {
-            // If validation fails, it should be due to regex mismatch
             let error_str = e.to_string();
             prop_assert!(
                 error_str.contains("invalid characters") || error_str.contains("between 1 and 100"),
-                "Unexpected validation error: {}", error_str
+                "Unexpected validation error: {error_str}"
             );
         }
     }
@@ -54,21 +52,19 @@ proptest! {
     #[test]
     fn test_health_response_serialization(status in "[a-z]{3,20}") {
         use {{ crate_name }}::handlers::health::HealthResponse;
-        use serde_json;
 
         let response = HealthResponse { status: status.clone() };
         let json = serde_json::to_string(&response).expect("Should serialize");
 
-        // Should contain the status field
-        prop_assert!(json.contains(&format!("\"status\":\"{}\"", status)));
+        let expected = format!("\"status\":\"{status}\"");
+        prop_assert!(json.contains(&expected));
 
-        // Should deserialize back
         let deserialized: HealthResponse = serde_json::from_str(&json).expect("Should deserialize");
         prop_assert_eq!(deserialized.status, status);
     }
 }
 
-/// Property-based tests for error handling
+// Error handling tests
 proptest! {
     #[test]
     fn test_error_message_format(error_msg in "[a-zA-Z0-9\\s\\-_]{1,200}") {
@@ -77,12 +73,11 @@ proptest! {
         let error = AppError::Internal(error_msg.clone());
         let error_string = error.to_string();
 
-        // Error message should contain the original message
         prop_assert!(error_string.contains(&error_msg));
     }
 }
 
-/// Property-based tests for input sanitization
+// Input sanitization tests
 proptest! {
     #[test]
     fn test_sanitization_preserves_length(input in "[a-zA-Z0-9\\s]{1,100}") {
@@ -90,7 +85,6 @@ proptest! {
 
         let sanitized = sanitize_input(&input);
 
-        // For safe input, sanitization should preserve the content
         if !input.contains('<') && !input.contains('>') && !input.contains('"') && !input.contains('\'') && !input.contains('&') {
             prop_assert_eq!(sanitized, input);
         }
@@ -102,7 +96,6 @@ proptest! {
 
         let sanitized = sanitize_input(&input);
 
-        // Sanitized output should not contain dangerous characters
         prop_assert!(!sanitized.contains('<'));
         prop_assert!(!sanitized.contains('>'));
         prop_assert!(!sanitized.contains('\"'));
@@ -116,46 +109,43 @@ mod cloud_event_tests {
     proptest! {
         #[test]
         fn test_cloud_event_id_uniqueness(
-            type_ in "[a-z.]{5,50}",
-            source in "[a-z/]{5,50}"
+            _type in "[a-z.]{5,50}",
+            _source in "[a-z/]{5,50}"
         ) {
             {%- if feature_kafka %}
             use {{ crate_name }}::handlers::kafka::CloudEvent;
 
-            let event1 = CloudEvent::new(type_.clone(), source.clone(), None);
-            let event2 = CloudEvent::new(type_, source, None);
+            let event1 = CloudEvent::new(_type.clone(), _source.clone(), None);
+            let event2 = CloudEvent::new(_type, _source, None);
 
-            // Two events created at different times should have different IDs
             prop_assert_ne!(event1.id(), event2.id());
 
-            // Both should have the same type and source
             prop_assert_eq!(event1.type_(), event2.type_());
             prop_assert_eq!(event1.source(), event2.source());
             {%- else %}
-            // Skip test when Kafka feature is not enabled
+            let _ = (_type, _source);
             prop_assert!(true);
             {%- endif %}
         }
 
         #[test]
         fn test_cloud_event_serialization_roundtrip(
-            type_ in "[a-z.]{5,50}",
-            source in "[a-z/]{5,50}"
+            _type in "[a-z.]{5,50}",
+            _source in "[a-z/]{5,50}"
         ) {
             {%- if feature_kafka %}
             use {{ crate_name }}::handlers::kafka::CloudEvent;
-            use serde_json;
 
-            let event = CloudEvent::new(type_, source, None);
+            let event = CloudEvent::new(_type, _source, None);
             let json = event.to_json().expect("Should serialize");
 
-            // JSON should contain required fields
             prop_assert!(json.contains("specversion"));
             prop_assert!(json.contains("type"));
             prop_assert!(json.contains("source"));
             prop_assert!(json.contains("id"));
             prop_assert!(json.contains("time"));
             {%- else %}
+            let _ = (_type, _source);
             prop_assert!(true);
             {%- endif %}
         }

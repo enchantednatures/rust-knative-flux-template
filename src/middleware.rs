@@ -39,7 +39,7 @@ pub async fn request_id_middleware(req: Request<Body>, next: Next) -> Response {
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
     // Add request ID to tracing span for correlation
-    Span::current().record("request_id", &request_id.as_str());
+    Span::current().record("request_id", request_id.as_str());
 
     // Log request start with contextual fields
     let start = Instant::now();
@@ -171,7 +171,7 @@ pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    Span::current().record("request_id", &request_id.as_str());
+    Span::current().record("request_id", request_id.as_str());
 
     let start = Instant::now();
     let method = req.method().to_string();
@@ -239,7 +239,6 @@ pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {
 mod tests {
     use super::*;
     use axum::Router;
-    use axum::body::to_bytes;
     use axum::routing::get;
     use tower::ServiceExt;
 
