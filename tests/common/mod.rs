@@ -1,7 +1,8 @@
-{%- if feature_s3 -%}
-use opendal::Operator;
-{% endif -%}
+use {{ crate_name }}::observability;
 use {{ crate_name }}::state::AppState;
+{%- if feature_s3 %}
+use opendal::Operator;
+{%- endif %}
 
 /// Create a test AppState with a mock Redis connection
 /// For integration tests, use a real Redis instance (e.g., via docker-compose or testcontainers)
@@ -16,8 +17,7 @@ pub async fn create_test_state() -> AppState {
         .expect("Failed to connect to Redis");
 
     // Initialize metrics properly (same as production) to ensure tests match runtime behavior
-    let metrics_handle =
-        {{ crate_name }}::observability::init_metrics().expect("Failed to initialize metrics");
+    let metrics_handle = observability::init_metrics().expect("Failed to initialize metrics");
 
 {%- if feature_s3 and feature_kafka %}
     let storage = create_test_storage();

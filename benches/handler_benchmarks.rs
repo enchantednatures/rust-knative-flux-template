@@ -82,8 +82,8 @@ fn benchmark_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization");
 
     group.bench_function("health_response_serialize", |b| {
-        use serde_json;
         use {{ crate_name }}::handlers::health::HealthResponse;
+        use serde_json;
 
         let response = HealthResponse {
             status: "ready".to_string(),
@@ -93,8 +93,8 @@ fn benchmark_serialization(c: &mut Criterion) {
     });
 
     group.bench_function("health_response_deserialize", |b| {
-        use serde_json;
         use {{ crate_name }}::handlers::health::HealthResponse;
+        use serde_json;
 
         let json = r#"{"status":"ready"}"#;
 
@@ -201,8 +201,8 @@ fn benchmark_s3_operations(c: &mut Criterion) {
     });
 
     group.bench_function("json_serialization", |b| {
-        use serde_json;
         use {{ crate_name }}::handlers::storage::StorageTestData;
+        use serde_json;
 
         let data = StorageTestData {
             message: "Test message".to_string(),

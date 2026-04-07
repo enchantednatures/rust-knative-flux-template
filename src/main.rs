@@ -1,7 +1,7 @@
-{%- if feature_kafka -%}
-use std::sync::Arc;
-{% endif -%}
 use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
+{%- if feature_kafka %}
+use std::sync::Arc;
+{%- endif %}
 use tokio::signal;
 
 #[tokio::main]
@@ -68,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // 3c. Initialize Kafka Publisher (Event Publishing)
     // =========================================================================
+    use {{ crate_name }}::handlers::kafka::KafkaPublisher;
     let kafka_publisher = if let Some(kafka_config) = config.kafka.clone() {
         tracing::info!(
             broker_url = %kafka_config.broker_url,
@@ -75,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
             "Initializing Kafka publisher"
         );
 
-        match {{ crate_name }}::handlers::kafka::KafkaPublisher::new(kafka_config).await {
+        match KafkaPublisher::new(kafka_config).await {
             Ok(publisher) => {
                 tracing::info!("Kafka publisher initialized");
                 Some(Arc::new(publisher))
