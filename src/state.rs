@@ -1,7 +1,7 @@
-{%- if feature_kafka %}
+{%- if feature_kafka -%}
 use std::sync::Arc;
-{%- endif %}
 
+{% endif -%}
 use metrics_exporter_prometheus::PrometheusHandle;
 {%- if feature_s3 %}
 use opendal::Operator;

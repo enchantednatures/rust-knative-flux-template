@@ -66,8 +66,8 @@ pub async fn readiness(
     let mut conn = state.redis.clone();
 
     match redis::cmd("PING").query_async::<_, String>(&mut conn).await {
+        {%- if feature_kafka %}
         Ok(_) => {
-            {%- if feature_kafka %}
             // If Kafka publishing is enabled, also check broker connectivity
             if let Some(publisher) = &state.kafka_publisher {
                 match publisher.health_check().await {
@@ -90,12 +90,12 @@ pub async fn readiness(
                     status: "ready".into(),
                 }))
             }
-            {%- else %}
-            Ok(Json(HealthResponse {
-                status: "ready".into(),
-            }))
-            {%- endif %}
         }
+        {%- else %}
+        Ok(_) => Ok(Json(HealthResponse {
+            status: "ready".into(),
+        })),
+        {%- endif %}
         Err(e) => {
             tracing::error!(error = %e, "Redis health check failed");
             Err((
@@ -116,7 +116,7 @@ pub async fn readiness(
 /// - Custom application metrics
 /// {%- if feature_kafka %}
 /// - kafka_events_published_total: Counter for successfully published events
-/// - kafka_events_failed_total: Counter for failed publish attempts  
+/// - kafka_events_failed_total: Counter for failed publish attempts
 /// - kafka_publish_latency_ms: Histogram for publishing latency
 /// {%- endif %}
 #[utoipa::path(
@@ -139,7 +139,10 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
 
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         metrics_text,
     )
 }

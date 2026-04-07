@@ -90,14 +90,12 @@ impl CloudEvent {
 
     /// Serializes the CloudEvent to JSON
     pub fn to_json(&self) -> Result<String, KafkaError> {
-        serde_json::to_string(self)
-            .map_err(|e| KafkaError::SerializationFailed(e.to_string()))
+        serde_json::to_string(self).map_err(|e| KafkaError::SerializationFailed(e.to_string()))
     }
 
     /// Serializes the CloudEvent to JSON bytes
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, KafkaError> {
-        serde_json::to_vec(self)
-            .map_err(|e| KafkaError::SerializationFailed(e.to_string()))
+        serde_json::to_vec(self).map_err(|e| KafkaError::SerializationFailed(e.to_string()))
     }
 }
 
@@ -117,11 +115,7 @@ pub fn create_dummy_event(config: &KafkaConfig, source: impl Into<String>) -> Cl
         "timestamp": chrono::Utc::now().to_rfc3339()
     });
 
-    CloudEvent::new(
-        config.event_name.clone(),
-        source.into(),
-        Some(dummy_data),
-    )
+    CloudEvent::new(config.event_name.clone(), source.into(), Some(dummy_data))
 }
 
 /// Kafka publisher for sending CloudEvents
@@ -195,37 +189,42 @@ impl KafkaPublisher {
             .key(&event_id)
             .payload(&json);
 
-        let result = self.producer
-            .send(record, std::time::Duration::from_millis(self.config.timeout_ms.into()))
+        let result = self
+            .producer
+            .send(
+                record,
+                std::time::Duration::from_millis(self.config.timeout_ms.into()),
+            )
             .await;
 
         // Record metrics
         let latency_ms = start.elapsed().as_millis() as f64;
         let topic = self.config.topic.clone();
-        
+
         match result {
             Ok(delivery) => {
                 let partition = delivery.partition;
                 let offset = delivery.offset;
-                
-                let counter = metrics::counter!("kafka_events_published_total", "topic" => topic.clone());
+
+                let counter =
+                    metrics::counter!("kafka_events_published_total", "topic" => topic.clone());
                 counter.increment(1);
                 let histogram = metrics::histogram!("kafka_publish_latency_ms", "topic" => topic);
                 histogram.record(latency_ms);
                 tracing::Span::current().record("partition", partition);
                 tracing::Span::current().record("offset", offset);
-                
+
                 Ok((partition, offset))
             }
             Err((err, _)) => {
                 let error = KafkaError::PublishFailed(err.to_string());
                 let (error_type, _) = error.context();
-                
+
                 let counter = metrics::counter!("kafka_events_failed_total", "topic" => topic.clone(), "error_type" => error_type);
                 counter.increment(1);
                 let histogram = metrics::histogram!("kafka_publish_latency_ms", "topic" => topic, "error" => "true");
                 histogram.record(latency_ms);
-                
+
                 Err(error)
             }
         }
@@ -244,10 +243,7 @@ impl KafkaPublisher {
             .client()
             .fetch_metadata(None, std::time::Duration::from_secs(5))
             .map_err(|e| {
-                KafkaError::broker_unreachable(
-                    self.config.broker_url.clone(),
-                    e.to_string(),
-                )
+                KafkaError::broker_unreachable(self.config.broker_url.clone(), e.to_string())
             })?;
 
         Ok(())

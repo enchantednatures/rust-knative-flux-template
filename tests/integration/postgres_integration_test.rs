@@ -41,12 +41,12 @@ impl TestDb {
     /// Implements exponential backoff retry logic for transient failures.
     async fn connect() -> Result<Self, Box<dyn std::error::Error>> {
         let url = build_connection_string()?;
-        
+
         // Retry logic: 3 attempts with exponential backoff
         let mut attempts = 0;
         let max_attempts = 3;
         let mut base_delay_ms = 100;
-        
+
         loop {
             match PgPoolOptions::new()
                 .max_connections(5)
@@ -208,7 +208,7 @@ async fn test_insert_with_json_metadata() {
 
     let id: i64 = result.get("id");
     let stored_metadata: serde_json::Value = result.get("metadata");
-    
+
     assert_eq!(stored_metadata["version"], "1.0");
     assert_eq!(stored_metadata["priority"], 5);
     eprintln!("✓ Inserted record with JSON metadata: {}", id);
@@ -640,7 +640,7 @@ async fn test_delete_multiple_records() {
 async fn test_connection_error_handling() {
     // Attempt to connect with invalid credentials
     let invalid_url = "postgres://invalid:invalid@localhost:9999/nonexistent";
-    
+
     let result = PgPoolOptions::new()
         .max_connections(5)
         .connect(invalid_url)

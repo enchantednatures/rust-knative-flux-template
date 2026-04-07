@@ -3,8 +3,8 @@
 //! These tests verify API contracts between the service and its consumers.
 //! Run with: `cargo test --test contract_tests`
 
-use pact_consumer::prelude::*;
 use pact_consumer::mock_server::StartMockServerAsync;
+use pact_consumer::prelude::*;
 use pact_models::v4::http_parts::HttpRequest;
 use reqwest;
 use serde_json::json;
@@ -18,10 +18,8 @@ use serde_json::json;
 async fn test_hello_endpoint_contract() {
     let pact = PactBuilder::new("consumer-service", "{{ crate_name }}")
         .interaction("a request for hello", "", |mut i| async move {
-            i.request
-                .path("/api/v1/hello")
-                .method("GET");
-            
+            i.request.path("/api/v1/hello").method("GET");
+
             i.response
                 .status(200)
                 .header("Content-Type", "application/json")
@@ -30,7 +28,7 @@ async fn test_hello_endpoint_contract() {
                     "version": like!("0.1.0"),
                     "request_id": like!(null)
                 }));
-            
+
             i
         })
         .await;
@@ -44,7 +42,7 @@ async fn test_hello_endpoint_contract() {
         .expect("Failed to make request");
 
     assert_eq!(response.status(), 200);
-    
+
     let body: serde_json::Value = response.json().await.expect("Failed to parse JSON");
     assert!(body.get("message").is_some());
     assert!(body.get("version").is_some());
@@ -59,7 +57,7 @@ async fn test_hello_with_name_contract() {
                 .path("/api/v1/hello")
                 .method("GET")
                 .query_param("name", "Alice");
-            
+
             i.response
                 .status(200)
                 .header("Content-Type", "application/json")
@@ -68,7 +66,7 @@ async fn test_hello_with_name_contract() {
                     "version": like!("0.1.0"),
                     "request_id": like!(null)
                 }));
-            
+
             i
         })
         .await;
@@ -88,32 +86,28 @@ async fn test_hello_with_name_contract() {
 async fn test_health_endpoints_contract() {
     let pact = PactBuilder::new("monitoring-service", "{{ crate_name }}")
         .interaction("liveness probe request", "", |mut i| async move {
-            i.request
-                .path("/health/live")
-                .method("GET");
-            
+            i.request.path("/health/live").method("GET");
+
             i.response
                 .status(200)
                 .header("Content-Type", "application/json")
                 .json_body(json!({
                     "status": "alive"
                 }));
-            
+
             i
         })
         .await
         .interaction("readiness probe request", "", |mut i| async move {
-            i.request
-                .path("/health/ready")
-                .method("GET");
-            
+            i.request.path("/health/ready").method("GET");
+
             i.response
                 .status(200)
                 .header("Content-Type", "application/json")
                 .json_body(json!({
                     "status": "ready"
                 }));
-            
+
             i
         })
         .await;
@@ -139,15 +133,13 @@ async fn test_health_endpoints_contract() {
 async fn test_metrics_endpoint_contract() {
     let pact = PactBuilder::new("prometheus", "{{ crate_name }}")
         .interaction("metrics scrape request", "", |mut i| async move {
-            i.request
-                .path("/metrics")
-                .method("GET");
-            
+            i.request.path("/metrics").method("GET");
+
             i.response
                 .status(200)
                 .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
                 .body(term!(r"http_requests_total.*", "http_requests_total 1"));
-            
+
             i
         })
         .await;
@@ -160,7 +152,7 @@ async fn test_metrics_endpoint_contract() {
         .expect("Failed to make metrics request");
 
     assert_eq!(response.status(), 200);
-    
+
     let body = response.text().await.expect("Failed to get text");
     assert!(body.contains("http_requests_total"));
 }
@@ -174,7 +166,7 @@ async fn test_validation_error_contract() {
                 .path("/api/v1/hello")
                 .method("GET")
                 .query_param("name", "<script>");
-            
+
             i.response
                 .status(400)
                 .header("Content-Type", "application/json")
@@ -183,7 +175,7 @@ async fn test_validation_error_contract() {
                     "details": like!([]),
                     "request_id": like!(null)
                 }));
-            
+
             i
         })
         .await;
@@ -205,10 +197,8 @@ async fn test_validation_error_contract() {
 async fn test_storage_endpoint_contract() {
     let pact = PactBuilder::new("storage-consumer", "{{ crate_name }}")
         .interaction("storage example request", "", |mut i| async move {
-            i.request
-                .path("/api/v1/storage/example")
-                .method("POST");
-            
+            i.request.path("/api/v1/storage/example").method("POST");
+
             i.response
                 .status(200)
                 .header("Content-Type", "application/json")
@@ -223,7 +213,7 @@ async fn test_storage_endpoint_contract() {
                         "test_id": like!("uuid")
                     }
                 }));
-            
+
             i
         })
         .await;
@@ -247,10 +237,8 @@ async fn test_storage_endpoint_contract() {
 async fn test_rate_limit_contract() {
     let pact = PactBuilder::new("load-tester", "{{ crate_name }}")
         .interaction("rate limit exceeded", "", |mut i| async move {
-            i.request
-                .path("/api/v1/hello")
-                .method("GET");
-            
+            i.request.path("/api/v1/hello").method("GET");
+
             i.response
                 .status(429)
                 .header("Content-Type", "application/json")
@@ -260,7 +248,7 @@ async fn test_rate_limit_contract() {
                     "details": like!([]),
                     "request_id": like!(null)
                 }));
-            
+
             i
         })
         .await;

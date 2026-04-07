@@ -140,7 +140,7 @@ mod kafka_tests {
         assert!(!bytes.is_empty());
 
         // Verify it round-trips
-        let deserialized: {{ crate_name }}::handlers::kafka::CloudEvent = 
+        let deserialized: {{ crate_name }}::handlers::kafka::CloudEvent =
             serde_json::from_slice(&bytes).expect("should deserialize");
         assert_eq!(deserialized.type_, event.type_);
         assert_eq!(deserialized.source, event.source);
@@ -164,7 +164,7 @@ mod kafka_tests {
         // Note: This test documents the expected behavior
         // In CI with testcontainers, would verify actual connection
         let result = {{ crate_name }}::handlers::kafka::KafkaPublisher::new(config).await;
-        
+
         // Initialization succeeds even if broker not reachable (lazy connection)
         // Health check would fail, but that's done in main.rs with fail-fast
         if let Err(e) = result {
@@ -241,7 +241,7 @@ mod kafka_tests {
     async fn test_broker_unreachable_error_creation() {
         let broker = "localhost:9092";
         let reason = "All brokers are down";
-        
+
         let error = {{ crate_name }}::error::KafkaError::broker_unreachable(broker, reason);
 
         match error {

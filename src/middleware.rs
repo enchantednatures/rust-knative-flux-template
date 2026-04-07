@@ -5,13 +5,7 @@
 //! - Security headers for HTTP responses
 //! - Request/response logging with contextual fields
 
-use axum::{
-    body::Body,
-    extract::Request,
-    http::HeaderValue,
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, extract::Request, http::HeaderValue, middleware::Next, response::Response};
 use std::time::Instant;
 use tracing::Span;
 use uuid::Uuid;
@@ -70,7 +64,9 @@ pub async fn request_id_middleware(req: Request<Body>, next: Next) -> Response {
 
     // Add request ID to response headers
     if let Ok(header_value) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert(REQUEST_ID_HEADER, header_value);
+        response
+            .headers_mut()
+            .insert(REQUEST_ID_HEADER, header_value);
     }
 
     // Log request completion with contextual fields
@@ -115,10 +111,9 @@ pub async fn security_headers_middleware(req: Request<Body>, next: Next) -> Resp
     );
 
     // Prevent clickjacking
-    response.headers_mut().insert(
-        "X-Frame-Options",
-        HeaderValue::from_static("DENY"),
-    );
+    response
+        .headers_mut()
+        .insert("X-Frame-Options", HeaderValue::from_static("DENY"));
 
     // Enable XSS filter in browsers
     response.headers_mut().insert(
@@ -194,7 +189,9 @@ pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {
 
     // Add request ID to response
     if let Ok(header_value) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert(REQUEST_ID_HEADER, header_value);
+        response
+            .headers_mut()
+            .insert(REQUEST_ID_HEADER, header_value);
     }
 
     // Add security headers
@@ -202,10 +199,9 @@ pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {
         "X-Content-Type-Options",
         HeaderValue::from_static("nosniff"),
     );
-    response.headers_mut().insert(
-        "X-Frame-Options",
-        HeaderValue::from_static("DENY"),
-    );
+    response
+        .headers_mut()
+        .insert("X-Frame-Options", HeaderValue::from_static("DENY"));
     response.headers_mut().insert(
         "X-XSS-Protection",
         HeaderValue::from_static("1; mode=block"),
@@ -242,9 +238,9 @@ pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
     use axum::body::to_bytes;
     use axum::routing::get;
-    use axum::Router;
     use tower::ServiceExt;
 
     async fn test_handler() -> &'static str {
@@ -329,29 +325,22 @@ mod tests {
             response.headers().get("X-Content-Type-Options").unwrap(),
             "nosniff"
         );
-        assert_eq!(
-            response.headers().get("X-Frame-Options").unwrap(),
-            "DENY"
-        );
+        assert_eq!(response.headers().get("X-Frame-Options").unwrap(), "DENY");
         assert_eq!(
             response.headers().get("X-XSS-Protection").unwrap(),
             "1; mode=block"
         );
-        assert!(response
-            .headers()
-            .get("Strict-Transport-Security")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("max-age="));
-        assert!(response
-            .headers()
-            .get("Content-Security-Policy")
-            .is_some());
-        assert!(response
-            .headers()
-            .get("Referrer-Policy")
-            .is_some());
+        assert!(
+            response
+                .headers()
+                .get("Strict-Transport-Security")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("max-age=")
+        );
+        assert!(response.headers().get("Content-Security-Policy").is_some());
+        assert!(response.headers().get("Referrer-Policy").is_some());
     }
 
     #[tokio::test]

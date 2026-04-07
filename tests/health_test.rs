@@ -138,5 +138,9 @@ async fn test_metrics_endpoint() {
     );
 
     // Print metrics for debugging
-    println!("Metrics output ({} bytes):\n{}", metrics_text.len(), metrics_text);
+    println!(
+        "Metrics output ({} bytes):\n{}",
+        metrics_text.len(),
+        metrics_text
+    );
 }

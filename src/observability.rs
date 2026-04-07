@@ -1,8 +1,9 @@
-{%- if feature_kafka %}
+{%- if feature_kafka -%}
 use metrics::{describe_counter, describe_histogram};
-{%- else %}
+{%- else -%}
 use metrics::describe_counter;
 {%- endif %}
+
 use metrics_exporter_prometheus::PrometheusHandle;
 use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::{global, trace::TracerProvider};
@@ -38,9 +39,18 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     describe_counter!("http_requests_total", "Total number of HTTP requests");
     describe_counter!("app_info", "Application information and version");
     {%- if feature_kafka %}
-    describe_counter!("kafka_events_published_total", "Total number of Kafka events published successfully");
-    describe_counter!("kafka_events_failed_total", "Total number of Kafka event publish failures");
-    describe_histogram!("kafka_publish_latency_ms", "Kafka event publishing latency in milliseconds");
+    describe_counter!(
+        "kafka_events_published_total",
+        "Total number of Kafka events published successfully"
+    );
+    describe_counter!(
+        "kafka_events_failed_total",
+        "Total number of Kafka event publish failures"
+    );
+    describe_histogram!(
+        "kafka_publish_latency_ms",
+        "Kafka event publishing latency in milliseconds"
+    );
     {%- endif %}
 
     // Record an initial metric to ensure the exporter has something to render

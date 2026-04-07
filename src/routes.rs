@@ -10,10 +10,7 @@ use axum::{
     routing::{get, post},
 };
 use governor::{
-    Quota, RateLimiter,
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
-    state::InMemoryState,
+    Quota, RateLimiter, clock::DefaultClock, middleware::NoOpMiddleware, state::InMemoryState,
 };
 use metrics::counter;
 use tower::ServiceBuilder;
@@ -27,7 +24,7 @@ use crate::middleware::{common_middleware, request_id_middleware, security_heade
 use crate::state::AppState;
 
 /// Rate limiter configuration
-/// 
+///
 /// Default: 100 requests per second per IP with burst of 50
 pub fn rate_limit_config() -> GovernorConfigBuilder<InMemoryState, DefaultClock, NoOpMiddleware> {
     GovernorConfigBuilder::default()
@@ -107,7 +104,7 @@ pub fn create_router(state: AppState) -> Router {
     let governor_conf = Arc::new(
         rate_limit_config()
             .finish()
-            .expect("Failed to build rate limiter configuration")
+            .expect("Failed to build rate limiter configuration"),
     );
 
     Router::new()
@@ -131,8 +128,7 @@ pub fn create_router(state: AppState) -> Router {
             config: governor_conf,
         })
         // Add simple metrics middleware (records HTTP request counts)
-        .layer(ServiceBuilder::new()
-            .layer(axum::middleware::from_fn(metrics_middleware)))
+        .layer(ServiceBuilder::new().layer(axum::middleware::from_fn(metrics_middleware)))
         // Add tracing middleware
         .layer(TraceLayer::new_for_http())
         .with_state(state)

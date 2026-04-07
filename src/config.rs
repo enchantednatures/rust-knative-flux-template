@@ -236,9 +236,7 @@ impl KafkaConfig {
 
         // Validate linger_ms range (0-60000 ms = 0-60 seconds)
         if self.linger_ms > 60000 {
-            return Err(figment::Error::from(
-                "kafka.linger_ms must be <= 60000",
-            ));
+            return Err(figment::Error::from("kafka.linger_ms must be <= 60000"));
         }
 
         // Validate timeout_ms range (1000-300000 ms = 1-300 seconds)
@@ -250,7 +248,11 @@ impl KafkaConfig {
 
         // Validate event_name format (should match CloudEvents type field conventions)
         // Format: reverse-domain notation, alphanumeric and dots only
-        if !self.event_name.chars().all(|c| c.is_alphanumeric() || c == '.') {
+        if !self
+            .event_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '.')
+        {
             return Err(figment::Error::from(
                 "kafka.event_name must contain only alphanumeric characters and dots (e.g., 'com.example.service.event')",
             ));

@@ -104,14 +104,14 @@ pub async fn storage_example(
         let publisher = Arc::clone(publisher);
         let broker_url = publisher.config.broker_url.clone();
         let topic = publisher.config.topic.clone();
-        
+
         tokio::spawn(async move {
             let event = crate::handlers::kafka::create_dummy_event(
                 &publisher.config,
-                "/api/v1/storage/example"
+                "/api/v1/storage/example",
             );
             let event_id = event.id().to_string();
-            
+
             match publisher.publish(&event).await {
                 Ok((partition, offset)) => {
                     tracing::debug!(

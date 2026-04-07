@@ -163,27 +163,22 @@ impl KafkaError {
     /// Useful for adding consistent error context to tracing logs
     pub fn context(&self) -> (String, String) {
         match self {
-            Self::BrokerUnreachable { broker, reason } => {
-                ("broker_unreachable".to_string(), format!("{} ({})", broker, reason))
-            }
-            Self::PublishFailed(reason) => {
-                ("publish_failed".to_string(), reason.clone())
-            }
+            Self::BrokerUnreachable { broker, reason } => (
+                "broker_unreachable".to_string(),
+                format!("{} ({})", broker, reason),
+            ),
+            Self::PublishFailed(reason) => ("publish_failed".to_string(), reason.clone()),
             Self::SerializationFailed(reason) => {
                 ("serialization_failed".to_string(), reason.clone())
             }
             Self::InitializationFailed(reason) => {
                 ("initialization_failed".to_string(), reason.clone())
             }
-            Self::TopicNotFound(topic) => {
-                ("topic_not_found".to_string(), topic.clone())
-            }
+            Self::TopicNotFound(topic) => ("topic_not_found".to_string(), topic.clone()),
             Self::InvalidConfiguration(reason) => {
                 ("invalid_configuration".to_string(), reason.clone())
             }
-            Self::Internal(reason) => {
-                ("internal_error".to_string(), reason.clone())
-            }
+            Self::Internal(reason) => ("internal_error".to_string(), reason.clone()),
         }
     }
 }

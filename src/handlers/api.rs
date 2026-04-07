@@ -18,8 +18,15 @@ pub struct HelloResponse {
 
 #[derive(Deserialize, ToSchema, Validate)]
 pub struct HelloQuery {
-    #[validate(length(min = 1, max = 100, message = "Name must be between 1 and 100 characters"))]
-    #[validate(regex(path = "*crate::handlers::validation::SAFE_NAME_REGEX", message = "Name contains invalid characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Name must be between 1 and 100 characters"
+    ))]
+    #[validate(regex(
+        path = "*crate::handlers::validation::SAFE_NAME_REGEX",
+        message = "Name contains invalid characters"
+    ))]
     pub name: Option<String>,
 }
 
@@ -62,7 +69,9 @@ pub async fn hello(
             validation_errors = %validation_errors,
             "Input validation failed"
         );
-        return Err(crate::error::AppError::Validation(validation_errors.to_string()));
+        return Err(crate::error::AppError::Validation(
+            validation_errors.to_string(),
+        ));
     }
 
     let name = query.name.unwrap_or_else(|| "World".into());
@@ -79,14 +88,12 @@ pub async fn hello(
         let broker_url = publisher.config.broker_url.clone();
         let topic = publisher.config.topic.clone();
         let event_name = publisher.config.event_name.clone();
-        
+
         tokio::spawn(async move {
-            let event = crate::handlers::kafka::create_dummy_event(
-                &publisher.config,
-                "/api/v1/hello"
-            );
+            let event =
+                crate::handlers::kafka::create_dummy_event(&publisher.config, "/api/v1/hello");
             let event_id = event.id().to_string();
-            
+
             tracing::debug!(
                 event_id = %event_id,
                 event_type = %event_name,
@@ -94,7 +101,7 @@ pub async fn hello(
                 topic = %topic,
                 "Publishing event to Kafka"
             );
-            
+
             match publisher.publish(&event).await {
                 Ok((partition, offset)) => {
                     tracing::info!(

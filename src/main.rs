@@ -1,8 +1,8 @@
+{%- if feature_kafka -%}
+use std::sync::Arc;
+{% endif -%}
 use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 use tokio::signal;
-{%- if feature_kafka %}
-use std::sync::Arc;
-{%- endif %}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             topic = %kafka_config.topic,
             "Initializing Kafka publisher"
         );
-        
+
         match {{ crate_name }}::handlers::kafka::KafkaPublisher::new(kafka_config).await {
             Ok(publisher) => {
                 tracing::info!("Kafka publisher initialized");
@@ -82,7 +82,10 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(e) => {
                 tracing::error!(error = %e, "Failed to initialize Kafka publisher - exiting (fail fast)");
-                return Err(anyhow::anyhow!("Kafka publisher initialization failed: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Kafka publisher initialization failed: {}",
+                    e
+                ));
             }
         }
     } else {
