@@ -1,8 +1,6 @@
-{%- if features contains "s3" -%}
-use opendal::Operator;
-{%- endif %}
+{% if features contains "s3" %}use opendal::Operator;
 
-use {{ crate_name }}::state::AppState;
+{% endif %}use {{ crate_name }}::state::AppState;
 
 /// Create a test AppState with a mock Redis connection
 /// For integration tests, use a real Redis instance (e.g., via docker-compose or testcontainers)

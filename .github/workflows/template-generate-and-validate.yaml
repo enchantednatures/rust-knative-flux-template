@@ -10,7 +10,7 @@ on:
 
 jobs:
   generate-and-validate:
-    name: Generate & Validate (s3=${{ matrix.include_s3 }}, updates=${{ matrix.enable_image_updates }})
+    name: Generate & Validate (features=${{ matrix.features }}, updates=${{ matrix.enable_image_updates }})
     runs-on: [gha-runner-scale-set]
     timeout-minutes: 30
     strategy:
@@ -18,16 +18,20 @@ jobs:
       matrix:
         include:
           - scenario: no-s3
-            include_s3: "false"
+            features: ""
+            event_sources: ""
             enable_image_updates: "false"
           - scenario: no-s3
-            include_s3: "false"
+            features: ""
+            event_sources: ""
             enable_image_updates: "true"
           - scenario: with-s3
-            include_s3: "true"
+            features: "s3"
+            event_sources: ""
             enable_image_updates: "false"
           - scenario: with-s3
-            include_s3: "true"
+            features: "s3"
+            event_sources: ""
             enable_image_updates: "true"
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -47,7 +51,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-generate-${{ matrix.include_s3 }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-generate-${{ matrix.features }}-${{ matrix.enable_image_updates }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -60,11 +64,13 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           cd "$TEMP_DIR"
 
-          echo "Generating template: ${{ env.SCENARIO }} (include_s3=${{ matrix.include_s3 }}, enable_image_updates=${{ matrix.enable_image_updates }})"
+          echo "Generating template: ${{ env.SCENARIO }} (features='${{ matrix.features }}', event_sources='${{ matrix.event_sources }}', enable_image_updates=${{ matrix.enable_image_updates }})"
           cargo generate --path "$OLDPWD" --name "example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}" \
-            --define "include_s3=${{ matrix.include_s3 }}" \
+            --define "features=${{ matrix.features }}" \
+            --define "event_sources=${{ matrix.event_sources }}" \
             --define "enable_image_updates=${{ matrix.enable_image_updates }}" \
             --define "target_namespace=default" \
+            --define "project_author=CI Test" \
             --silent
 
           GENERATED_DIR="$TEMP_DIR/example-app-${{ env.SCENARIO }}-updates-${{ matrix.enable_image_updates }}"
