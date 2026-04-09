@@ -17,13 +17,7 @@ spec:
     global:
       fullnameOverride: "{{ project_name | replace: '_', '-' }}"
       labels:
-        app.kubernetes.io/name: "{{ project_name | replace: '_', '-' }}"
-        app.kubernetes.io/component: api
-        app.kubernetes.io/managed-by: flux
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/metrics"
+        app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
 
     # Empty key "" produces service name = fullnameOverride (no suffix)
     # via ksvc.serviceName: printf "%s-%s" fullname "" | trimSuffix "-"
@@ -70,12 +64,6 @@ spec:
           capabilities:
             drop:
               - ALL
-        volumeMounts:
-          - name: tmp
-            mountPath: /tmp
-        volumes:
-          - name: tmp
-            emptyDir: {}
         env:
           - name: APP_ENV
             value: "production"
