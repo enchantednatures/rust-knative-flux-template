@@ -773,6 +773,7 @@ Examples:
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
 - Flagger >=1.38.0 (optional, `flagger` feature flag), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
+- GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
 
 ## Flagger Canary Release Promotion
 
@@ -874,6 +875,79 @@ deploy/
     └── flagger-kustomization.yaml  # FluxCD Kustomization for the operator
 ```
 
+## GitHub Actions Self-Hosted Runner (ARC Scale Set)
+
+When `feature_gha_runner` is selected during `cargo generate`, the template adds a per-repo self-hosted runner via [ARC (Actions Runner Controller)](https://github.com/actions/actions-runner-controller) `gha-runner-scale-set` Helm chart.
+
+### Architecture
+
+```
+FluxCD GitRepository
+  └── FluxCD Kustomization (runner) dependsOn (actions-runner-controller)
+        └── deploy/infrastructure/gha-runner/
+              ├── oci-repository.yaml   # OCI source for ARC scale set chart
+              └── helmrelease.yaml      # Runner scale set HelmRelease
+```
+
+### How It Works
+
+1. ARC controller (cluster-wide, pre-installed) watches for `AutoScalingRunnerSet` CRDs
+2. The HelmRelease creates an `AutoScalingRunnerSet` bound to `githubConfigUrl` (this repo)
+3. ARC listener monitors GitHub for `workflow_job` events targeting this runner label
+4. On workflow trigger: ARC scales from 0 → N runner pods (up to `maxRunners`)
+5. Each runner pod includes a Docker-in-Docker sidecar for container builds
+6. After job completion: pods terminate, scale back to 0
+
+### Prerequisites
+
+The ARC controller operator must be installed cluster-wide **before** deploying the runner scale set. The Flux Kustomization declares `dependsOn: [{name: actions-runner-controller}]`.
+
+A `github-auth-secret` Kubernetes Secret must exist in `actions-runner-system` namespace with a GitHub App or PAT for runner registration.
+
+### Template Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `gha_runner_chart_version` | `0.13.1` | ARC runner scale set chart version |
+| `gha_runner_image_tag` | `2.331.0` | GitHub Actions runner image tag |
+| `gha_runner_max` | `4` | Maximum concurrent runners |
+| `gha_runner_storage_class` | `openebs-hostpath` | StorageClass for work volume |
+| `gha_runner_priority_class` | `actions-runner-high-priority` | PriorityClass for runner pods |
+| `gha_runner_storage_size` | `50Gi` | Work volume size |
+
+### Resource Defaults
+
+| Container | CPU Request | CPU Limit | Memory Request | Memory Limit |
+|---|---|---|---|---|
+| runner | 2 | 2 | 8Gi | 8Gi |
+| dind | 2 | 2 | 8Gi | 8Gi |
+| listener | 100m | 100m | 128Mi | 128Mi |
+
+### Using in CI Workflows
+
+Reference the runner in `.github/workflows/*.yaml`:
+
+```yaml
+jobs:
+  build:
+    runs-on: <project-name>-runner
+```
+
+The `runnerScaleSetName` is set to `<project-name>-runner`, matching the HelmRelease name.
+
+### File Structure
+
+```
+deploy/
+├── infrastructure/gha-runner/
+│   ├── kustomization.yaml     # References oci-repository + helmrelease
+│   ├── oci-repository.yaml    # OCI source for ARC chart from ghcr.io
+│   └── helmrelease.yaml       # Runner scale set with DinD sidecar
+└── flux/
+    └── gha-runner-kustomization.yaml  # FluxCD Kustomization, dependsOn ARC controller
+```
+
 ## Recent Changes
 - 001-cloudnative-postgres-backups: Added Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen
 - flagger-canary: Added opt-in Flagger canary release promotion with Knative provider, Prometheus metric gates (success rate + p99 latency + custom), and FluxCD HelmRelease operator lifecycle management
+- gha-runner: Added opt-in per-repo GitHub Actions self-hosted runner (ARC gha-runner-scale-set) with Docker-in-Docker sidecar, scale-to-zero, and FluxCD lifecycle management

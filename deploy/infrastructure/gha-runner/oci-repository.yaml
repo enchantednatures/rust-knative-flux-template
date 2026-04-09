@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner
+  namespace: flux-system
+spec:
+  interval: 15m
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: "{{ gha_runner_chart_version }}"
+  url: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set

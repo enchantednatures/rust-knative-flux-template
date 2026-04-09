@@ -73,6 +73,10 @@ pub fn create_router(state: AppState) -> Router {
             .expect("Failed to build rate limiter configuration"),
     );
 
+    let api_routes = api_v1_routes().layer(GovernorLayer {
+        config: governor_conf,
+    });
+
     Router::new()
         // CloudEvents endpoint (Knative sink)
         .route("/", post(events::handle_event))
@@ -82,17 +86,13 @@ pub fn create_router(state: AppState) -> Router {
         // Metrics endpoint (Prometheus scraping)
         .route("/metrics", get(health::metrics))
         // Versioned API
-        .nest("/api/v1", api_v1_routes())
+        .nest("/api/v1", api_routes)
         // OpenAPI documentation
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add request ID propagation middleware (first to capture request ID)
         .layer(axum::middleware::from_fn(request_id_middleware))
         // Add security headers middleware
         .layer(axum::middleware::from_fn(security_headers_middleware))
-        // Add rate limiting middleware
-        .layer(GovernorLayer {
-            config: governor_conf,
-        })
         // Add simple metrics middleware (records HTTP request counts)
         .layer(ServiceBuilder::new().layer(axum::middleware::from_fn(metrics_middleware)))
         // Add tracing middleware

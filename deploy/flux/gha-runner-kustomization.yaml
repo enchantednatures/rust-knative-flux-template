@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./deploy/infrastructure/gha-runner
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: {{ project_name | replace: "_", "-" }}
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - name: actions-runner-controller

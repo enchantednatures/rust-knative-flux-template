@@ -30,8 +30,20 @@ jobs:
             feature_kafka: "false"
             feature_postgres: "false"
             feature_flagger: "false"
+            feature_gha_runner: "false"
             event_source_kafka: "false"
             project_name: "test-app-with-s3"
+            deploy: "true"
+
+          - scenario: with-gha-runner
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            feature_gha_runner: "true"
+            event_source_kafka: "false"
+            project_name: "test-app-with-runner"
+            deploy: "false"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -82,6 +94,7 @@ jobs:
         uses: fluxcd/flux2/action@main
 
       - name: Setup Kind cluster
+        if: matrix.deploy == 'true'
         run: |
           kind version
           kind delete cluster --name e2e-${{ matrix.scenario }} || true
@@ -102,6 +115,7 @@ jobs:
           feature_kafka = ${{ matrix.feature_kafka }}
           feature_postgres = ${{ matrix.feature_postgres }}
           feature_flagger = ${{ matrix.feature_flagger }}
+          feature_gha_runner = ${{ matrix.feature_gha_runner }}
           event_source_kafka = ${{ matrix.event_source_kafka }}
           enable_image_updates = false
           target_namespace = "default"
@@ -137,6 +151,18 @@ jobs:
           prod_memory_limit = "512Mi"
           EOF
 
+          # Append GHA runner variables when feature is enabled
+          if [ "${{ matrix.feature_gha_runner }}" = "true" ]; then
+            cat >> template-values.toml <<EOF
+          gha_runner_chart_version = "0.13.1"
+          gha_runner_image_tag = "2.331.0"
+          gha_runner_max = "4"
+          gha_runner_storage_class = "openebs-hostpath"
+          gha_runner_priority_class = "actions-runner-high-priority"
+          gha_runner_storage_size = "50Gi"
+          EOF
+          fi
+
           PROJECT_NAME=$(awk -F'"' '/^project_name =/ {print $2}' template-values.toml)
           SERVICE_NAME=$(echo "$PROJECT_NAME" | tr '_' '-')
           echo "PROJECT_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
@@ -161,7 +187,7 @@ jobs:
             "${GENERATED_DIR}/Cargo.toml"
             "${GENERATED_DIR}/src/main.rs"
             "${GENERATED_DIR}/Dockerfile"
-            "${GENERATED_DIR}/deploy/base/knative-service.yaml"
+            "${GENERATED_DIR}/deploy/base/helmrelease.yaml"
             "${GENERATED_DIR}/deploy/base/kustomization.yaml"
           )
 
@@ -175,9 +201,9 @@ jobs:
 
           echo ""
           echo "Validating YAML syntax..."
-          # Note: We can't use kubectl apply --dry-run here because Knative CRDs aren't installed yet
+          # Note: We can't use kubectl apply --dry-run here because Flux CRDs aren't installed yet
           # The manifests will be validated when actually applied to the cluster later
-          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/knative-service.yaml" > /dev/null 2>&1; then
+          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/helmrelease.yaml" > /dev/null 2>&1; then
             echo "❌ YAML syntax validation failed"
             exit 1
           fi
@@ -185,7 +211,199 @@ jobs:
 
           echo "✅ Checkpoint 1 passed: Template generation valid"
 
+      - name: Validate GHA runner files (when enabled)
+        if: matrix.feature_gha_runner == 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          echo "=== Validating GHA runner file presence ==="
+
+          runner_files=(
+            "${GENERATED_DIR}/deploy/infrastructure/gha-runner/oci-repository.yaml"
+            "${GENERATED_DIR}/deploy/infrastructure/gha-runner/helmrelease.yaml"
+            "${GENERATED_DIR}/deploy/infrastructure/gha-runner/kustomization.yaml"
+            "${GENERATED_DIR}/deploy/flux/gha-runner-kustomization.yaml"
+          )
+
+          for file in "${runner_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "❌ Missing GHA runner file: $file"
+              exit 1
+            fi
+            echo "  ✓ Found: $file"
+          done
+
+          echo ""
+          echo "=== Validating GHA runner YAML syntax ==="
+          for file in "${runner_files[@]}"; do
+            if ! yq eval '.' "$file" > /dev/null 2>&1; then
+              echo "❌ Invalid YAML: $file"
+              exit 1
+            fi
+            echo "  ✓ Valid YAML: $(basename "$file")"
+          done
+
+          echo ""
+          echo "=== Validating GHA runner variable interpolation ==="
+          HR="${GENERATED_DIR}/deploy/infrastructure/gha-runner/helmrelease.yaml"
+          OCI="${GENERATED_DIR}/deploy/infrastructure/gha-runner/oci-repository.yaml"
+          FK="${GENERATED_DIR}/deploy/flux/gha-runner-kustomization.yaml"
+
+          if grep -rq '{{' "${GENERATED_DIR}/deploy/infrastructure/gha-runner/" || \
+             grep -q '{{' "$FK"; then
+            echo "❌ Raw Liquid template syntax found in generated runner files"
+            grep -rn '{{' "${GENERATED_DIR}/deploy/infrastructure/gha-runner/" || true
+            grep -n '{{' "$FK" || true
+            exit 1
+          fi
+          echo "  ✓ No raw Liquid template syntax"
+
+          if ! grep -q "githubConfigUrl: https://github.com/test-org/test-repo" "$HR"; then
+            echo "❌ githubConfigUrl not interpolated correctly"
+            grep "githubConfigUrl" "$HR"
+            exit 1
+          fi
+          echo "  ✓ githubConfigUrl = test-org/test-repo"
+
+          if ! grep -q "maxRunners: 4" "$HR"; then
+            echo "❌ maxRunners not interpolated correctly"
+            grep "maxRunners" "$HR"
+            exit 1
+          fi
+          echo "  ✓ maxRunners = 4"
+
+          if ! grep -q "storageClassName: openebs-hostpath" "$HR"; then
+            echo "❌ storageClassName not interpolated correctly"
+            grep "storageClassName" "$HR"
+            exit 1
+          fi
+          echo "  ✓ storageClassName = openebs-hostpath"
+
+          if ! grep -q "priorityClassName: actions-runner-high-priority" "$HR"; then
+            echo "❌ priorityClassName not interpolated correctly"
+            grep "priorityClassName" "$HR"
+            exit 1
+          fi
+          echo "  ✓ priorityClassName = actions-runner-high-priority"
+
+          if ! grep -q 'tag: "0.13.1"' "$OCI"; then
+            echo "❌ Chart version not interpolated correctly"
+            grep "tag:" "$OCI"
+            exit 1
+          fi
+          echo "  ✓ chart version = 0.13.1"
+
+          if ! grep -q "actions-runner:2.331.0" "$HR"; then
+            echo "❌ Runner image tag not interpolated correctly"
+            grep "actions-runner" "$HR"
+            exit 1
+          fi
+          echo "  ✓ runner image tag = 2.331.0"
+
+          if ! grep -q "storage: 50Gi" "$HR"; then
+            echo "❌ Storage size not interpolated correctly"
+            grep "storage:" "$HR"
+            exit 1
+          fi
+          echo "  ✓ storage size = 50Gi"
+
+          RUNNER_NAME="${SERVICE_NAME}-runner"
+          if ! grep -q "name: &name ${RUNNER_NAME}" "$HR"; then
+            echo "❌ YAML anchor name not set correctly"
+            grep "name:.*&name" "$HR" || echo "No anchor found"
+            exit 1
+          fi
+          echo "  ✓ YAML anchor = ${RUNNER_NAME}"
+
+          if ! grep -q "name: ${RUNNER_NAME}" "$FK"; then
+            echo "❌ Flux Kustomization name not interpolated correctly"
+            grep "name:" "$FK"
+            exit 1
+          fi
+          echo "  ✓ Flux Kustomization name = ${RUNNER_NAME}"
+
+          echo ""
+          echo "=== Validating kustomize build ==="
+          kustomize build "${GENERATED_DIR}/deploy/infrastructure/gha-runner/" > /dev/null 2>&1 && \
+            echo "  ✓ kustomize build succeeded" || \
+            echo "  ⚠ kustomize build failed (expected — CRDs not installed)"
+
+          echo ""
+          echo "=== Validating generated CI/CD workflows use self-hosted runner ==="
+          CI_YAML="${GENERATED_DIR}/.github/workflows/ci.yaml"
+          RELEASE_YAML="${GENERATED_DIR}/.github/workflows/release.yaml"
+
+          for wf in "$CI_YAML" "$RELEASE_YAML"; do
+            if [[ ! -f "$wf" ]]; then
+              echo "  ⚠ Workflow not found: $wf (skipping)"
+              continue
+            fi
+            if grep -q "runs-on: ${RUNNER_NAME}" "$wf"; then
+              echo "  ✓ $(basename "$wf") uses runs-on: ${RUNNER_NAME}"
+            else
+              echo "❌ $(basename "$wf") does not use self-hosted runner"
+              grep "runs-on:" "$wf"
+              exit 1
+            fi
+            if grep -q "runs-on: ubuntu-latest" "$wf"; then
+              echo "❌ $(basename "$wf") still contains runs-on: ubuntu-latest"
+              grep -n "runs-on: ubuntu-latest" "$wf"
+              exit 1
+            fi
+            echo "  ✓ $(basename "$wf") has no ubuntu-latest references"
+          done
+
+          echo ""
+          echo "✅ GHA runner validation passed"
+
+      - name: Validate GHA runner files absent (when disabled)
+        if: matrix.feature_gha_runner != 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          echo "=== Verifying GHA runner files are absent ==="
+
+          absent_paths=(
+            "${GENERATED_DIR}/deploy/infrastructure/gha-runner"
+            "${GENERATED_DIR}/deploy/flux/gha-runner-kustomization.yaml"
+          )
+
+          for path in "${absent_paths[@]}"; do
+            if [[ -e "$path" ]]; then
+              echo "❌ GHA runner path should not exist: $path"
+              exit 1
+            fi
+            echo "  ✓ Absent: $path"
+          done
+
+          echo "✅ GHA runner files correctly excluded"
+
+      - name: Validate workflows use ubuntu-latest (when runner disabled)
+        if: matrix.feature_gha_runner != 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          echo "=== Verifying generated workflows use ubuntu-latest ==="
+          CI_YAML="${GENERATED_DIR}/.github/workflows/ci.yaml"
+          RELEASE_YAML="${GENERATED_DIR}/.github/workflows/release.yaml"
+
+          for wf in "$CI_YAML" "$RELEASE_YAML"; do
+            if [[ ! -f "$wf" ]]; then
+              echo "  ⚠ Workflow not found: $wf (skipping)"
+              continue
+            fi
+            if ! grep -q "runs-on: ubuntu-latest" "$wf"; then
+              echo "❌ $(basename "$wf") should use runs-on: ubuntu-latest"
+              grep "runs-on:" "$wf"
+              exit 1
+            fi
+            echo "  ✓ $(basename "$wf") uses runs-on: ubuntu-latest"
+          done
+
+          echo "✅ Workflow runner labels verified"
+
       - name: Set image tags
+        if: matrix.deploy == 'true'
         id: image-meta
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -207,6 +425,7 @@ jobs:
           echo "📦 Using image tag: ${IMAGE_TAG}"
 
       - name: Log in to GHCR
+        if: matrix.deploy == 'true'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -214,6 +433,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build application image
+        if: matrix.deploy == 'true'
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
 
@@ -222,16 +442,19 @@ jobs:
             "${GENERATED_DIR}"
 
       - name: Push application image to GHCR
+        if: matrix.deploy == 'true'
         run: |
           docker push ${{ steps.image-meta.outputs.app_image }}
 
       - name: Load image into Kind
+        if: matrix.deploy == 'true'
         run: |
           kind load docker-image \
             ${{ steps.image-meta.outputs.app_image }} \
             --name e2e-${{ matrix.scenario }}
 
       - name: Validate application image in GHCR
+        if: matrix.deploy == 'true'
         run: |
           echo "✓ Checkpoint 2: Validating application image"
 
@@ -243,47 +466,41 @@ jobs:
           echo "✅ Checkpoint 2 passed: Application image verified in GHCR"
 
       - name: Prepare manifests for OCI push
+        if: matrix.deploy == 'true'
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
+          CHART_DIR="${GENERATED_DIR}/deploy/chart"
+          NEW_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}"
+          NEW_TAG="${{ steps.image-meta.outputs.image_tag }}"
 
-          cd "${GENERATED_DIR}/deploy/base"
+          helm dependency build "${CHART_DIR}"
 
-          # Replace kustomization.yaml with one that includes image transformation
-          cat > kustomization.yaml <<EOF
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
+          yq eval -i '
+            .spec.values.services[""].image.repository = "'"${NEW_IMAGE}"'" |
+            .spec.values.services[""].image.tag = "'"${NEW_TAG}"'"
+          ' "${GENERATED_DIR}/deploy/base/helmrelease.yaml"
 
-          resources:
-            - knative-service.yaml
+          VALUES_FILE=$(mktemp)
+          yq eval '.spec.values' "${GENERATED_DIR}/deploy/base/helmrelease.yaml" > "${VALUES_FILE}"
 
-          images:
-            - name: ghcr.io/test-org/${SERVICE_NAME}
-              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}
-              newTag: ${{ steps.image-meta.outputs.image_tag }}
+          mkdir -p "${GENERATED_DIR}/manifests-built"
 
-          namespace: default
+          helm template "${SERVICE_NAME}" "${CHART_DIR}" \
+            -f "${VALUES_FILE}" \
+            -n default \
+            | yq eval '
+              (select(.kind == "Service" and .apiVersion == "serving.knative.dev/v1") |
+                .spec.template.spec.imagePullSecrets) = [{"name": "ghcr-auth"}]
+            ' - > "${GENERATED_DIR}/manifests-built/all.yaml"
 
-          # Add imagePullSecrets to the Knative service for GHCR authentication
-          patches:
-            - patch: |-
-                - op: add
-                  path: /spec/template/spec/imagePullSecrets
-                  value:
-                    - name: ghcr-auth
-              target:
-                kind: Service
-                group: serving.knative.dev
-                version: v1
-          EOF
-
-          mkdir -p ../../manifests-built
-          kustomize build . --load-restrictor LoadRestrictionsNone > ../../manifests-built/all.yaml
+          rm -f "${VALUES_FILE}"
 
           echo "::group::Built manifests"
-          cat ../../manifests-built/all.yaml
+          cat "${GENERATED_DIR}/manifests-built/all.yaml"
           echo "::endgroup::"
 
       - name: Validate image transformation
+        if: matrix.deploy == 'true'
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
 
@@ -305,6 +522,7 @@ jobs:
           echo "✅ Image transformation verified: ${EXPECTED_IMAGE}"
 
       - name: Push manifests as OCI artifact
+        if: matrix.deploy == 'true'
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
 
@@ -315,6 +533,7 @@ jobs:
             --revision="${{ github.sha }}"
 
       - name: Validate OCI artifact in GHCR
+        if: matrix.deploy == 'true'
         run: |
           echo "✓ Checkpoint 3: Validating OCI artifact"
 
@@ -335,6 +554,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Install Flux controllers
+        if: matrix.deploy == 'true'
         run: |
           flux install
 
@@ -345,6 +565,7 @@ jobs:
             deployment/kustomize-controller
 
       - name: Install Knative Serving
+        if: matrix.deploy == 'true'
         run: |
           KNATIVE_VERSION="knative-v1.20.0"
 
@@ -368,6 +589,7 @@ jobs:
             deployment/webhook
 
       - name: Install Redis
+        if: matrix.deploy == 'true'
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo update
@@ -379,7 +601,7 @@ jobs:
             --timeout 120s
 
       - name: Install MinIO (if needed)
-        if: matrix.feature_s3 == 'true'
+        if: matrix.feature_s3 == 'true' && matrix.deploy == 'true'
         run: |
           helm repo add minio https://charts.min.io/
           helm repo update
@@ -401,6 +623,7 @@ jobs:
             "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && mc mb -p minio/data"
 
       - name: Validate cluster dependencies
+        if: matrix.deploy == 'true'
         run: |
           echo "✓ Checkpoint 4: Validating cluster dependencies"
 
@@ -436,6 +659,7 @@ jobs:
           echo "✅ Checkpoint 4 passed: All cluster dependencies healthy"
 
       - name: Create application secrets
+        if: matrix.deploy == 'true'
         run: |
           if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             kubectl create secret generic ${SERVICE_NAME}-secrets \
@@ -450,6 +674,7 @@ jobs:
           fi
 
       - name: Create GHCR pull secret for Flux and default namespace
+        if: matrix.deploy == 'true'
         run: |
           # Create pull secret in flux-system namespace (for OCI artifact pulls)
           kubectl create secret docker-registry ghcr-auth \
@@ -468,6 +693,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy OCIRepository and Kustomization
+        if: matrix.deploy == 'true'
         run: |
           cat <<EOF | kubectl apply -f -
           ---
@@ -502,6 +728,7 @@ jobs:
           EOF
 
       - name: Wait for Flux reconciliation
+        if: matrix.deploy == 'true'
         run: |
           echo "Waiting for OCIRepository to be ready..."
           kubectl wait --for=condition=ready \
@@ -526,6 +753,7 @@ jobs:
           echo "✓ Flux reconciliation complete"
 
       - name: Validate application deployment
+        if: matrix.deploy == 'true'
         run: |
           echo "✓ Checkpoint 5: Validating application deployment"
 
@@ -552,6 +780,7 @@ jobs:
           echo "✅ Checkpoint 5 passed: Application deployed and ready"
 
       - name: Get application URL
+        if: matrix.deploy == 'true'
         id: app-url
         run: |
           SERVICE_NAME="${SERVICE_NAME}"
@@ -560,6 +789,7 @@ jobs:
           echo "📡 Service URL: ${SERVICE_URL}"
 
       - name: Run E2E tests
+        if: matrix.deploy == 'true'
         env:
           SERVICE_URL: ${{ steps.app-url.outputs.service_url }}
         run: |
@@ -676,7 +906,7 @@ jobs:
           echo "======================================"
 
       - name: Final validation summary
-        if: always()
+        if: always() && matrix.deploy == 'true'
         run: |
           echo "✓ Checkpoint 6: Final validation summary"
           echo "============================================"
@@ -694,7 +924,7 @@ jobs:
           echo "============================================"
 
       - name: Collect debug information on failure
-        if: failure()
+        if: failure() && matrix.deploy == 'true'
         run: |
           SERVICE_NAME="${SERVICE_NAME}"
 

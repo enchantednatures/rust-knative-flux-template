@@ -7,54 +7,79 @@ resources:
   - ../../base
 
 components:
-  {% if feature_postgres %}
-  - ../../components/postgres
-  {% endif %}
-  {% if event_source_kafka %}
-  - ../../components/kafka
-  {% endif %}
   {% if feature_flagger %}
   - ../../components/flagger
   {% endif %}
 
 patches:
   - target:
-      kind: Service
+      kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
     patch: |-
-      - op: add
-        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "{% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}"
-      - op: add
-        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "{% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "{% if use_default_scaling %}250m{% else %}{{ prod_cpu_request }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "{% if use_default_scaling %}256Mi{% else %}{{ prod_memory_request }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "{% if use_default_scaling %}1000m{% else %}{{ prod_cpu_limit }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
-  {% if event_source_kafka %}
-  - path: kafka-source-patch.yaml
-  {% endif %}
-  {% if feature_postgres %}
-  - path: postgres-cluster-patch.yaml
-  - path: postgres-backup-patch.yaml
-  {% endif %}
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: {{ project_name | replace: "_", "-" }}
+      spec:
+        values:
+          services:
+            "":
+              scaling:
+                minScale: {% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}
+                maxScale: {% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}
+              resources:
+                requests:
+                  cpu: "{% if use_default_scaling %}250m{% else %}{{ prod_cpu_request }}{% endif %}"
+                  memory: "{% if use_default_scaling %}256Mi{% else %}{{ prod_memory_request }}{% endif %}"
+                limits:
+                  cpu: "{% if use_default_scaling %}1000m{% else %}{{ prod_cpu_limit }}{% endif %}"
+                  memory: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
+          {% if feature_postgres %}
+          postgres:
+            instances: 3
+            parameters:
+              synchronous_commit: "remote_apply"
+              shared_buffers: "2Gi"
+              max_connections: "300"
+            resources:
+              requests:
+                cpu: "1"
+                memory: "2Gi"
+              limits:
+                cpu: "2"
+                memory: "4Gi"
+            storage:
+              size: "200Gi"
+            backup:
+              objectStore:
+                destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/prod/"
+                data:
+                  compression: zstd
+                  jobs: 4
+                wal:
+                  compression: zstd
+                  maxParallel: 8
+              retentionPolicy: "{{ backup_retention_prod }}d"
+          {% endif %}
+          {% if event_source_kafka %}
+          kafka:
+            sources:
+              {{ kafka_topic }}:
+                bootstrapServers:
+                  - "{{ kafka_bootstrap_servers_prod }}"
+                consumers: 10
+                initialOffset: latest
+                delivery:
+                  retry: 10
+                  backoffDelay: "PT2S"
+          {% endif %}
 
  {% if feature_s3 %}
-# Production S3 configuration (typically AWS S3 or managed MinIO)
 configMapGenerator:
   - name: s3-config
     behavior: create
     literals:
-      - S3_ENDPOINT=https://s3.amazonaws.com  # or your MinIO endpoint
+      - S3_ENDPOINT=https://s3.amazonaws.com
       - S3_BUCKET=data-prod
       - S3_REGION=us-east-1
  {% endif %}

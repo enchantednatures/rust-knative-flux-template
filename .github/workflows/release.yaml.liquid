@@ -16,7 +16,7 @@ jobs:
   # ==========================================================================
   create-release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     permissions:
       contents: write
     outputs:
@@ -57,7 +57,7 @@ jobs:
   # ==========================================================================
   build-release:
     name: Build Release Image
-    runs-on: ubuntu-latest
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     needs: create-release
     permissions:
       contents: read
@@ -121,7 +121,7 @@ jobs:
   # ==========================================================================
   security-scan:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     needs: build-release
     permissions:
       security-events: write

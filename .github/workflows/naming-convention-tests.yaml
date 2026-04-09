@@ -109,6 +109,13 @@ jobs:
           default_branch = "main"
           image_registry = "ghcr.io"
           use_default_scaling = true
+          feature_gha_runner = true
+          gha_runner_chart_version = "0.13.1"
+          gha_runner_image_tag = "2.331.0"
+          gha_runner_max = "4"
+          gha_runner_storage_class = "openebs-hostpath"
+          gha_runner_priority_class = "actions-runner-high-priority"
+          gha_runner_storage_size = "50Gi"
           EOF
 
           # Generate project using cargo-generate
@@ -170,6 +177,74 @@ jobs:
             exit 1
           fi
           echo "✓ CRATE_NAME variable found in build script"
+
+      - name: Verify GHA runner naming conventions
+        run: |
+          cd "${{ matrix.project_name }}"
+
+          EXPECTED_RUNNER="${{ matrix.expected_k8s }}-runner"
+          echo "=== Verifying GHA Runner Naming ==="
+          echo "Expected runner name: ${EXPECTED_RUNNER}"
+
+          HR="deploy/infrastructure/gha-runner/helmrelease.yaml"
+          OCI="deploy/infrastructure/gha-runner/oci-repository.yaml"
+          FK="deploy/flux/gha-runner-kustomization.yaml"
+
+          for file in "$HR" "$OCI" "$FK"; do
+            if [[ ! -f "$file" ]]; then
+              echo "❌ FAILED: Missing runner file: $file"
+              exit 1
+            fi
+          done
+          echo "✓ All runner files present"
+
+          if ! grep -q "name: &name ${EXPECTED_RUNNER}" "$HR"; then
+            echo "❌ FAILED: HelmRelease anchor name mismatch"
+            echo "Expected: name: &name ${EXPECTED_RUNNER}"
+            grep "name:.*&name" "$HR" || echo "No anchor found"
+            exit 1
+          fi
+          echo "✓ HelmRelease name = ${EXPECTED_RUNNER}"
+
+          if ! grep -q "name: ${EXPECTED_RUNNER}" "$OCI"; then
+            echo "❌ FAILED: OCIRepository name mismatch"
+            grep "name:" "$OCI"
+            exit 1
+          fi
+          echo "✓ OCIRepository name = ${EXPECTED_RUNNER}"
+
+          if ! grep -q "name: ${EXPECTED_RUNNER}" "$FK"; then
+            echo "❌ FAILED: Flux Kustomization name mismatch"
+            grep "name:" "$FK"
+            exit 1
+          fi
+          echo "✓ Flux Kustomization name = ${EXPECTED_RUNNER}"
+
+          if [[ "${EXPECTED_RUNNER}" =~ "_" ]]; then
+            echo "❌ FAILED: Runner name contains underscores: ${EXPECTED_RUNNER}"
+            exit 1
+          fi
+          echo "✓ Runner name has no underscores"
+
+          echo ""
+          echo "=== Verifying workflow runs-on labels ==="
+          CI_YAML=".github/workflows/ci.yaml"
+          RELEASE_YAML=".github/workflows/release.yaml"
+
+          for wf in "$CI_YAML" "$RELEASE_YAML"; do
+            if [[ ! -f "$wf" ]]; then
+              echo "  ⚠ Workflow not found: $wf (skipping)"
+              continue
+            fi
+            if ! grep -q "runs-on: ${EXPECTED_RUNNER}" "$wf"; then
+              echo "❌ FAILED: $(basename "$wf") does not use runs-on: ${EXPECTED_RUNNER}"
+              grep "runs-on:" "$wf"
+              exit 1
+            fi
+            echo "✓ $(basename "$wf") uses runs-on: ${EXPECTED_RUNNER}"
+          done
+
+          echo "✅ GHA runner naming conventions verified"
 
       - name: Run cargo tests
         run: |
