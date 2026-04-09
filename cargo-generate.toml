@@ -100,7 +100,7 @@ kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type
 
 [conditional.'!event_source_kafka']
 ignore = [
-  "deploy/dev/infrastructure/kafka.yaml",
+  "deploy/dev/infrastructure/kafka.yaml.liquid",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",

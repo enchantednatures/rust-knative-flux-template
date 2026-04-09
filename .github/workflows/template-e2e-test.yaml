@@ -187,7 +187,7 @@ jobs:
             "${GENERATED_DIR}/Cargo.toml"
             "${GENERATED_DIR}/src/main.rs"
             "${GENERATED_DIR}/Dockerfile"
-            "${GENERATED_DIR}/deploy/base/knative-service.yaml"
+            "${GENERATED_DIR}/deploy/base/helmrelease.yaml"
             "${GENERATED_DIR}/deploy/base/kustomization.yaml"
           )
 
@@ -201,9 +201,9 @@ jobs:
 
           echo ""
           echo "Validating YAML syntax..."
-          # Note: We can't use kubectl apply --dry-run here because Knative CRDs aren't installed yet
+          # Note: We can't use kubectl apply --dry-run here because Flux CRDs aren't installed yet
           # The manifests will be validated when actually applied to the cluster later
-          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/knative-service.yaml" > /dev/null 2>&1; then
+          if ! yq eval '.' "${GENERATED_DIR}/deploy/base/helmrelease.yaml" > /dev/null 2>&1; then
             echo "❌ YAML syntax validation failed"
             exit 1
           fi
@@ -469,42 +469,34 @@ jobs:
         if: matrix.deploy == 'true'
         run: |
           GENERATED_DIR="./generated/${PROJECT_NAME}"
+          CHART_DIR="${GENERATED_DIR}/deploy/chart"
+          NEW_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}"
+          NEW_TAG="${{ steps.image-meta.outputs.image_tag }}"
 
-          cd "${GENERATED_DIR}/deploy/base"
+          helm dependency build "${CHART_DIR}"
 
-          # Replace kustomization.yaml with one that includes image transformation
-          cat > kustomization.yaml <<EOF
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
+          yq eval -i '
+            .spec.values.services[""].image.repository = "'"${NEW_IMAGE}"'" |
+            .spec.values.services[""].image.tag = "'"${NEW_TAG}"'"
+          ' "${GENERATED_DIR}/deploy/base/helmrelease.yaml"
 
-          resources:
-            - knative-service.yaml
+          VALUES_FILE=$(mktemp)
+          yq eval '.spec.values' "${GENERATED_DIR}/deploy/base/helmrelease.yaml" > "${VALUES_FILE}"
 
-          images:
-            - name: ghcr.io/test-org/${SERVICE_NAME}
-              newName: ${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}
-              newTag: ${{ steps.image-meta.outputs.image_tag }}
+          mkdir -p "${GENERATED_DIR}/manifests-built"
 
-          namespace: default
+          helm template "${SERVICE_NAME}" "${CHART_DIR}" \
+            -f "${VALUES_FILE}" \
+            -n default \
+            | yq eval '
+              (select(.kind == "Service" and .apiVersion == "serving.knative.dev/v1") |
+                .spec.template.spec.imagePullSecrets) = [{"name": "ghcr-auth"}]
+            ' - > "${GENERATED_DIR}/manifests-built/all.yaml"
 
-          # Add imagePullSecrets to the Knative service for GHCR authentication
-          patches:
-            - patch: |-
-                - op: add
-                  path: /spec/template/spec/imagePullSecrets
-                  value:
-                    - name: ghcr-auth
-              target:
-                kind: Service
-                group: serving.knative.dev
-                version: v1
-          EOF
-
-          mkdir -p ../../manifests-built
-          kustomize build . --load-restrictor LoadRestrictionsNone > ../../manifests-built/all.yaml
+          rm -f "${VALUES_FILE}"
 
           echo "::group::Built manifests"
-          cat ../../manifests-built/all.yaml
+          cat "${GENERATED_DIR}/manifests-built/all.yaml"
           echo "::endgroup::"
 
       - name: Validate image transformation

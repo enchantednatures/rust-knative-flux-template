@@ -13,17 +13,58 @@ jobs:
   validate-dev-setup:
     name: Validate Kind Development Environment
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+
+    env:
+      PROJECT_NAME: dev-setup-test
+      GENERATED_DIR: ./generated/dev-setup-test
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Generate project from template
+        run: |
+          cargo generate --path . \
+            --name "${PROJECT_NAME}" \
+            --define "project_name=${PROJECT_NAME}" \
+            --define "project_author=CI Bot <ci@github.com>" \
+            --define "feature_s3=true" \
+            --define "feature_kafka=false" \
+            --define "feature_postgres=false" \
+            --define "feature_flagger=false" \
+            --define "feature_gha_runner=false" \
+            --define "event_source_kafka=true" \
+            --define "enable_image_updates=false" \
+            --define "target_namespace=default" \
+            --define "github_org=test-org" \
+            --define "github_repo=${PROJECT_NAME}" \
+            --define "default_branch=main" \
+            --define "image_registry=ghcr.io" \
+            --define "use_default_scaling=true" \
+            --define "kafka_topic=events" \
+            --define "kafka_consumer_group=${PROJECT_NAME}-consumers" \
+            --define "kafka_bootstrap_servers_staging=kafka.staging.svc.cluster.local:9092" \
+            --define "kafka_bootstrap_servers_prod=kafka.prod.svc.cluster.local:9092" \
+            --silent
+
+          mkdir -p ./generated
+          mv "${PROJECT_NAME}" ./generated/
+
+          echo "Generated project structure:"
+          ls -la "${GENERATED_DIR}/deploy/dev/infrastructure/" || true
+
       - name: Install Kind
         uses: helm/kind-action@v1.14.0
         with:
           cluster_name: dev
-          config: deploy/dev/kind-config.yaml
+          config: ${{ env.GENERATED_DIR }}/deploy/dev/kind-config.yaml
           wait: 5m
 
       - name: Verify Kind cluster
@@ -33,7 +74,7 @@ jobs:
 
       - name: Install Knative
         run: |
-          ./scripts/dev/install-knative.sh
+          "${GENERATED_DIR}/scripts/dev/install-knative.sh"
         env:
           KUBECONFIG: /home/runner/.kube/config
 
@@ -45,6 +86,7 @@ jobs:
           KUBECONFIG: /home/runner/.kube/config
 
       - name: Deploy infrastructure
+        working-directory: ${{ env.GENERATED_DIR }}
         run: |
           ./scripts/dev/deploy-infrastructure.sh
         env:
@@ -58,6 +100,7 @@ jobs:
           KUBECONFIG: /home/runner/.kube/config
 
       - name: Deploy observability
+        working-directory: ${{ env.GENERATED_DIR }}
         run: |
           ./scripts/dev/deploy-observability.sh
         env:
