@@ -1,0 +1,8 @@
+apiVersion: v2
+name: {{ project_name | replace: "_", "-" }}
+version: 0.1.0
+type: application
+dependencies:
+  - name: ksvc
+    version: "0.5.0"
+    repository: "oci://ghcr.io/enchantednatures/charts"

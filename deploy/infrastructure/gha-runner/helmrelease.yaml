@@ -1,0 +1,112 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: &name {{ project_name | replace: "_", "-" }}-runner
+  namespace: actions-runner-system
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: {{ project_name | replace: "_", "-" }}-runner
+    namespace: flux-system
+  interval: 15m
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  uninstall:
+    keepHistory: false
+  values:
+    nameOverride: *name
+    runnerScaleSetName: *name
+    githubConfigUrl: https://github.com/{{ github_org }}/{{ github_repo }}
+    githubConfigSecret: github-auth-secret
+    minRunners: 0
+    maxRunners: {{ gha_runner_max }}
+    listenerTemplate:
+      spec:
+        containers:
+          - name: listener
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
+    containerMode:
+      type: kubernetes
+      kubernetesModeWorkVolumeClaim:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ gha_runner_storage_class }}
+        resources:
+          requests:
+            storage: {{ gha_runner_storage_size }}
+    controllerServiceAccount:
+      name: actions-runner-controller
+      namespace: actions-runner-system
+    template:
+      spec:
+        priorityClassName: {{ gha_runner_priority_class }}
+        containers:
+          - name: runner
+            image: ghcr.io/actions/actions-runner:{{ gha_runner_image_tag }}
+            command:
+              - /home/runner/run.sh
+            resources:
+              requests:
+                cpu: "2"
+                memory: 8Gi
+              limits:
+                cpu: "2"
+                memory: 8Gi
+            env:
+              - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                value: "false"
+              - name: DOCKER_TLS_CERTDIR
+                value: /certs
+              - name: DOCKER_HOST
+                value: tcp://localhost:2376
+              - name: DOCKER_TLS_VERIFY
+                value: "1"
+              - name: DOCKER_CERT_PATH
+                value: /certs/client
+              - name: DOCKER_CLI_EXPERIMENTAL
+                value: enabled
+            volumeMounts:
+              - name: work
+                mountPath: /__w
+              - name: certs
+                mountPath: /certs
+          - name: dind
+            image: docker:27-dind
+            securityContext:
+              privileged: true
+            resources:
+              requests:
+                cpu: "2"
+                memory: 8Gi
+              limits:
+                cpu: "2"
+                memory: 8Gi
+            env:
+              - name: DOCKER_TLS_CERTDIR
+                value: /certs
+              - name: DOCKER_DRIVER
+                value: overlay2
+            volumeMounts:
+              - name: work
+                mountPath: /__w
+              - name: certs
+                mountPath: /certs
+              - name: docker-graph-storage
+                mountPath: /var/lib/docker
+        volumes:
+          - name: certs
+            emptyDir: {}
+          - name: docker-graph-storage
+            emptyDir: {}

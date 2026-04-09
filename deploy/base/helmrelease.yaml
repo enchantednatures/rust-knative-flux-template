@@ -1,0 +1,220 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: {{ project_name | replace: "_", "-" }}
+  namespace: {{ target_namespace }}
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./deploy/chart
+      sourceRef:
+        kind: GitRepository
+        name: {{ project_name | replace: "_", "-" }}
+        namespace: flux-system
+      reconcileStrategy: Revision
+  values:
+    global:
+      fullnameOverride: "{{ project_name | replace: '_', '-' }}"
+      labels:
+        app.kubernetes.io/name: "{{ project_name | replace: '_', '-' }}"
+        app.kubernetes.io/component: api
+        app.kubernetes.io/managed-by: flux
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+
+    # Empty key "" produces service name = fullnameOverride (no suffix)
+    # via ksvc.serviceName: printf "%s-%s" fullname "" | trimSuffix "-"
+    services:
+      "":
+        image:
+          repository: "{{ image_registry }}/{{ github_org }}/{{ project_name | replace: '_', '-' }}"
+          tag: "latest"  # {"$imagepolicy": "flux-system:{{ project_name | replace: '_', '-' }}:tag"}
+        scaling:
+          minScale: {% if use_default_scaling %}1{% else %}{{ base_min_scale }}{% endif %}
+          maxScale: {% if use_default_scaling %}10{% else %}{{ base_max_scale }}{% endif %}
+          target: {% if use_default_scaling %}100{% else %}{{ base_target }}{% endif %}
+          containerConcurrency: 100
+          timeoutSeconds: 300
+        resources:
+          requests:
+            cpu: "{% if use_default_scaling %}100m{% else %}{{ base_cpu_request }}{% endif %}"
+            memory: "{% if use_default_scaling %}64Mi{% else %}{{ base_memory_request }}{% endif %}"
+          limits:
+            cpu: "{% if use_default_scaling %}500m{% else %}{{ base_cpu_limit }}{% endif %}"
+            memory: "{% if use_default_scaling %}256Mi{% else %}{{ base_memory_limit }}{% endif %}"
+        probes:
+          liveness:
+            path: /health/live
+            port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readiness:
+            path: /health/ready
+            port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+              - ALL
+        volumeMounts:
+          - name: tmp
+            mountPath: /tmp
+        volumes:
+          - name: tmp
+            emptyDir: {}
+        env:
+          - name: APP_ENV
+            value: "production"
+          - name: APP__SERVER__PORT
+            value: "8080"
+          - name: APP__REDIS__URL
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-secrets"
+                key: redis-url
+          {% if feature_s3 %}
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-secrets"
+                key: aws-access-key-id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-secrets"
+                key: aws-secret-access-key
+          - name: APP__S3__ENDPOINT
+            value: "http://minio:9000"
+          - name: APP__S3__BUCKET
+            value: "data"
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          {% endif %}
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "http://otel-collector.observability.svc.cluster.local:4317"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "{{ project_name | replace: '_', '-' }}"
+
+    {% if feature_postgres %}
+    postgres:
+      enabled: true
+      version: "{{ postgres_version }}"
+      instances: 3
+      parameters:
+        ssl: "on"
+        ssl_min_protocol_version: "TLSv1.3"
+        ssl_max_protocol_version: "TLSv1.3"
+        shared_buffers: "2Gi"
+        max_connections: "300"
+        synchronous_commit: "remote_apply"
+        synchronous_standby_names: "ANY 1 (*)"
+        archive_timeout: "5min"
+        wal_compression: "on"
+      sharedPreloadLibraries:
+        - pg_stat_statements
+      postInitSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "2"
+          memory: "4Gi"
+      storage:
+        size: "200Gi"
+        storageClassName: "{{ postgres_storage_class }}"
+      pooler:
+        enabled: true
+        instances: 3
+        type: rw
+        poolMode: transaction
+        parameters:
+          max_client_conn: "300"
+          default_pool_size: "25"
+          reserve_pool_size: "5"
+          reserve_pool_timeout: "5"
+          max_db_connections: "100"
+          server_lifetime: "3600"
+          server_idle_timeout: "600"
+          log_connections: "1"
+          log_disconnections: "1"
+          log_pooler_errors: "1"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+      backup:
+        enabled: true
+        schedule: "{{ backup_schedule }}"
+        target: prefer-standby
+        retentionPolicy: "30d"
+        objectStore:
+          destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/"
+          endpointURL: "http://minio.minio.svc.cluster.local:9000"
+          s3Credentials:
+            secretName: postgres-backup-storage
+            accessKeyIdKey: ACCESS_KEY_ID
+            secretAccessKeyKey: ACCESS_SECRET_KEY
+          data:
+            compression: zstd
+            jobs: 2
+          wal:
+            compression: gzip
+            maxParallel: 4
+      monitoring:
+        enabled: true
+        alerts:
+          replicationLagWarning: 10
+          replicationLagCritical: 60
+          highConnectionCount: 50
+    {% endif %}
+
+    {% if event_source_kafka %}
+    kafka:
+      sources:
+        {{ kafka_topic }}:
+          topic: "{{ kafka_topic }}"
+          consumerGroup: "{{ kafka_consumer_group }}"
+          bootstrapServers:
+            - "kafka.kafka.svc.cluster.local:9092"
+          consumers: 3
+          initialOffset: latest
+          sink: ""
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+          dlq:
+            enabled: true
+            image:
+              repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
+              tag: "latest"
+            scaling:
+              minScale: 0
+              maxScale: 2
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "32Mi"
+              limits:
+                cpu: "200m"
+                memory: "128Mi"
+    {% endif %}

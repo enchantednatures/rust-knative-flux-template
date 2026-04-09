@@ -20,6 +20,11 @@ fi
 
 export KUBECONFIG="$KUBECONFIG_PATH"
 
+DEPLOY_ONLY=false
+if [[ "${1:-}" == "--deploy-only" ]]; then
+	DEPLOY_ONLY=true
+fi
+
 echo "Building and deploying application..."
 echo ""
 
@@ -62,24 +67,66 @@ fi
 
 IMAGE="localhost:${REGISTRY_PORT}/${SERVICE_NAME}:dev"
 
-# Build Docker image
-echo -e "${YELLOW}→${NC} Building Docker image: ${IMAGE}"
-if ! docker build -t "${IMAGE}" "${PROJECT_ROOT}"; then
-	echo -e "${RED}✗ Error: Docker build failed${NC}"
-	exit 1
+if [[ "${DEPLOY_ONLY}" != "true" ]]; then
+	echo -e "${YELLOW}→${NC} Building Docker image: ${IMAGE}"
+	if ! docker build -t "${IMAGE}" "${PROJECT_ROOT}"; then
+		echo -e "${RED}✗ Error: Docker build failed${NC}"
+		exit 1
+	fi
+
+	echo -e "${YELLOW}→${NC} Pushing image to local registry..."
+	if ! docker push "${IMAGE}"; then
+		echo -e "${RED}✗ Error: Failed to push image to registry${NC}"
+		exit 1
+	fi
 fi
 
-# Push to local registry
-echo -e "${YELLOW}→${NC} Pushing image to local registry..."
-if ! docker push "${IMAGE}"; then
-	echo -e "${RED}✗ Error: Failed to push image to registry${NC}"
-	exit 1
+# Render and deploy via Helm chart
+# In production, FluxCD reconciles the HelmRelease CR. For local dev, we render
+# the chart ourselves with helm template and apply the raw Knative Service YAML.
+echo -e "${YELLOW}→${NC} Rendering Helm chart for local deployment..."
+
+# Check dependencies
+for cmd in helm yq; do
+	if ! command -v "$cmd" &>/dev/null; then
+		echo -e "${RED}✗ Error: ${cmd} is not installed${NC}"
+		echo "Install ${cmd} to use the local dev workflow."
+		exit 1
+	fi
+done
+
+CHART_DIR="${PROJECT_ROOT}/deploy/chart"
+OVERLAY_DIR="${PROJECT_ROOT}/deploy/overlays/dev"
+
+# Build chart dependencies (pulls ksvc OCI dependency if not cached)
+if [[ ! -d "${CHART_DIR}/charts" ]] || [[ ! -f "${CHART_DIR}/Chart.lock" ]]; then
+	echo -e "${YELLOW}→${NC} Building Helm chart dependencies..."
+	if ! helm dependency build "${CHART_DIR}"; then
+		echo -e "${RED}✗ Error: Failed to build chart dependencies${NC}"
+		exit 1
+	fi
 fi
 
-# Apply Knative service
+# Render the merged HelmRelease (base + dev overlay) and extract values
+echo -e "${YELLOW}→${NC} Extracting values from dev overlay..."
+RENDERED_HR=$(kubectl kustomize "${OVERLAY_DIR}")
+VALUES_FILE=$(mktemp /tmp/helm-values-XXXXXX.yaml)
+trap 'rm -f "${VALUES_FILE}"' EXIT
+
+echo "${RENDERED_HR}" | yq eval 'select(.kind == "HelmRelease") | .spec.values' - > "${VALUES_FILE}"
+
+NON_HR_RESOURCES=$(echo "${RENDERED_HR}" | yq eval 'select(.kind != "HelmRelease")' -)
+if [[ -n "${NON_HR_RESOURCES}" && "${NON_HR_RESOURCES}" != "null" ]]; then
+	echo -e "${YELLOW}→${NC} Applying non-chart resources (operator, etc.)..."
+	echo "${NON_HR_RESOURCES}" | kubectl apply -f - || true
+fi
+
+# Render chart with extracted values and apply
 echo -e "${YELLOW}→${NC} Deploying to Knative..."
-if ! kubectl apply -k "${PROJECT_ROOT}/deploy/overlays/dev"; then
-	echo -e "${RED}✗ Error: Failed to apply Knative manifests${NC}"
+if ! helm template "${SERVICE_NAME}" "${CHART_DIR}" \
+	-f "${VALUES_FILE}" \
+	-n default | kubectl apply -f -; then
+	echo -e "${RED}✗ Error: Failed to render/apply Helm chart${NC}"
 	exit 1
 fi
 

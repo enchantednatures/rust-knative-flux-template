@@ -161,7 +161,7 @@ dev-observability: ## Deploy observability stack (Jaeger, Prometheus, OTel) only
 .PHONY: dev-deploy
 dev-deploy: ## Deploy application only (assumes image exists in registry)
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
-		kubectl apply -k deploy/overlays/dev
+		./scripts/dev/build-and-deploy.sh --deploy-only
 
 # ============================================================================
 # Testing Commands

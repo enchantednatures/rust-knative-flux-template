@@ -8,71 +8,99 @@ resources:
 
 components:
   {% if feature_postgres %}
-  - ../../components/operator  # Install CNPG operator for local dev
-  - ../../components/postgres
+  - ../../components/operator
   {% endif %}
-  {% if event_source_kafka %}
-  - ../../components/kafka
-  {% endif %}
-
-# Override image for local development with local registry
-images:
-  - name: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: "_", "-" }}
-    newName: kind-registry-dev:5000/{{ project_name | replace: "_", "-" }}
-    newTag: dev
 
 patches:
   - target:
-      kind: Service
+      kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
     patch: |-
-      - op: add
-        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
-        value: "{% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}"
-      - op: add
-        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
-        value: "{% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: "{% if use_default_scaling %}100m{% else %}{{ dev_cpu_request }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: "{% if use_default_scaling %}64Mi{% else %}{{ dev_memory_request }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: "{% if use_default_scaling %}500m{% else %}{{ dev_cpu_limit }}{% endif %}"
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: "{% if use_default_scaling %}256Mi{% else %}{{ dev_memory_limit }}{% endif %}"
-      - op: add
-        path: /spec/template/spec/containers/0/env
-        value:
-          - name: APP__REDIS__URL
-            value: "redis://redis.redis.svc.cluster.local:6379"
-          {% if feature_s3 %}
-          - name: APP__S3__ENDPOINT
-            value: "http://minio.minio.svc.cluster.local:9000"
-          - name: APP__S3__BUCKET
-            value: "data"
-          - name: APP__S3__REGION
-            value: "us-east-1"
-          - name: AWS_ACCESS_KEY_ID
-            value: "minioadmin"
-          - name: AWS_SECRET_ACCESS_KEY
-            value: "minioadmin"
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: {{ project_name | replace: "_", "-" }}
+      spec:
+        values:
+          services:
+            "":
+              image:
+                repository: "kind-registry-dev:5000/{{ project_name | replace: '_', '-' }}"
+                tag: "dev"
+              scaling:
+                minScale: {% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}
+                maxScale: {% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}
+              resources:
+                requests:
+                  cpu: "{% if use_default_scaling %}100m{% else %}{{ dev_cpu_request }}{% endif %}"
+                  memory: "{% if use_default_scaling %}64Mi{% else %}{{ dev_memory_request }}{% endif %}"
+                limits:
+                  cpu: "{% if use_default_scaling %}500m{% else %}{{ dev_cpu_limit }}{% endif %}"
+                  memory: "{% if use_default_scaling %}256Mi{% else %}{{ dev_memory_limit }}{% endif %}"
+              env:
+                - name: APP_ENV
+                  value: "development"
+                - name: APP__SERVER__PORT
+                  value: "8080"
+                - name: APP__REDIS__URL
+                  value: "redis://redis.redis.svc.cluster.local:6379"
+                {% if feature_s3 %}
+                - name: APP__S3__ENDPOINT
+                  value: "http://minio.minio.svc.cluster.local:9000"
+                - name: APP__S3__BUCKET
+                  value: "data"
+                - name: APP__S3__REGION
+                  value: "us-east-1"
+                - name: AWS_ACCESS_KEY_ID
+                  value: "minioadmin"
+                - name: AWS_SECRET_ACCESS_KEY
+                  value: "minioadmin"
+                {% endif %}
+                - name: APP__TELEMETRY__OTLP_ENDPOINT
+                  value: "http://otel-collector.observability.svc.cluster.local:4317"
+                - name: APP__TELEMETRY__SERVICE_NAME
+                  value: "{{ project_name | replace: '_', '-' }}-dev"
+                - name: APP__TELEMETRY__LOG_LEVEL
+                  value: "debug"
+                - name: RUST_LOG
+                  value: "debug,hyper=info,tower=info"
+          {% if feature_postgres %}
+          postgres:
+            instances: {{ postgres_instances_dev }}
+            parameters:
+              synchronous_commit: "local"
+              shared_buffers: "256Mi"
+              max_connections: "100"
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1"
+                memory: "1Gi"
+            storage:
+              size: "20Gi"
+            pooler:
+              instances: 1
+              parameters:
+                max_client_conn: "100"
+                default_pool_size: "10"
+            backup:
+              objectStore:
+                destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/dev/"
+                data:
+                  compression: gzip
+                wal:
+                  compression: gzip
+                  maxParallel: 2
+              retentionPolicy: "{{ backup_retention_dev }}d"
           {% endif %}
-          - name: APP__TELEMETRY__OTLP_ENDPOINT
-            value: "http://otel-collector.observability.svc.cluster.local:4317"
-          - name: APP__TELEMETRY__SERVICE_NAME
-            value: "{{ project_name | replace: "_", "-" }}-dev"
-          - name: APP__TELEMETRY__LOG_LEVEL
-            value: "debug"
-          - name: RUST_LOG
-            value: "debug,hyper=info,tower=info"
-  {% if event_source_kafka %}
-  - path: kafka-source-patch.yaml
-  {% endif %}
-  {% if feature_postgres %}
-  - path: postgres-cluster-patch.yaml
-  - path: postgres-backup-patch.yaml
-  {% endif %}
+          {% if event_source_kafka %}
+          kafka:
+            sources:
+              {{ kafka_topic }}:
+                bootstrapServers:
+                  - "kafka.kafka.svc.cluster.local:9092"
+                consumers: 1
+                initialOffset: earliest
+          {% endif %}

@@ -3,10 +3,12 @@ cargo_generate_version = ">=0.23.0"
 subfolder = "."
 ignore = [
   ".git",
+  ".sisyphus",
   "tests/e2e",
   ".opencode",
   ".specify",
   "target",
+  "TEMPLATE_GUIDE.md",
   "Cargo.lock",
   "specs",
   "audio-stream-exporter",
@@ -41,6 +43,7 @@ feature_s3 = { prompt = "Enable S3/MinIO object storage?", type = "bool", defaul
 feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
+feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
 event_source_kafka = { prompt = "Enable Kafka event source (consumer)?", type = "bool", default = false }
 
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
@@ -97,11 +100,7 @@ kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type
 
 [conditional.'!event_source_kafka']
 ignore = [
-  "deploy/components/kafka",
   "deploy/dev/infrastructure/kafka.yaml",
-  "deploy/overlays/dev/kafka-source-patch.yaml",
-  "deploy/overlays/staging/kafka-source-patch.yaml",
-  "deploy/overlays/prod/kafka-source-patch.yaml",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",
@@ -122,16 +121,9 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 
 [conditional.'!feature_postgres']
 ignore = [
-  "deploy/components/postgres",
   "deploy/components/operator",
   "deploy/flux/postgres-kustomization.yaml",
   "deploy/flux/git-repository-postgres.yaml",
-  "deploy/overlays/dev/postgres-cluster-patch.yaml",
-  "deploy/overlays/dev/postgres-backup-patch.yaml",
-  "deploy/overlays/staging/postgres-cluster-patch.yaml",
-  "deploy/overlays/staging/postgres-backup-patch.yaml",
-  "deploy/overlays/prod/postgres-cluster-patch.yaml",
-  "deploy/overlays/prod/postgres-backup-patch.yaml",
   "scripts/dev/deploy-postgres.sh",
   "scripts/dev/check-postgres-status.sh",
   "scripts/dev/port-forward-postgres.sh",
@@ -168,4 +160,24 @@ ignore = [
   "deploy/infrastructure/flagger",
   "deploy/flux/flagger-kustomization.yaml",
   "docs/FLAGGER.md",
+]
+
+[conditional.'feature_gha_runner'.placeholders]
+# ARC runner scale set chart version (from ghcr.io/actions/actions-runner-controller-charts)
+gha_runner_chart_version = { prompt = "ARC runner scale set chart version", type = "string", default = "0.13.1" }
+# GitHub Actions runner image tag
+gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.331.0" }
+# Maximum concurrent runners (min is always 0 — scale-to-zero)
+gha_runner_max = { prompt = "Maximum concurrent runners", type = "string", default = "4" }
+# StorageClass for the runner work volume
+gha_runner_storage_class = { prompt = "StorageClass for runner work volume", type = "string", default = "openebs-hostpath" }
+# PriorityClass for runner pods
+gha_runner_priority_class = { prompt = "PriorityClass for runner pods", type = "string", default = "actions-runner-high-priority" }
+# Work volume size
+gha_runner_storage_size = { prompt = "Runner work volume size", type = "string", default = "50Gi" }
+
+[conditional.'!feature_gha_runner']
+ignore = [
+  "deploy/infrastructure/gha-runner",
+  "deploy/flux/gha-runner-kustomization.yaml",
 ]
