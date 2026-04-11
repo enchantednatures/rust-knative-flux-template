@@ -2,8 +2,41 @@
 
 Complete guide for deploying {{ project_name }} to Kubernetes using Knative Serving and FluxCD GitOps.
 
+> **About Template Variables**: This is a template file that uses Liquid syntax for variables like `{{ project_name }}`. During project generation with `cargo-generate`, these placeholders are replaced with your actual project values. The generated documentation will contain your specific project name instead of the template variable.
+
+## About Project Naming
+
+### Template Variable: `project_name`
+
+When generating a project from this template, you'll be prompted for a `project_name`. This name is automatically normalized to follow platform-specific conventions:
+
+- **Kubernetes Resources** (Knative Services, ConfigMaps, Secrets): Uses **kebab-case** (hyphens)
+  - Example: `my-service`, `user-api`, `payment-processor`
+  - Kubernetes DNS names require hyphens, not underscores
+  
+- **Rust Crate** (Cargo.toml): Uses **snake_case** (underscores)
+  - Example: `my_service`, `user_api`, `payment_processor`
+  - Rust convention for package names
+
+- **Docker Images**: Uses **kebab-case** (hyphens) to match Kubernetes names
+  - Example: `ghcr.io/org/my-service:latest`
+
+**What You Input**: When running `cargo generate`, you can provide `project_name` in any format:
+- `my-service` (hyphens)
+- `my_service` (underscores)  
+- `myservice` (single word)
+
+**Template Normalization**: The template automatically converts your input:
+- `{{ project_name | replace: "_", "-" }}` → Forces kebab-case for Kubernetes/Docker
+- `{{ crate_name }}` → Automatically converted to snake_case for Rust
+
+**Why This Matters**: Knative Services **cannot** contain underscores in their names. Using underscores will cause `ImagePullBackOff` errors because the image tag won't match the service name. The template handles this normalization automatically.
+
+> **For Detailed Information**: See the "Naming Conventions" section in [`../AGENTS.md`](../AGENTS.md) for comprehensive documentation on how naming works across all template files, common issues, and solutions.
+
 ## Table of Contents
 
+- [About Project Naming](#about-project-naming)
 - [Prerequisites](#prerequisites)
 - [Local Testing](#local-testing)
 - [Manual Kubernetes Deployment](#manual-kubernetes-deployment)
