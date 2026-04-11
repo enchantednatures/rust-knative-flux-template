@@ -1,4 +1,4 @@
-{% if enable_image_updates %}# =============================================================================
+# =============================================================================
 # ImagePolicy for sha-based continuous deployment
 # =============================================================================
 # This policy selects the latest sha-based image tag (e.g., sha-a1b2c3d)
@@ -55,4 +55,4 @@ spec:
 #   policy:
 #     semver:
 #       range: ">=1.0.0"
-{% endif %}
+

@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../kustomization-prod.yaml
+  {% if feature_postgres %}- ../../postgres-kustomization.yaml{% endif %}
+  {% if feature_gha_runner %}- ../../gha-runner-kustomization.yaml{% endif %}
+  {% if enable_image_updates %}- ../../image-policy.yaml{% endif %}
+  {% if enable_image_updates %}- ../../image-repository.yaml{% endif %}
+  {% if enable_image_updates %}- ../../image-update-automation.yaml{% endif %}

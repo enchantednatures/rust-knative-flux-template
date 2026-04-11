@@ -1,4 +1,4 @@
-{% if enable_image_updates %}# =============================================================================
+# =============================================================================
 # NOTE: ImageUpdateAutomation typically lives in your INFRASTRUCTURE repo
 # =============================================================================
 # This is included here for reference and for local testing/development.
@@ -39,4 +39,4 @@ spec:
   update:
     path: ./deploy
     strategy: Setters
-{% endif %}
+

@@ -252,48 +252,32 @@ VALID_ENVS := $(notdir $(wildcard deploy/overlays/*))
 .PHONY: bootstrap
 bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 	@ENV="$(word 2,$(MAKECMDGOALS))"; \
+	export KUBECONFIG=$(KUBECONFIG_PATH); \
 	if [ -z "$$ENV" ]; then \
-		echo "${BLUE}Bootstrapping Flux source resources...${NC}"; \
-		for f in deploy/flux/git-repository*.yaml deploy/flux/image-*.yaml; do \
-			if [ -f "$$f" ]; then \
-				echo "  ${GREEN}Applying${NC} $$f"; \
-				export KUBECONFIG=$(KUBECONFIG_PATH) && kubectl apply -f "$$f" || { echo "${RED}✗ Failed to apply $$f${NC}"; exit 1; }; \
-			fi; \
-		done; \
+		echo "${BLUE}Applying Flux GitRepository...${NC}"; \
+		kubectl apply --server-side -f deploy/flux/git-repository.yaml || { echo "${RED}✗ Failed to apply GitRepository${NC}"; exit 1; }; \
 		echo ""; \
-		echo "${GREEN}✓ Flux source resources applied${NC}"; \
+		echo "${GREEN}✓ GitRepository applied${NC}"; \
 		echo ""; \
-		echo "${YELLOW}Next:${NC} bootstrap an environment overlay:"; \
+		echo "${YELLOW}Next:${NC} bootstrap an environment:"; \
 		echo "  ${GREEN}make bootstrap production${NC}"; \
 		echo "  ${GREEN}make bootstrap staging${NC}"; \
 		echo "  ${GREEN}make bootstrap dev${NC}"; \
 	else \
 		RESOLVED=$$(echo "$$ENV" | sed 's/^production$$/prod/' | sed 's/^development$$/dev/'); \
-		KUST="deploy/flux/kustomization-$${RESOLVED}.yaml"; \
-		if [ ! -f "$$KUST" ]; then \
+		CONFIG="deploy/flux/config/$${RESOLVED}"; \
+		if [ ! -d "$$CONFIG" ]; then \
 			echo "${RED}✗ Unknown environment: $$ENV${NC}"; \
 			echo "  Available: $(VALID_ENVS) (also: production, development)"; \
 			exit 1; \
 		fi; \
 		echo "${BLUE}Bootstrapping Flux for environment: $${RESOLVED}${NC}"; \
 		echo ""; \
-		echo "${YELLOW}[1/2]${NC} Applying Flux source resources..."; \
-		for f in deploy/flux/git-repository*.yaml deploy/flux/image-*.yaml; do \
-			if [ -f "$$f" ]; then \
-				echo "  ${GREEN}Applying${NC} $$f"; \
-				kubectl apply -f "$$f" || { echo "${RED}✗ Failed to apply $$f${NC}"; exit 1; }; \
-			fi; \
-		done; \
+		echo "${YELLOW}[1/2]${NC} Applying GitRepository..."; \
+		kubectl apply --server-side -f deploy/flux/git-repository.yaml || { echo "${RED}✗ Failed to apply GitRepository${NC}"; exit 1; }; \
 		echo ""; \
-		echo "${YELLOW}[2/2]${NC} Applying Flux Kustomizations..."; \
-		for f in deploy/flux/*-kustomization.yaml; do \
-			if [ -f "$$f" ]; then \
-				echo "  ${GREEN}Applying${NC} $$f"; \
-				kubectl apply -f "$$f" || { echo "${RED}✗ Failed to apply $$f${NC}"; exit 1; }; \
-			fi; \
-		done; \
-		echo "  ${GREEN}Applying${NC} $$KUST"; \
-		kubectl apply -f "$$KUST" || { echo "${RED}✗ Failed to apply $$KUST${NC}"; exit 1; }; \
+		echo "${YELLOW}[2/2]${NC} Applying Flux Kustomizations from $$CONFIG ..."; \
+		kubectl apply --server-side -k "$$CONFIG" || { echo "${RED}✗ Failed to apply $$CONFIG${NC}"; exit 1; }; \
 		echo ""; \
 		echo "${GREEN}✓ Flux bootstrap complete for $${RESOLVED}${NC}"; \
 		echo "  Flux will now reconcile deploy/overlays/$${RESOLVED}/"; \

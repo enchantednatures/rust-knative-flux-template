@@ -123,7 +123,6 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 ignore = [
   "deploy/components/operator",
   "deploy/flux/postgres-kustomization.yaml",
-  "deploy/flux/git-repository-postgres.yaml",
   "scripts/dev/deploy-postgres.sh",
   "scripts/dev/check-postgres-status.sh",
   "scripts/dev/port-forward-postgres.sh",
@@ -175,6 +174,13 @@ gha_runner_storage_class = { prompt = "StorageClass for runner work volume", typ
 gha_runner_priority_class = { prompt = "PriorityClass for runner pods", type = "string", default = "actions-runner-high-priority" }
 # Work volume size
 gha_runner_storage_size = { prompt = "Runner work volume size", type = "string", default = "50Gi" }
+
+[conditional.'!enable_image_updates']
+ignore = [
+  "deploy/flux/image-policy.yaml",
+  "deploy/flux/image-update-automation.yaml",
+  "deploy/flux/image-repository.yaml",
+]
 
 [conditional.'!feature_gha_runner']
 ignore = [
