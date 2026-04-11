@@ -114,7 +114,7 @@ kubectl rollout status deploy/flagger-loadtester -n flagger-system
 The operator HelmReleases are in `deploy/infrastructure/flagger/operator/`.
 
 > **Important:** The app FluxCD Kustomizations (`deploy/flux/kustomization-{env}.yaml`) have a
-> `dependsOn: [{name: flagger}]` block so Flux will always install the operator before
+> `dependsOn` section with `[{name: flagger}]` so Flux will always install the operator before
 > applying the `Canary` object. If you're installing manually, apply the operator first.
 
 ## Monitoring a Canary Rollout

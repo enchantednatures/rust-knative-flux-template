@@ -257,7 +257,7 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 		for f in deploy/flux/git-repository*.yaml deploy/flux/image-*.yaml; do \
 			if [ -f "$$f" ]; then \
 				echo "  ${GREEN}Applying${NC} $$f"; \
-				kubectl apply -f "$$f" || { echo "${RED}✗ Failed to apply $$f${NC}"; exit 1; }; \
+				export KUBECONFIG=$(KUBECONFIG_PATH) && kubectl apply -f "$$f" || { echo "${RED}✗ Failed to apply $$f${NC}"; exit 1; }; \
 			fi; \
 		done; \
 		echo ""; \
