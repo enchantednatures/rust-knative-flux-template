@@ -221,11 +221,17 @@ spec:
 ### Step 2: Create Kustomization
 
 ```bash
-# Create Kustomization
-kubectl apply -f deploy/flux/kustomization.yaml -n {{ project_name }}
+# Bootstrap Flux to track this repo + deploy to production
+make bootstrap production
 ```
 
-`deploy/flux/kustomization.yaml`:
+Or apply manually per environment:
+
+```bash
+kubectl apply -f deploy/flux/kustomization-prod.yaml
+```
+
+`deploy/flux/kustomization-prod.yaml`:
 ```yaml
 apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
 kind: Kustomization
