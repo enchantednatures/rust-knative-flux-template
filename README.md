@@ -86,8 +86,11 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 
 2. **Deploy with FluxCD**
     ```bash
-    kubectl apply -f deploy/flux/git-repository.yaml
-    kubectl apply -f deploy/flux/kustomization.yaml
+    # Bootstrap Flux to track this repo (applies GitRepository + ImageRepository)
+    make bootstrap
+
+    # Bootstrap a specific environment (e.g., production)
+    make bootstrap production
     ```
 
 {% if event_source_kafka %}
@@ -486,8 +489,11 @@ kubectl apply -k deploy/overlays/prod
 
 3. Create FluxCD Kustomization:
    ```bash
-   kubectl apply -f deploy/flux/git-repository.yaml
-   kubectl apply -f deploy/flux/kustomization.yaml
+   # Bootstrap Flux to track this repo
+   make bootstrap
+
+   # Then bootstrap an environment
+   make bootstrap production
    ```
 
 ### Automated Deployments

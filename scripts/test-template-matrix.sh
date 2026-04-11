@@ -285,7 +285,9 @@ validate_structure() {
     "deploy/overlays/staging/kustomization.yaml"
     "deploy/overlays/prod/kustomization.yaml"
     "deploy/flux/git-repository.yaml"
-    "deploy/flux/kustomization.yaml"
+    "deploy/flux/kustomization-dev.yaml"
+    "deploy/flux/kustomization-staging.yaml"
+    "deploy/flux/kustomization-prod.yaml"
     "deploy/flux/image-repository.yaml"
   )
   for f in "${always_present[@]}"; do
@@ -438,14 +440,16 @@ validate_structure() {
   done
 
   # ── Flux resource name checks ──
-  local flux_kust="$dir/deploy/flux/kustomization.yaml"
-  if [[ -f "$flux_kust" ]]; then
-    # Should use templated name, not hardcoded "rust-service"
-    if grep -q "name: rust-service" "$flux_kust"; then
-      log_fail "  deploy/flux/kustomization.yaml has hardcoded 'rust-service' name"
-      ((errors++))
+  for env in dev staging prod; do
+    local flux_kust="$dir/deploy/flux/kustomization-${env}.yaml"
+    if [[ -f "$flux_kust" ]]; then
+      # Should use templated name, not hardcoded "rust-service"
+      if grep -q "name: rust-service" "$flux_kust"; then
+        log_fail "  deploy/flux/kustomization-${env}.yaml has hardcoded 'rust-service' name"
+        ((errors++))
+      fi
     fi
-  fi
+  done
 
   local flux_git="$dir/deploy/flux/git-repository.yaml"
   if [[ -f "$flux_git" ]]; then
