@@ -59,7 +59,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      {% if include_s3 %}
+      {% if feature_s3 %}
       minio:
         image: minio/minio:latest
         ports:
@@ -90,7 +90,7 @@ jobs:
           restore-keys: |
             {% raw %}${{ runner.os }}-cargo-{% endraw %}
 
-      {% if include_s3 %}
+      {% if feature_s3 %}
       - name: Initialize MinIO bucket
         if: always()
         run: |
@@ -106,7 +106,7 @@ jobs:
         run: cargo test --all-features
         env:
           APP__REDIS__URL: redis://localhost:6379
-          {% if include_s3 %}
+          {% if feature_s3 %}
           APP__S3__ENDPOINT: http://localhost:9000
           APP__S3__BUCKET: data
           APP__S3__REGION: us-east-1
