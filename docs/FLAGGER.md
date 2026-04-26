@@ -194,12 +194,12 @@ Replace the placeholder query in `deploy/components/flagger/metric-templates.yam
 ```yaml
 # Example: error rate from your app's own Prometheus counter
 query: |
-  sum(rate(http_requests_total{job="{{ target }}", status=~"5.."}[{{ interval }}]))
-  / sum(rate(http_requests_total{job="{{ target }}"}[{{ interval }}]))
+  sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}", status=~"5.."}[{% raw %}{{ interval }}{% endraw %}]))
+  / sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}"}[{% raw %}{{ interval }}{% endraw %}]))
 ```
 
-The variables `{{ target }}`, `{{ namespace }}`, and `{{ interval }}` are substituted
-by Flagger at runtime. `{{ target }}` is the Knative service name.
+The variables `{% raw %}{{ target }}{% endraw %}`, `{% raw %}{{ namespace }}{% endraw %}`, and `{% raw %}{{ interval }}{% endraw %}` are substituted
+by Flagger at runtime. `{% raw %}{{ target }}{% endraw %}` is the Knative service name.
 
 To remove the custom metric gate entirely, delete the third entry from the `metrics:`
 list in `canary.yaml` and delete the `custom-metric` MetricTemplate from

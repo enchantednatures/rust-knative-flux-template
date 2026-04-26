@@ -274,7 +274,7 @@ template/
 |----------|-------|---------|
 | `{{ crate_name }}` | Rust crate name (snake_case) | `my_service` |
 | `{{ project_name }}` | Project name (user input) | `my-service` or `my_service` |
-| `{{ project_name \| replace: "_", "-" }}` | Kubernetes-compatible name | `my-service` |
+| `{% raw %}{{ project_name \| replace: "_", "-" }}{% endraw %}` | Kubernetes-compatible name | `my-service` |
 | `{% if feature_kafka %}` | Conditional Kafka code | Feature flag |
 | `{% if feature_s3 %}` | Conditional S3 code | Feature flag |
 
@@ -368,7 +368,7 @@ cargo generate --path ./rust-knative-flux-template --name syntax-test --silent
 
 Before publishing the template:
 
-- [ ] All `{{ variable }}` syntax is valid Liquid
+- [ ] All `{% raw %}{{ variable }}{% endraw %}` syntax is valid Liquid
 - [ ] Feature conditionals use correct syntax: `{% if feature_name %}`
 - [ ] All new files are included in the template
 - [ ] Generated code compiles without errors

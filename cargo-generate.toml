@@ -8,7 +8,7 @@ ignore = [
   ".opencode",
   ".specify",
   "target",
-  "TEMPLATE_GUIDE.md",
+  "docs/TEMPLATE_GUIDE.md",
   "Cargo.lock",
   "specs",
   "audio-stream-exporter",

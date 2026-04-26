@@ -607,7 +607,7 @@ Import into Grafana:
         "targets": [
           {
             "expr": "sum(rate(http_request_total[5m])) by (path)",
-            "legendFormat": "{{ path }}"
+            "legendFormat": "{% raw %}{{ path }}{% endraw %}"
           }
         ],
         "type": "graph"

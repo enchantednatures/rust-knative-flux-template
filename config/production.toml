@@ -7,9 +7,9 @@ otlp_endpoint = "http://otel-collector.observability.svc.cluster.local:4317"
 
 {% if feature_s3 %}
 [s3]
-endpoint = "{{ s3_endpoint | default: "https://s3.amazonaws.com" }}"
-bucket = "{{ s3_bucket }}"
-region = "{{ s3_region }}"
+endpoint = "https://s3.amazonaws.com"
+bucket = "data"
+region = "us-east-1"
 {% endif %}
 
 {% if feature_kafka %}

@@ -17,19 +17,19 @@ spec:
     100 - sum(
       rate(
         revision_request_count{
-          namespace="{{ namespace }}",
-          configuration_name="{{ target }}",
+          namespace="{% raw %}{{ namespace }}{% endraw %}",
+          configuration_name="{% raw %}{{ target }}{% endraw %}",
           response_code_class!="2xx"
-        }[{{ interval }}]
+        }[{% raw %}{{ interval }}{% endraw %}]
       )
     )
     /
     sum(
       rate(
         revision_request_count{
-          namespace="{{ namespace }}",
-          configuration_name="{{ target }}"
-        }[{{ interval }}]
+          namespace="{% raw %}{{ namespace }}{% endraw %}",
+          configuration_name="{% raw %}{{ target }}{% endraw %}"
+        }[{% raw %}{{ interval }}{% endraw %}]
       )
     ) * 100
 
@@ -56,9 +56,9 @@ spec:
       sum(
         rate(
           revision_request_latencies_bucket{
-            namespace="{{ namespace }}",
-            configuration_name="{{ target }}"
-          }[{{ interval }}]
+            namespace="{% raw %}{{ namespace }}{% endraw %}",
+            configuration_name="{% raw %}{{ target }}{% endraw %}"
+          }[{% raw %}{{ interval }}{% endraw %}]
         )
       ) by (le)
     )
@@ -88,12 +88,12 @@ spec:
     address: http://prometheus.observability.svc.cluster.local:9090
   query: |
     # TODO: Replace with your application-specific metric query.
-    # The variable {{ target }} resolves to the Knative configuration name (== service name).
-    # The variable {{ namespace }} resolves to the deployment namespace.
+    # The variable {% raw %}{{ target }}{% endraw %} resolves to the Knative configuration name (== service name).
+    # The variable {% raw %}{{ namespace }}{% endraw %} resolves to the deployment namespace.
     #
     # Example: HTTP 5xx error rate from your app's own counter
-    # sum(rate(http_requests_total{job="{{ target }}", status=~"5.."}[{{ interval }}]))
-    # / sum(rate(http_requests_total{job="{{ target }}"}[{{ interval }}]))
+    # sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}", status=~"5.."}[{% raw %}{{ interval }}{% endraw %}]))
+    # / sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}"}[{% raw %}{{ interval }}{% endraw %}]))
     #
     # Returning 0 makes this gate always pass until you fill it in.
     vector(0)
