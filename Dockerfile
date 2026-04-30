@@ -4,7 +4,7 @@
 # ARG for selecting base image tag (defaults to version, but 'release' preferred for releases)
 # Note: If rust:release doesn't exist, the default version tag is used
 # The release workflow passes RUST_BASE_IMAGE_TAG=release for production builds
-ARG RUST_BASE_IMAGE_TAG=1.94-slim
+ARG RUST_BASE_IMAGE_TAG=1.95-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS chef
 RUN apt-get update && apt-get install -y \
@@ -25,7 +25,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ==============================================================================
 # Stage 2: Build dependencies using chef recipe
 # ==============================================================================
-ARG RUST_BASE_IMAGE_TAG=1.94-slim
+ARG RUST_BASE_IMAGE_TAG=1.95-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS builder
 RUN apt-get update && apt-get install -y \
