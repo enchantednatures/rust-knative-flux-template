@@ -797,23 +797,38 @@ jobs:
 
           # Helper function to run curl inside the cluster  
           # Filters kubectl pod messages while preserving curl output
+          # Retries up to 3 times: `kubectl run --rm -i` occasionally returns
+          # an empty captured body when the pod exits immediately, even though
+          # the server handled the request (observed as flaky E2E failures).
           kubectl_curl() {
             local output
             local exit_code
-            output=$(kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- "$@" 2>&1)
-            exit_code=$?
-            # Filter out kubectl pod messages and HTTP headers, keep only response body
-            # If there are no headers, return the raw body
-            echo "$output" | awk '
-              BEGIN { body=0; saw_header=0 }
-              /^pod.*/ { next }
-              /^HTTP\// { saw_header=1; next }
-              /^< HTTP\// { saw_header=1; next }
-              /^< [A-Za-z-]+:/ { saw_header=1; next }
-              /^[A-Za-z-]+:/ { saw_header=1; next }
-              /^$/ { if (saw_header) { body=1; next } }
-              { if (!saw_header || body) print }
-            '
+            local attempt
+            local filtered
+            for attempt in 1 2 3; do
+              output=$(kubectl run curl-test-$RANDOM --image=curlimages/curl:latest --rm -i --restart=Never --quiet -- "$@" 2>&1)
+              exit_code=$?
+              # Filter out kubectl pod messages and HTTP headers, keep only response body
+              # If there are no headers, return the raw body
+              filtered=$(echo "$output" | awk '
+                BEGIN { body=0; saw_header=0 }
+                /^pod.*/ { next }
+                /^HTTP\// { saw_header=1; next }
+                /^< HTTP\// { saw_header=1; next }
+                /^< [A-Za-z-]+:/ { saw_header=1; next }
+                /^[A-Za-z-]+:/ { saw_header=1; next }
+                /^$/ { if (saw_header) { body=1; next } }
+                { if (!saw_header || body) print }
+              ')
+              if [ "$exit_code" -eq 0 ] && [ -n "$filtered" ]; then
+                break
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                echo "  ⚠ curl attempt $attempt incomplete (exit=$exit_code), retrying..." >&2
+                sleep 5
+              fi
+            done
+            echo "$filtered"
             return $exit_code
           }
 
