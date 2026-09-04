@@ -1,10 +1,12 @@
-// Post-generation hook: automatically format and lint generated code
-// This runs after template expansion but before final output is moved to destination
+// Post-generation hook: format and lint the generated project.
 //
-// NOTE: These commands will prompt for user approval unless you use --allow-commands flag:
-//   cargo generate --allow-commands ...
+// Runs after template expansion while the output still lives in
+// cargo-generate's working copy (cargo-generate >= 0.23). Every command is
+// wrapped in try/catch: failures are printed as warnings but never abort
+// generation (CI validates fmt/clippy explicitly afterwards).
 //
-// In CI/automated environments, always use --allow-commands to avoid interactive prompts
+// Commands require `cargo generate --allow-commands` — mandatory when
+// combined with `--silent`, since silent mode cannot prompt for approval.
 
 print("\n╔════════════════════════════════════════════════════════╗");
 print("║          Project Generation Complete! ✓               ║");
@@ -16,34 +18,46 @@ print("  ✓ Kubernetes services use hyphens in resource names");
 print("  ✓ Docker images use hyphens in tags");
 print("  ✓ All names are automatically normalized during generation\n");
 
-// ============================================================================
-// Step 1: Run Clippy to automatically fix linting issues
-// ============================================================================
-// NOTE: Clippy is disabled during template generation because it builds the
-// project and creates a target/ directory with binary files that contain
-// {{ }} patterns, causing cargo-generate validation to fail.
-// This will be run manually after generation.
+let warnings = 0;
+
+// Step 1: Auto-fix lint issues (non-blocking)
 print("🔧 Running clippy --fix...");
-system::command("cargo", ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
+try {
+    system::command("cargo",
+        ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--allow-no-vcs"]);
+} catch (err) {
+    warnings += 1;
+    print("⚠️  clippy --fix failed (non-blocking): " + err);
+    print("    Fix later with: cargo clippy --fix --allow-dirty --allow-staged --allow-no-vcs");
+}
 
-// ============================================================================
-// Step 2: Format all generated code
-// ============================================================================
-// NOTE: cargo fmt is DISABLED during template generation because:
-// 1. It creates a target/ directory with compiled artifacts
-// 2. These artifacts may contain {{ }} patterns in debug symbols
-// 3. cargo-generate scans all files (including target/) for un-substituted templates
-// 4. This causes validation failures and blocks project generation
-//
-// SOLUTION: Run 'cargo fmt --all' manually after generation, or add it to your
-// CI/CD pipeline. The GitHub Actions workflow in the generated project will
-// automatically format code on every commit.
-//
+// Step 2: Format all generated code (non-blocking)
 print("🔧 Running cargo fmt...");
-system::command("cargo", ["fmt", "--all"]);
+try {
+    system::command("cargo", ["fmt", "--all"]);
+} catch (err) {
+    warnings += 1;
+    print("⚠️  cargo fmt failed (non-blocking): " + err);
+    print("    Fix later with: cargo fmt --all");
+}
 
-print("\n✅ Project generation complete!\n");
-print("Next steps:");
+// Step 3: Remove build artifacts so they are not copied into the output.
+// clippy compiles the project, creating a target/ directory; cargo-generate
+// copies everything from its working copy into the final project directory.
+try {
+    file::delete("target");
+} catch (err) {
+    print("⚠️  Could not remove target/ (non-blocking): " + err);
+}
+
+if warnings > 0 {
+    print("\n⚠️  Post-generation lint/format finished with " + warnings + " warning(s).");
+    print("    The project was generated successfully — apply the fixes above manually.");
+} else {
+    print("\n✅ Generated project is formatted and clippy-clean.");
+}
+
+print("\nNext steps:");
 print("  1. Review the generated code");
 print("  2. Update config files with your settings");
 print("  3. Run: make dev-up  (to start development environment)");

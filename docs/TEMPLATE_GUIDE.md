@@ -364,6 +364,50 @@ cargo generate --path ./rust-knative-flux-template --name syntax-test --silent
 
 ---
 
+## 🪝 Post-Generation Hook
+
+The template ships a `post-generate.rhai` hook, registered in `cargo-generate.toml`:
+
+```toml
+[hooks]
+post = ["post-generate.rhai"]
+```
+
+After template expansion, the hook runs in the expanded project directory and:
+
+1. Runs `cargo clippy --fix` to auto-fix lint issues
+2. Runs `cargo fmt --all` to format all generated code
+3. Removes the `target/` directory created by clippy (so build artifacts are not copied into the generated project)
+
+### Failure Semantics (Non-Blocking)
+
+Every step is wrapped in a Rhai `try/catch`. A failure is printed as a `⚠️` warning but **never aborts generation** — a flaky toolchain or missing system library in CI will still produce a complete project. The generated project's own CI pipeline (and the template's `template-generate-and-validate` workflow matrix) enforce `cargo fmt --check` and `cargo clippy -- -D warnings` afterwards, so problems cannot go unnoticed.
+
+### CLI Requirements
+
+The hook executes system commands via `system::command`. cargo-generate requires `--allow-commands` to run them:
+
+```bash
+# CI / non-interactive (required with --silent — silent mode cannot prompt)
+cargo generate --path . --name my-service --silent --allow-commands
+
+# Interactive (prompts for approval without the flag)
+cargo generate --path . --name my-service
+```
+
+Without `--allow-commands` in a non-interactive environment, cargo-generate denies the commands and generation fails. All template CI workflows (`template-generate-and-validate`, `template-e2e-test`, `naming-convention-tests`, `dev-setup-validation`) pass `--allow-commands`.
+
+### cargo-generate v0.23.x Hook Lifecycle Notes
+
+Hooks behavior changed across cargo-generate versions. Verified against v0.23.x (required `>=0.23.0` in `cargo-generate.toml`):
+
+- **Hook scripts must NOT be listed in `[template] ignore`.** cargo-generate deletes ignored files *before* post hooks run, so an ignored hook script fails with "file not found" and aborts generation. Hook files are excluded from template rendering and removed from the generated output automatically — ignoring them is unnecessary (and harmful).
+- Post hooks run **after** Liquid expansion and **before** the output is copied to the destination directory, with the working directory set to the expanded project. Commands see fully-substituted file names and real project structure.
+- Files created or modified by post hooks are **not re-scanned** for `{{ }}` template variables (expansion is already complete). Pre hooks run *before* expansion — do not run `cargo` build/clippy in pre hooks; artifacts created there would be scanned as templates and fail generation.
+- cargo-generate copies everything (except `.git`) from its working copy into the final project, which is why the hook deletes `target/` before finishing.
+
+---
+
 ## 📋 Pre-Deployment Checklist
 
 Before publishing the template:

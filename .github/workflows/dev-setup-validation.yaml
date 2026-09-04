@@ -52,7 +52,8 @@ jobs:
             --define "kafka_consumer_group=${PROJECT_NAME}-consumers" \
             --define "kafka_bootstrap_servers_staging=kafka.staging.svc.cluster.local:9092" \
             --define "kafka_bootstrap_servers_prod=kafka.prod.svc.cluster.local:9092" \
-            --silent
+            --silent \
+            --allow-commands
 
           mkdir -p ./generated
           mv "${PROJECT_NAME}" ./generated/

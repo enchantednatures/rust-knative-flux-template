@@ -265,7 +265,8 @@ EOF
     --name "test-app-${label}" \
     --template-values-file "$values_file" \
     --destination "$out_dir" \
-    --silent 2>&1
+    --silent \
+    --allow-commands 2>&1
 }
 
 # ── Validation checks ──────────────────────────────────────────────────────

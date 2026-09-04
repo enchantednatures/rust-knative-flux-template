@@ -227,7 +227,8 @@ jobs:
             --name "$PROJ_NAME" \
             --template-values-file "$TEMP_DIR/template-values.toml" \
             --destination "$TEMP_DIR" \
-            --silent
+            --silent \
+            --allow-commands
 
           GENERATED_DIR="$TEMP_DIR/$PROJ_NAME"
           cd "$GENERATED_DIR"

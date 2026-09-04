@@ -27,11 +27,19 @@ ignore = [
   "CHANGELOG-LOCAL-E2E.md",
   "scripts/test-template-matrix.sh",
   "template-values.toml",
-  "post-generate.rhai",
 ]
 
-# [hooks]
-# post = ["post-generate.rhai"]
+# Post-generation hook: formats generated code and runs clippy --fix (see
+# post-generate.rhai). Requires `cargo generate --allow-commands` when run with
+# `--silent` (e.g. in CI).
+#
+# NOTE (cargo-generate v0.23.x): the hook script must NOT be listed in
+# `[template] ignore`. cargo-generate deletes ignored files BEFORE post hooks
+# run, so an ignored hook script fails with "file not found" and aborts
+# generation. Hook files are excluded from template rendering and removed from
+# the generated output automatically, so ignoring them is unnecessary.
+[hooks]
+post = ["post-generate.rhai"]
 
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
