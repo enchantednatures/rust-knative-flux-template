@@ -190,8 +190,8 @@ kubectl create secret generic {{ project_name }}-s3 \
 ### Deploy Base Service
 
 ```bash
-# Apply base Knative Service
-kubectl apply -f deploy/base/knative-service.yaml -n {{ project_name }}
+# Apply the base HelmRelease (Flux renders the Knative Service via deploy/chart)
+kubectl apply -k deploy/base -n {{ project_name }}
 
 # Get service URL
 kubectl get ksvc {{ project_name }} -n {{ project_name }}

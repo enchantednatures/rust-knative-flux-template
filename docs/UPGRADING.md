@@ -225,43 +225,22 @@ pub async fn upload_handler(
 
 **If deployment changed**, update manifests:
 
-**Old** (`deploy/base/knative-service.yaml`):
+**Old** (`deploy/base/helmrelease.yaml`):
 ```yaml
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: {{ project_name }}
-spec:
-  template:
-    spec:
-      containers:
-      - image: my-service:latest
-        env:
-        - name: APP__REDIS__URL
-          value: "redis://redis:6379"
+services:
+  "":
+    scaling:
+      minScale: 1
+      maxScale: 10
 ```
 
 **New**:
 ```yaml
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: {{ project_name }}
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/minScale: "5"  # New annotation
-    spec:
-      containers:
-      - image: my-service:latest
-        env:
-        - name: APP__REDIS__URL
-          value: "redis://redis:6379"
-{% if feature_s3 %}
-        - name: APP__S3__REGION
-          value: "us-east-1"  # New required env var
-{% endif %}
+services:
+  "":
+    scaling:
+      minScale: 5  # New value
+      maxScale: 10
 ```
 
 #### Step 6: Update Tests

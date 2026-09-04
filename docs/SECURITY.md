@@ -108,20 +108,19 @@ FROM ubuntu:latest  # Too many packages
 **Why**: Prevents runtime modifications
 
 ```yaml
-# deploy/base/knative-service.yaml
-spec:
-  template:
-    spec:
-      containers:
-      - name: user-container
-        securityContext:
-          readOnlyRootFilesystem: true
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-  volumes:
-  - name: tmp
-    emptyDir: {}
+# deploy/base/helmrelease.yaml (values rendered by deploy/chart → ksvc)
+services:
+  "":
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
 ```
 
 #### 4. No Privileged Containers

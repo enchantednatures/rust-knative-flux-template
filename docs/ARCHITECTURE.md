@@ -269,11 +269,14 @@ Scale Pods
 Monitor and Adjust
 ```
 
-**Configuration** (in `deploy/base/knative-service.yaml`):
+**Configuration** (in `deploy/base/helmrelease.yaml`):
 ```yaml
-autoscaling.knative.dev/minScale: "1"
-autoscaling.knative.dev/maxScale: "100"
-autoscaling.knative.dev/targetUtilizationPercentage: "70"
+services:
+  "":
+    scaling:
+      minScale: 1
+      maxScale: 10
+      target: 100
 ```
 
 ### Startup Sequence

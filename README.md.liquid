@@ -159,9 +159,10 @@ For production/staging, ensure external Kafka is configured:
 │
 ├── deploy/
 │   ├── base/
-│   │   ├── knative-service.yaml     # Knative Service with S3 env vars
+│   │   ├── helmrelease.yaml         # Flux HelmRelease (S3 env vars via values)
 │   │   ├── secret.yaml.example      # Secret template for credentials
 │   │   └── kustomization.yaml       # Base Kustomize config
+│   ├── chart/                        # Local Helm chart (wraps ksvc dependency)
 │   ├── overlays/
 │   │   ├── dev/          # Development environment patches
 │   │   ├── staging/      # Staging environment patches
@@ -442,9 +443,9 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 ## Kubernetes Configuration
 
-### Knative Service (deploy/base/knative-service.yaml)
+### Knative Service (deploy/base/helmrelease.yaml)
 
-The service is configured with:
+The service is configured through the Flux HelmRelease values (rendered by `deploy/chart` via the `ksvc` chart dependency):
 - Auto-scaling: min 0, max 100 replicas
 - Health checks: liveness and readiness probes
 - Resource limits: 512Mi memory, 1000m CPU
@@ -623,11 +624,12 @@ let builder = http_backend::HttpBuilder::default()
 ```
 
 ### Knative Auto-scaling
-Edit `deploy/base/knative-service.yaml`:
+Edit `deploy/base/helmrelease.yaml` (per-environment values live in the overlay patches):
 ```yaml
-autoscaling.knative.dev/minScale: "1"
-autoscaling.knative.dev/maxScale: "100"
-autoscaling.knative.dev/targetUtilizationPercentage: "70"
+scaling:
+  minScale: 1
+  maxScale: 10
+  targetUtilizationPercentage: 70
 ```
 
 ## Security
@@ -752,8 +754,9 @@ kubectl apply -k deploy/overlays/prod
 │
 ├── deploy/
 │   ├── base/
-│   │   ├── knative-service.yaml     # Knative Service
+│   │   ├── helmrelease.yaml         # Knative Service
 │   │   └── kustomization.yaml       # Base Kustomize config
+│   ├── chart/                        # Local Helm chart (wraps ksvc dependency)
 │   ├── overlays/
 │   │   ├── dev/          # Development environment
 │   │   ├── staging/      # Staging environment

@@ -445,4 +445,4 @@ kubectl apply -f tests/chaos/litmus-chaos-tests.yaml
 
 ---
 
-**Note:** The YAML errors shown in `knative-service.yaml` and `litmus-chaos-tests.yaml` are expected - they contain Liquid template syntax that will be processed by cargo-generate before being used as YAML.
+**Note:** The YAML errors shown in `deploy/base/helmrelease.yaml` and `tests/chaos/litmus-chaos-tests.yaml` are expected - they contain Liquid template syntax that will be processed by cargo-generate before being used as YAML.
