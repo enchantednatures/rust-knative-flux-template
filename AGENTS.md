@@ -118,8 +118,10 @@ Files that handle name normalization:
   - `SERVICE_NAME="{{ project_name | replace: "_", "-" }}"`  (for Docker tags, Kubernetes)
   - `CRATE_NAME="{{ crate_name }}"`  (for binary verification)
 
-- **deploy/base/knative-service.yaml.liquid**: Uses `{{ project_name | replace: "_", "-" }}` for service name
-  - `name: {{ project_name | replace: "_", "-" }}`
+- **deploy/base/helmrelease.yaml**: Flux HelmRelease that deploys the app through the local `deploy/chart` Helm chart (which wraps the `ksvc` chart dependency)
+  - `metadata.name: {{ project_name | replace: "_", "-" }}`
+  - `fullnameOverride: "{{ project_name | replace: '_', '-' }}"` sets the Knative service name
+- **deploy/chart/Chart.yaml**: Chart name uses `{{ project_name | replace: "_", "-" }}`
 
 #### Common Issues and Solutions
 
@@ -614,99 +616,138 @@ When working with the local development environment, images are built and pushed
 - **Development builds**: Use `dev` tag (e.g., `localhost:5001/my-service:dev`)
 - **Production builds**: Use `latest` or semantic version tags (e.g., `ghcr.io/org/my-service:1.0.0`)
 
-### Kustomize Image Override Pattern
+### HelmRelease Image Override Pattern
 
-The dev overlay automatically overrides the GHCR image reference with the local registry:
+The dev overlay automatically overrides the GHCR image reference with the local registry by patching the base HelmRelease:
 
 ```yaml
-# deploy/overlays/dev/kustomization.yaml
-images:
-  - name: ghcr.io/org/my-service      # Base image reference
-    newName: localhost:5001/my-service # Local registry
-    newTag: dev                         # Development tag
+# deploy/overlays/dev/kustomization.yaml (excerpt)
+patches:
+  - target:
+      kind: HelmRelease
+      name: my-service
+    patch: |-
+      spec:
+        values:
+          services:
+            "":
+              image:
+                repository: "kind-registry-dev:5000/my-service" # Local registry (in-cluster name)
+                tag: "dev"                                       # Development tag
 ```
 
 This allows:
-- Base manifests reference production registry (GHCR)
-- Dev overlay automatically uses local registry (no GHCR auth needed)
-- Staging/prod overlays use production images unchanged
-- `make dev-restart` rebuilds and deploys with local image
+- Base HelmRelease references the production registry (GHCR)
+- Dev overlay automatically uses the local registry (no GHCR auth needed)
+- Staging/prod overlays keep production images unchanged
+- `make dev-restart` rebuilds and deploys with the local image
 
 ### Build Process
 
 The `scripts/dev/build-and-deploy.sh` script:
-1. Builds Docker image: `docker build -t localhost:5001/my-service:dev .`
+1. Builds Docker image: `docker build -t localhost:5001/my-service:dev .` (host view of the Kind registry)
 2. Pushes to local registry: `docker push localhost:5001/my-service:dev`
-3. Applies Kustomize overlay: `kubectl apply -k deploy/overlays/dev`
-4. Kustomize substitutes image → Knative pulls from local registry
+3. Renders the dev overlay: `kubectl kustomize deploy/overlays/dev`
+4. Extracts the patched HelmRelease values and renders the local chart: `helm template <service> deploy/chart -f <values>`
+5. Applies the rendered Knative Service → Knative pulls from the local registry (`kind-registry-dev:5000` in-cluster / `localhost:5001` on the host)
 
 **No imagePullSecrets needed** for local development!
 
 ## Deployment Structure
 
-The template uses a modern Kustomize component-based architecture for deployments:
+The template uses a FluxCD HelmRelease that renders a local Helm chart (wrapping the `ksvc` chart dependency), plus optional Kustomize Components and imperative local-dev tooling:
 
 ### Directory Structure
 
 ```
 deploy/
-├── base/                    # Core application manifests
-│   └── knative-service.yaml # Only the Knative service (no infra)
-├── components/              # Optional feature components (Kustomize Components)
-│   ├── operator/           # CloudNativePG operator (local dev only)
-│   │   └── kustomization.yaml
-│   ├── postgres/           # PostgreSQL cluster resources
+├── base/                        # Core application manifest (Flux HelmRelease)
+│   ├── helmrelease.yaml         # HelmRelease → renders deploy/chart (app + optional postgres/kafka values)
+│   ├── kustomization.yaml
+│   ├── secret.yaml.example
+│   └── object-storage-secret.yaml.example
+├── chart/                       # Local Helm chart wrapping the ksvc chart dependency
+│   ├── Chart.yaml               # ksvc 0.6.3 (oci://ghcr.io/enchantednatures/charts)
+│   └── templates/common.yaml
+├── components/                  # Optional Kustomize Components
+│   ├── flagger/                 # Canary + metric templates + k6 load test (staging/prod)
 │   │   ├── kustomization.yaml
-│   │   ├── cluster.yaml
-│   │   ├── backup.yaml
-│   │   ├── objectstore.yaml
-│   │   └── ...
-│   └── kafka/              # Kafka event source resources
-│       ├── kustomization.yaml
-│       ├── kafka-source.yaml
-│       └── dlq-handler.yaml
-└── overlays/               # Environment-specific configurations
-    ├── dev/                # Local development
-    │   ├── kustomization.yaml  # Includes: operator, postgres, kafka
-    │   └── patches/
-    ├── staging/            # Staging environment
-    │   ├── kustomization.yaml  # Includes: postgres, kafka (NO operator)
-    │   └── patches/
-    └── prod/               # Production environment
-        ├── kustomization.yaml  # Includes: postgres, kafka (NO operator)
-        └── patches/
+│   │   ├── canary.yaml
+│   │   ├── metric-templates.yaml
+│   │   ├── k6-configmap.yaml
+│   │   └── loadtester-patch.yaml
+│   └── operator/                # CloudNativePG operator + Barman plugin (LOCAL DEV ONLY)
+│       └── kustomization.yaml
+├── dev/                         # Local dev infrastructure (installed imperatively)
+│   ├── kind-config.yaml         # Kind cluster + local registry config
+│   ├── infrastructure/          # redis, minio, kafka (Knative eventing sources)
+│   └── observability/           # jaeger, otel-collector, prometheus
+├── flux/                        # FluxCD Kustomizations (app + infra lifecycle)
+│   ├── git-repository.yaml      # GitRepository source
+│   ├── kustomization-dev.yaml   # App Kustomization → ./deploy/overlays/dev
+│   ├── kustomization-staging.yaml
+│   ├── kustomization-prod.yaml
+│   ├── config/                  # Per-environment feature-flag wiring
+│   │   ├── dev/kustomization.yaml
+│   │   ├── staging/kustomization.yaml
+│   │   └── prod/kustomization.yaml
+│   ├── flagger-kustomization.yaml     # → deploy/infrastructure/flagger/operator
+│   ├── gha-runner-kustomization.yaml  # → deploy/infrastructure/gha-runner
+│   ├── postgres-kustomization.yaml
+│   ├── image-policy.yaml        # Opt-in via enable_image_updates
+│   ├── image-repository.yaml
+│   └── image-update-automation.yaml
+├── infrastructure/              # Cluster-wide operators (Flux-managed)
+│   ├── flagger/operator/        # namespace + helmrepository + helmrelease
+│   └── gha-runner/              # oci-repository + helmrelease
+└── overlays/                    # Environment-specific HelmRelease patches
+    ├── dev/kustomization.yaml      # base + operator component + dev values patch
+    ├── staging/kustomization.yaml  # base + flagger component + staging values patch
+    └── prod/kustomization.yaml     # base + flagger component + prod values patch
 ```
 
 ### Component-Based Architecture
 
 **Key Benefits:**
-- **Modular**: Features are opt-in via components
-- **Environment-aware**: Dev includes operator, prod/staging assumes pre-installed
-- **GitOps-ready**: Components can be selectively enabled in FluxCD Kustomizations
-- **Maintainable**: Changes to postgres/kafka isolated to their components
+- **Modular**: Features are opt-in via Kustomize Components and feature-flagged Flux Kustomizations
+- **Environment-aware**: Dev installs the CNPG operator via component; prod/staging assume a pre-installed operator
+- **GitOps-ready**: Overlays are referenced by FluxCD Kustomizations; feature wiring lives in `deploy/flux/config/{env}/`
+- **Single source of app config**: PostgreSQL/Kafka runtime settings flow through HelmRelease `spec.values` (patched per environment)
 
 **Usage in Overlays:**
 
 ```yaml
 # deploy/overlays/dev/kustomization.yaml (Local Development)
 components:
-  - ../../components/operator   # Install CNPG operator for local dev
-  - ../../components/postgres   # Deploy PostgreSQL cluster
-  - ../../components/kafka      # Deploy Kafka event source
+  {% if feature_postgres %}
+  - ../../components/operator   # Install CNPG operator + Barman plugin for local dev
+  {% endif %}
+# Postgres/Kafka values are patched into the base HelmRelease per environment
+
+# deploy/overlays/staging/kustomization.yaml (Staging)
+components:
+  {% if feature_flagger %}
+  - ../../components/flagger    # Canary + metric gates
+  {% endif %}
 
 # deploy/overlays/prod/kustomization.yaml (Production)
 components:
-  - ../../components/postgres   # Deploy PostgreSQL cluster only
-  - ../../components/kafka      # Deploy Kafka event source only
+  {% if feature_flagger %}
+  - ../../components/flagger    # Canary + metric gates
+  {% endif %}
   # NO operator component - assumes cluster-wide operator pre-installed
 ```
+
+**Feature-flag wiring** happens in `deploy/flux/config/{dev,staging,prod}/kustomization.yaml`, which aggregates the app Kustomization (`deploy/flux/kustomization-{env}.yaml`) with the optional operator Kustomizations (flagger, gha-runner, postgres) and image-update resources, each gated by the corresponding feature flag.
+
+**Local infrastructure** (Kind cluster, local registry, redis, minio, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make dev-up`, etc.).
 
 ### CNPG Operator Installation
 
 **Critical**: Beyond local development, the CloudNativePG operator should be installed **cluster-wide** via your cluster management tooling (Flux, ArgoCD, Terraform, etc.), not per-application.
 
-- **Local dev (`dev` overlay)**: Includes `components/operator` to install CNPG operator
-- **Staging/Prod (`staging`/`prod` overlays)**: Assumes operator already installed, only includes `components/postgres`
+- **Local dev (`dev` overlay)**: Includes `components/operator` to install CNPG operator + Barman cloud plugin
+- **Staging/Prod (`staging`/`prod` overlays)**: Assumes operator already installed; PostgreSQL itself is configured through the HelmRelease values (`spec.values.postgres`) patched per environment
 
 This prevents:
 - Multiple operator installations (one per namespace)
@@ -735,14 +776,14 @@ spec:
 Or via Kustomization:
 
 ```yaml
-# Example: FluxCD Kustomization for cluster-wide operator
+# Example: FluxCD Kustomization for cluster-wide operator (in your cluster/infrastructure repo)
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cnpg-operator
   namespace: flux-system
 spec:
-  path: ./deploy/infrastructure/cloudnative-pg/operator
+  path: ./infrastructure/cloudnative-pg/operator
   prune: true
   sourceRef:
     kind: GitRepository
@@ -790,16 +831,18 @@ FluxCD GitRepository
               └── helmrelease.yaml         # Flagger operator + loadtester
 
 FluxCD Kustomization (app) dependsOn (flagger)
-  └── deploy/overlays/staging|prod/
-        └── components/flagger/            # Kustomize Component
+  └── deploy/overlays/staging|prod/kustomization.yaml
+        └── ../../components/flagger/      # Kustomize Component
               ├── canary.yaml              # Canary CRD (wraps KnativeService)
-              └── metric-templates.yaml    # Prometheus MetricTemplate CRDs
+              ├── metric-templates.yaml    # Prometheus MetricTemplate CRDs
+              ├── k6-configmap.yaml        # k6 rollout load test script
+              └── loadtester-patch.yaml    # Patch to reach the loadtester service
 ```
 
 ### How It Works
 
-1. **Developer pushes** a new image tag; Flux ImageUpdateAutomation updates `knative-service.yaml`
-2. **Flux reconciles** — applies the updated KnativeService, creating a new Knative revision
+1. **Developer pushes** a new image tag; Flux ImageUpdateAutomation updates `deploy/base/helmrelease.yaml` (via the `{"$imagepolicy": ...}` marker)
+2. **Flux reconciles** the HelmRelease — renders the ksvc chart with the new image tag, creating a new Knative revision
 3. **Flagger detects** the new revision and starts canary analysis
 4. **Traffic shifts** 10% → 20% → ... → 50% in 1-minute steps
 5. **Metric gates** evaluated each step:
@@ -815,6 +858,7 @@ FluxCD Kustomization (app) dependsOn (flagger)
 |---|---|---|
 | `canary_success_rate_threshold` | `99` | Min HTTP success rate % |
 | `canary_latency_threshold_ms` | `500` | Max p99 latency in ms |
+| `k6_vus` | `10` | Number of k6 virtual users during the rollout load test |
 
 ### Operator Installation
 
@@ -864,7 +908,9 @@ deploy/
 ├── components/flagger/
 │   ├── kustomization.yaml       # Kustomize Component declaration
 │   ├── canary.yaml              # Flagger Canary CRD
-│   └── metric-templates.yaml   # Prometheus MetricTemplate CRDs
+│   ├── metric-templates.yaml    # Prometheus MetricTemplate CRDs
+│   ├── k6-configmap.yaml        # k6 rollout load test script
+│   └── loadtester-patch.yaml    # Patch to reach the loadtester service
 ├── infrastructure/flagger/
 │   └── operator/
 │       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease
