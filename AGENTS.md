@@ -424,7 +424,7 @@ async fn test_endpoint() {
 
 ## Kafka Event Publishing Patterns
 
-When Kafka event publishing is enabled (`enable_kafka_publishing = true`), use these patterns:
+When Kafka event publishing is enabled (`feature_kafka = true`), use these patterns:
 
 ### Non-Blocking Event Publishing from Handlers
 

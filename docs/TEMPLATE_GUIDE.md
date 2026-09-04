@@ -307,7 +307,7 @@ cargo generate --git https://github.com/your-org/rust-knative-flux-template
 ```bash
 cargo generate --git https://github.com/your-org/rust-knative-flux-template
 # Project name: event-processor
-# Features: enable_kafka_publishing=true
+# Features: feature_kafka=true
 ```
 
 **Generated Includes:**
