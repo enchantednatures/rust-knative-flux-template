@@ -187,35 +187,35 @@ pub struct KafkaConfig {
 - `cargo-generate.toml` prompts:
   ```toml
   [[prompts]]
-  name = "enable_kafka"
+  name = "feature_kafka"
   type = "bool"
   message = "Enable Kafka event publishing?"
   default = false
   
   [[prompts]]
-  name = "kafka_brokers"
+  name = "kafka_broker_url"
   message = "Kafka broker URL"
   default = "kafka.kafka.svc.cluster.local:9092"
-  when = "{{enable_kafka}}"
+  when = "{{feature_kafka}}"
   
   [[prompts]]
   name = "kafka_topic"
   message = "Kafka topic for events"
   default = "events"
-  when = "{{enable_kafka}}"
+  when = "{{feature_kafka}}"
   
   [[prompts]]
   name = "kafka_event_name"
   message = "CloudEvents type for published events"
   default = "com.{{github_org}}.{{project_name}}.event.published"
-  when = "{{enable_kafka}}"
+  when = "{{feature_kafka}}"
   ```
 
 - Liquid templates expand placeholders:
   ```liquid
-  {% if enable_kafka %}
+  {% if feature_kafka %}
   [kafka]
-  broker_url = "{{kafka_brokers}}"
+  broker_url = "{{kafka_broker_url}}"
   topic = "{{kafka_topic}}"
   event_name = "{{kafka_event_name}}"
   compression = "snappy"

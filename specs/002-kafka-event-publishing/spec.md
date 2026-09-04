@@ -170,7 +170,9 @@ As an operator, I need visibility into event publishing operations through distr
 
 ### CL-005: Feature Selection Mechanism (2026-01-05)
 **Question**: How should Kafka be selected during template generation - as a separate boolean prompt or as part of a features array?  
-**Answer**: Use **features array pattern** (`features = ["s3", "postgres", "kafka"]`). Kafka should be included in the existing `features` multi-select prompt in `cargo-generate.toml`, aligned with how S3 and PostgreSQL are already handled. Liquid template conditionals should check `{% if "kafka" in features %}` instead of `{% if enable_kafka_publishing %}`. This provides consistent UX, single prompt for all optional features, and aligns with existing template patterns.
+**Answer**: Use **features array pattern** (`features = ["s3", "postgres", "kafka"]`). Kafka should be included in the existing `features` multi-select prompt in `cargo-generate.toml`, aligned with how S3 and PostgreSQL are already handled. Liquid template conditionals should check `{% if "kafka" in features %}` instead of `{% if feature_kafka %}`. This provides consistent UX, single prompt for all optional features, and aligns with existing template patterns.
+
+> **Implementation note**: The shipped template uses individual boolean placeholders (`feature_s3`, `feature_postgres`, `feature_kafka`, …) instead of a features array, because cargo-generate v0.23.x cannot evaluate array variables in conditional expressions (Rhai `on_var` callback bug). Conditionals check `{% if feature_kafka %}`.
 
 ### Session 2026-01-05 - GitHub Workflow Matrix Expansion
 

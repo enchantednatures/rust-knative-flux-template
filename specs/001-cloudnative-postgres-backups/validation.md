@@ -310,12 +310,12 @@ Configuration Details:
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: {{ postgres_cluster_name }}-backup
+  name: {{ project_name | replace: "_", "-" }}-postgres-backup
 spec:
   schedule: "0 2 * * *"
   backupOwnerReference: "cluster"
   cluster:
-    name: {{ postgres_cluster_name }}
+    name: {{ project_name | replace: "_", "-" }}-postgres
   target: "prefer_copy"
   barmanObjectStore:
     wal_compression: "gzip"

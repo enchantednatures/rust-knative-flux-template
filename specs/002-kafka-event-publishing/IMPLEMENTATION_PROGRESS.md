@@ -52,7 +52,7 @@
 ## Remaining Work (Not Yet Implemented)
 
 ### Phase 3: Generation-Time Configuration (T014-T015)
-- [ ] Update `cargo-generate.toml` with `enable_kafka` prompt
+- [ ] Update `cargo-generate.toml` with `feature_kafka` prompt
 - [ ] Add conditional prompts for kafka_topic, kafka_event_name
 - [ ] Add Liquid conditionals to ignore Kafka files when disabled
 
@@ -118,7 +118,7 @@
 
 ```
 Configuration Flow:
-  cargo generate (enable_kafka=true) 
+  cargo generate (feature_kafka=true) 
   → config/default.toml.liquid (defaults + Kafka section)
   → config/{dev,prod}.toml.liquid (env-specific overrides)
   → AppConfig loaded via figment
@@ -162,11 +162,11 @@ Staged for Next Session:
 1. **Update cargo-generate.toml** (1 hour):
    ```toml
    [placeholders]
-   enable_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
+   feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
    kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events" }
    kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.example.service.event.published" }
    
-   [conditional.'if enable_kafka']
+   [conditional.'feature_kafka']
    # Conditionally include Kafka-related prompts
    ```
 

@@ -39,7 +39,7 @@
 
 **Issue**: When Kafka publishing is disabled at generation time but handler code references the Kafka publisher, the expected behavior was ambiguous.
 
-**Resolution (CL-002)**: Use **Liquid template conditionals only** (`{% if enable_kafka %}`). When user answers "no" during `cargo generate`, Kafka code, dependencies, and config are simply not rendered into the generated project. This eliminates the ambiguity—there is no disabled feature code to reference, just conditional generation.
+**Resolution (CL-002)**: Use **Liquid template conditionals only** (`{% if feature_kafka %}`). When user answers "no" during `cargo generate`, Kafka code, dependencies, and config are simply not rendered into the generated project. This eliminates the ambiguity—there is no disabled feature code to reference, just conditional generation.
 
 ---
 
