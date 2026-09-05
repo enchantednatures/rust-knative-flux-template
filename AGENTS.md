@@ -670,12 +670,10 @@ deploy/
 │   ├── Chart.yaml               # ksvc 0.6.3 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
-│   ├── flagger/                 # Canary + metric templates + k6 load test (staging/prod)
+│   ├── flagger/                 # Canary + metric templates (staging/prod)
 │   │   ├── kustomization.yaml
 │   │   ├── canary.yaml
-│   │   ├── metric-templates.yaml
-│   │   ├── k6-configmap.yaml
-│   │   └── loadtester-patch.yaml
+│   │   └── metric-templates.yaml
 │   └── operator/                # CloudNativePG operator + Barman plugin (LOCAL DEV ONLY)
 │       └── kustomization.yaml
 ├── dev/                         # Local dev infrastructure (installed imperatively)
@@ -828,15 +826,15 @@ FluxCD GitRepository
         └── deploy/infrastructure/flagger/operator/
               ├── namespace.yaml           # flagger-system namespace
               ├── helmrepository.yaml      # flagger.app Helm repo
-              └── helmrelease.yaml         # Flagger operator + loadtester
+              ├── helmrelease.yaml         # Flagger operator + loadtester
+              ├── k6-configmap.yaml        # k6 rollout load test script (flagger-system)
+              └── loadtester-patch.yaml    # Mounts the k6 ConfigMap into the loadtester
 
 FluxCD Kustomization (app) dependsOn (flagger)
   └── deploy/overlays/staging|prod/kustomization.yaml
         └── ../../components/flagger/      # Kustomize Component
               ├── canary.yaml              # Canary CRD (wraps KnativeService)
-              ├── metric-templates.yaml    # Prometheus MetricTemplate CRDs
-              ├── k6-configmap.yaml        # k6 rollout load test script
-              └── loadtester-patch.yaml    # Patch to reach the loadtester service
+              └── metric-templates.yaml    # Prometheus MetricTemplate CRDs (address patched per env)
 ```
 
 ### How It Works
@@ -859,6 +857,15 @@ FluxCD Kustomization (app) dependsOn (flagger)
 | `canary_success_rate_threshold` | `99` | Min HTTP success rate % |
 | `canary_latency_threshold_ms` | `500` | Max p99 latency in ms |
 | `k6_vus` | `10` | Number of k6 virtual users during the rollout load test |
+| `flagger_prometheus_url_staging` | dev observability URL | Prometheus queried by staging canary gates |
+| `flagger_prometheus_url_prod` | dev observability URL | Prometheus queried by prod canary gates |
+| `flagger_operator_metrics_server` | dev observability URL | Prometheus for the Flagger operator's built-in checks |
+
+> **Prometheus is a hard requirement** for any cluster running canaries: without a
+> reachable Prometheus, every gate fails and rollouts halt after 5 consecutive
+> failures (automatic rollback). The defaults point at the dev-only observability
+> stack — staging/prod clusters must set their own URLs. See `docs/FLAGGER.md`
+> "Prerequisites".
 
 ### Operator Installation
 
@@ -890,8 +897,11 @@ kubectl annotate canary/<service-name> flagger.app/canary.paused- -n <namespace>
 
 ### Customizing Metric Gates
 
+Edit `deploy/overlays/{staging,prod}/kustomization.yaml` to change the Prometheus address
+per environment (JSON6902 patch on `kind: MetricTemplate`; defaults come from the
+`flagger_prometheus_url_{staging,prod}` generate-time variables).
+
 Edit `deploy/components/flagger/metric-templates.yaml` to:
-- Change the Prometheus address (default: `http://prometheus.observability.svc.cluster.local:9090`)
 - Update the custom metric PromQL query with your business KPI
 - Add additional MetricTemplates for extra gates
 
@@ -908,15 +918,15 @@ deploy/
 ├── components/flagger/
 │   ├── kustomization.yaml       # Kustomize Component declaration
 │   ├── canary.yaml              # Flagger Canary CRD
-│   ├── metric-templates.yaml    # Prometheus MetricTemplate CRDs
-│   ├── k6-configmap.yaml        # k6 rollout load test script
-│   └── loadtester-patch.yaml    # Patch to reach the loadtester service
+│   └── metric-templates.yaml    # Prometheus MetricTemplate CRDs
 ├── infrastructure/flagger/
 │   └── operator/
-│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease
+│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease + k6 config
 │       ├── namespace.yaml       # flagger-system namespace
 │       ├── helmrepository.yaml  # flagger.app Helm chart repository
-│       └── helmrelease.yaml     # Flagger + loadtester HelmReleases
+│       ├── helmrelease.yaml     # Flagger + loadtester HelmReleases
+│       ├── k6-configmap.yaml    # k6 rollout load test script (flagger-system)
+│       └── loadtester-patch.yaml  # Mounts the k6 ConfigMap into the loadtester
 └── flux/
     └── flagger-kustomization.yaml  # FluxCD Kustomization for the operator
 ```

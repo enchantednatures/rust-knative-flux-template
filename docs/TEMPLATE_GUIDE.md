@@ -277,6 +277,8 @@ template/
 | `{% raw %}{{ project_name \| replace: "_", "-" }}{% endraw %}` | Kubernetes-compatible name | `my-service` |
 | `{% if feature_kafka %}` | Conditional Kafka code | Feature flag |
 | `{% if feature_s3 %}` | Conditional S3 code | Feature flag |
+| `{{ flagger_prometheus_url_staging }}` | Prometheus URL for staging canary gates | `http://prometheus.observability.svc.cluster.local:9090` |
+| `{{ flagger_prometheus_url_prod }}` | Prometheus URL for prod canary gates | same (dev-only default; set per cluster) |
 
 ---
 
