@@ -174,6 +174,9 @@ jobs:
           canary_success_rate_threshold = "99"
           canary_latency_threshold_ms = "500"
           k6_vus = "10"
+          flagger_prometheus_url_staging = "http://prometheus.staging.svc.cluster.local:9090"
+          flagger_prometheus_url_prod = "http://prometheus.prod.svc.cluster.local:9090"
+          flagger_operator_metrics_server = "http://prometheus.observability.svc.cluster.local:9090"
           TOML_FLAGGER
           fi
 
@@ -232,6 +235,7 @@ jobs:
 
           GENERATED_DIR="$TEMP_DIR/$PROJ_NAME"
           cd "$GENERATED_DIR"
+          echo "GENERATED_DIR=$GENERATED_DIR" >> "$GITHUB_ENV"
 
           echo "Running formatting check"
           cargo fmt --all -- --check
@@ -244,4 +248,72 @@ jobs:
 
           echo "Compiling tests (no run)"
           cargo test --all-features --no-run
+        shell: bash
+
+      - name: Validate Flagger per-env metric gates
+        if: matrix.feature_flagger == 'true'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          curl -sSLo /tmp/yq.tar.gz https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64.tar.gz
+          tar -xzf /tmp/yq.tar.gz -C /tmp && sudo mv /tmp/yq_linux_amd64 /usr/local/bin/yq
+          STAGING_SENTINEL="http://prometheus.staging.svc.cluster.local:9090"
+          PROD_SENTINEL="http://prometheus.prod.svc.cluster.local:9090"
+          DEV_URL="prometheus.observability.svc.cluster.local:9090"
+
+          # The full overlays cannot be kustomize-built directly: the HelmRelease
+          # values patch uses the empty-string services."" key, which kustomize's
+          # strategic merge rejects on every kustomize >= 5.4 (pre-existing,
+          # tracked separately). Validate the flagger surface exactly as the
+          # overlay applies it: component + namespace transformer + the
+          # MetricTemplate address patch extracted verbatim from the generated
+          # overlay file.
+          validate_env() {
+            local overlay="$1" kust_ns="$2" outfile="$3"
+            local tmp="deploy/overlays/.tmp-flagger-validation"
+            rm -rf "$tmp" && mkdir -p "$tmp"
+            {
+              echo "apiVersion: kustomize.config.k8s.io/v1beta1"
+              echo "kind: Kustomization"
+              echo "namespace: $kust_ns"
+              echo "components:"
+              echo "  - ../../components/flagger"
+              yq eval '.patches |= [.[] | select(.target.kind == "MetricTemplate")]' "$overlay"
+            } > "$tmp/kustomization.yaml"
+            kubectl kustomize "$tmp" > "$outfile"
+            rm -rf "$tmp"
+          }
+
+          validate_env deploy/overlays/staging/kustomization.yaml staging /tmp/staging-flagger.yaml
+          validate_env deploy/overlays/prod/kustomization.yaml production /tmp/prod-flagger.yaml
+
+          assert_env() {
+            local env_name="$1" file="$2" mine="$3" other="$4"
+            grep -Fq "$mine" "$file" \
+              || { echo "FAIL: $env_name MetricTemplate address not patched"; exit 1; }
+            if grep -Fq "$other" "$file"; then echo "FAIL: cross-env URL leaked into $env_name"; exit 1; fi
+            if grep -Fq "$DEV_URL" "$file"; then echo "FAIL: dev-only Prometheus URL leaked into $env_name"; exit 1; fi
+            local count
+            count=$(grep -c 'kind: MetricTemplate' "$file" || true)
+            [ "$count" = "3" ] || { echo "FAIL: expected 3 MetricTemplates in $env_name, got $count"; exit 1; }
+            if grep -B1 -A3 'templateRef' "$file" | grep -Fq 'namespace: flagger-system'; then
+              echo "FAIL: templateRef still hardcodes flagger-system namespace"
+              exit 1
+            fi
+          }
+
+          assert_env staging /tmp/staging-flagger.yaml "$STAGING_SENTINEL" "$PROD_SENTINEL"
+          assert_env prod /tmp/prod-flagger.yaml "$PROD_SENTINEL" "$STAGING_SENTINEL"
+
+          # operator kustomization: k6 ConfigMap + applied loadtester patch +
+          # templated metricsServer
+          kubectl kustomize deploy/infrastructure/flagger/operator > /tmp/operator-flagger.yaml
+          grep -Fq 'kind: ConfigMap' /tmp/operator-flagger.yaml \
+            || { echo "FAIL: k6 ConfigMap missing from operator kustomization"; exit 1; }
+          grep -Fq 'mountPath: /scripts' /tmp/operator-flagger.yaml \
+            || { echo "FAIL: loadtester patch not applied"; exit 1; }
+          grep -Fq 'metricsServer: http://prometheus.observability.svc.cluster.local:9090' /tmp/operator-flagger.yaml \
+            || { echo "FAIL: operator metricsServer not templated"; exit 1; }
+
+          echo "Flagger per-env metric gate validation passed"
         shell: bash
