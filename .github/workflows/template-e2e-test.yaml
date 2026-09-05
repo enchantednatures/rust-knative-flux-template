@@ -1003,9 +1003,16 @@ jobs:
 
           # Preflight: the builtin Knative gates query Kourier gateway Envoy
           # stats (via the operator's metrics server) — verify the gateway
-          # actually serves them.
-          GW_POD=$(kubectl get pods -n kourier-system -l app=kourier-gateway \
-            -o jsonpath='{.items[0].metadata.name}')
+          # actually serves them. Select the annotated pod directly (same
+          # signal the Prometheus scrape job keys on).
+          GW_POD=$(kubectl get pods -n kourier-system -o json \
+            | yq eval '.items[] | select(.metadata.annotations["prometheus.io/scrape"] == "true") | .metadata.name' - \
+            | head -1)
+          [ -n "$GW_POD" ] || {
+            echo "❌ no pod in kourier-system carries prometheus.io/scrape=true"
+            kubectl get pods -n kourier-system -o json | yq eval '.items[].metadata.name' -
+            exit 1
+          }
           GW_IP=$(kubectl get pod "$GW_POD" -n kourier-system -o jsonpath='{.status.podIP}')
           GW_STATS=$(kubectl_curl -s "http://${GW_IP}:9000/stats/prometheus" || true)
           if ! echo "$GW_STATS" | grep -q 'envoy_cluster_upstream_rq'; then
