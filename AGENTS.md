@@ -826,9 +826,7 @@ FluxCD GitRepository
         └── deploy/infrastructure/flagger/operator/
               ├── namespace.yaml           # flagger-system namespace
               ├── helmrepository.yaml      # flagger.app Helm repo
-              ├── helmrelease.yaml         # Flagger operator + loadtester
-              ├── k6-configmap.yaml        # k6 rollout load test script (flagger-system)
-              └── loadtester-patch.yaml    # Mounts the k6 ConfigMap into the loadtester
+              └── helmrelease.yaml         # Flagger operator + loadtester
 
 FluxCD Kustomization (app) dependsOn (flagger)
   └── deploy/overlays/staging|prod/kustomization.yaml
@@ -856,7 +854,6 @@ FluxCD Kustomization (app) dependsOn (flagger)
 |---|---|---|
 | `canary_success_rate_threshold` | `99` | Min HTTP success rate % |
 | `canary_latency_threshold_ms` | `500` | Max p99 latency in ms |
-| `k6_vus` | `10` | Number of k6 virtual users during the rollout load test |
 | `flagger_prometheus_url_staging` | dev observability URL | Prometheus queried by staging canary gates |
 | `flagger_prometheus_url_prod` | dev observability URL | Prometheus queried by prod canary gates |
 | `flagger_operator_metrics_server` | dev observability URL | Prometheus for the Flagger operator's built-in checks |
@@ -923,12 +920,11 @@ deploy/
 │   └── metric-templates.yaml    # Custom app metric gate (MetricTemplate)
 ├── infrastructure/flagger/
 │   └── operator/
-│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease + k6 config
+│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease
 │       ├── namespace.yaml       # flagger-system namespace
 │       ├── helmrepository.yaml  # flagger.app Helm chart repository
 │       ├── helmrelease.yaml     # Flagger + loadtester HelmReleases
-│       ├── k6-configmap.yaml    # k6 rollout load test script (flagger-system)
-│       └── loadtester-patch.yaml  # Mounts the k6 ConfigMap into the loadtester
+│       └── helmrelease.yaml     # Flagger + loadtester HelmReleases
 └── flux/
     └── flagger-kustomization.yaml  # FluxCD Kustomization for the operator
 ```

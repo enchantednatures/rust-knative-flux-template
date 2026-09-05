@@ -173,7 +173,6 @@ jobs:
             cat >> "$TEMP_DIR/template-values.toml" <<'TOML_FLAGGER'
           canary_success_rate_threshold = "99"
           canary_latency_threshold_ms = "500"
-          k6_vus = "10"
           flagger_prometheus_url_staging = "http://prometheus.staging.svc.cluster.local:9090"
           flagger_prometheus_url_prod = "http://prometheus.prod.svc.cluster.local:9090"
           flagger_operator_metrics_server = "http://prometheus.observability.svc.cluster.local:9090"
@@ -306,13 +305,12 @@ jobs:
           assert_env staging /tmp/staging-flagger.yaml "$STAGING_SENTINEL" "$PROD_SENTINEL"
           assert_env prod /tmp/prod-flagger.yaml "$PROD_SENTINEL" "$STAGING_SENTINEL"
 
-          # operator kustomization: k6 ConfigMap + applied loadtester patch +
-          # templated metricsServer
+          # operator kustomization: loadtester HelmRelease + templated
+          # metricsServer (webhook commands run hey from the stock image —
+          # no script ConfigMap is mounted)
           kubectl kustomize deploy/infrastructure/flagger/operator > /tmp/operator-flagger.yaml
-          grep -Fq 'kind: ConfigMap' /tmp/operator-flagger.yaml \
-            || { echo "FAIL: k6 ConfigMap missing from operator kustomization"; exit 1; }
-          grep -Fq 'mountPath: /scripts' /tmp/operator-flagger.yaml \
-            || { echo "FAIL: loadtester patch not applied"; exit 1; }
+          grep -Fq 'name: flagger-loadtester' /tmp/operator-flagger.yaml \
+            || { echo "FAIL: loadtester HelmRelease missing from operator kustomization"; exit 1; }
           grep -Fq 'metricsServer: http://prometheus.observability.svc.cluster.local:9090' /tmp/operator-flagger.yaml \
             || { echo "FAIL: operator metricsServer not templated"; exit 1; }
 
