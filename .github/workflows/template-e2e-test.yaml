@@ -989,18 +989,17 @@ jobs:
             kubectl logs -n flagger-system deploy/flagger --tail=60 || true
             exit 1
           }
-          kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s \
-            || {
-              # Flagger sets Initialized before the primary write is visible —
-              # poll for existence, then wait.
-              for i in $(seq 1 60); do
-                kubectl get ksvc/${SERVICE_NAME}-primary >/dev/null 2>&1 && break
-                sleep 5
-              done
-              kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s \
-                || { echo "❌ primary KnativeService never became ready"; kubectl get ksvc; exit 1; }
-            }
-          echo "✓ Canary Initialized — Flagger created the primary KnativeService"
+          # Knative provider: no <svc>-primary KSvc — the primary is pinned via
+          # the flagger.app/primary-revision annotation on the target service.
+          PRIMARY_REV=$(kubectl get ksvc ${SERVICE_NAME} \
+            -o jsonpath='{.metadata.annotations.flagger\.app/primary-revision}')
+          [ -n "$PRIMARY_REV" ] || {
+            echo "❌ flagger.app/primary-revision annotation missing"
+            kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '.metadata.annotations' -
+            kubectl logs -n flagger-system deploy/flagger --tail=60 || true
+            exit 1
+          }
+          echo "✓ Canary Initialized — primary revision pinned: ${PRIMARY_REV}"
 
           # Preflight: the builtin Knative gates query Kourier gateway Envoy
           # stats (via the operator's metrics server) — verify the gateway
@@ -1037,7 +1036,23 @@ jobs:
             kubectl logs -n flagger-system deploy/flagger-loadtester --tail=60 || true
             exit 1
           }
-          echo "✅ Checkpoint 6 passed: Canary promoted (phase=Succeeded, last canaryWeight=${WEIGHT})"
+          # Promotion advances the pinned primary to the canary revision and
+          # consolidates traffic on it.
+          PRIMARY_REV2=$(kubectl get ksvc ${SERVICE_NAME} \
+            -o jsonpath='{.metadata.annotations.flagger\.app/primary-revision}')
+          [ "$PRIMARY_REV2" != "$PRIMARY_REV" ] || {
+            echo "❌ promotion did not advance the primary revision (still ${PRIMARY_REV2})"
+            exit 1
+          }
+          ROUTES=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[] | select(.percent > 0)] | length' -)
+          TOP_PCT=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[].percent] | max' -)
+          [ "$ROUTES" = "1" ] && [ "$TOP_PCT" = "100" ] || {
+            echo "❌ traffic not consolidated after promotion"
+            kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '.status.traffic' -
+            exit 1
+          }
+          echo "✅ Checkpoint 6 passed: Canary promoted (primary=${PRIMARY_REV2})"
+          echo "PROMOTED_REV=${PRIMARY_REV2}" >> "$GITHUB_ENV"
 
       - name: Run Flagger rollback test
         if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
@@ -1074,7 +1089,14 @@ jobs:
             exit 1
           }
 
-          # Rollback semantics: exactly one traffic route at 100% (primary).
+          # Rollback semantics: the promoted primary stays pinned and traffic
+          # consolidates on it.
+          PINNED=$(kubectl get ksvc ${SERVICE_NAME} \
+            -o jsonpath='{.metadata.annotations.flagger\.app/primary-revision}')
+          [ "$PINNED" = "$PROMOTED_REV" ] || {
+            echo "❌ primary revision changed after rollback (pinned: ${PINNED}, promoted: ${PROMOTED_REV})"
+            exit 1
+          }
           ROUTES=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[] | select(.percent > 0)] | length' -)
           TOP_PCT=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[].percent] | max' -)
           echo "Traffic routes >0%: ${ROUTES}, top percent: ${TOP_PCT}"
