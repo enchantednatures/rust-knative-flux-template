@@ -295,7 +295,7 @@ jobs:
             if grep -Fq "$DEV_URL" "$file"; then echo "FAIL: dev-only Prometheus URL leaked into $env_name"; exit 1; fi
             local count
             count=$(grep -c 'kind: MetricTemplate' "$file" || true)
-            [ "$count" = "3" ] || { echo "FAIL: expected 3 MetricTemplates in $env_name, got $count"; exit 1; }
+            [ "$count" = "1" ] || { echo "FAIL: expected 1 MetricTemplate (custom-metric) in $env_name, got $count"; exit 1; }
             if grep -B1 -A3 'templateRef' "$file" | grep -Fq 'namespace: flagger-system'; then
               echo "FAIL: templateRef still hardcodes flagger-system namespace"
               exit 1

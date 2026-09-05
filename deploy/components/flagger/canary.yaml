@@ -35,27 +35,26 @@ spec:
     # Metric gates: all must pass on every interval or the failed-check counter increments
     metrics:
       # Gate 1: HTTP success rate — rollback if < {{ canary_success_rate_threshold }}% of requests succeed
+      # Builtin Flagger observer (no templateRef): for the Knative provider it
+      # queries Kourier gateway Envoy stats through the operator's metrics
+      # server — the gateway is scraped via prometheus.io annotations.
       - name: request-success-rate
-        # Namespace omitted on purpose: Flagger resolves the template in the
-        # Canary's own namespace — the overlay deploys MetricTemplates there,
-        # keeping each environment's Prometheus address isolated per app.
-        templateRef:
-          name: request-success-rate
         thresholdRange:
           min: {{ canary_success_rate_threshold }}
         interval: 1m
 
       # Gate 2: p99 latency — rollback if 99th-percentile latency > {{ canary_latency_threshold_ms }}ms
+      # Builtin observer: Envoy upstream request-time histogram, already in ms.
       - name: request-duration
-        templateRef:
-          name: request-duration
         thresholdRange:
           max: {{ canary_latency_threshold_ms }}
         interval: 1m
 
       # Gate 3: Custom app metric — replace the PromQL in metric-templates.yaml
       # with your own business KPI (e.g. error rate, queue depth, SLO burn rate)
-      # Remove this block if you don't need a custom metric gate
+      # Remove this block if you don't need a custom metric gate.
+      # This gate uses a MetricTemplate (namespace-less ref: resolved in the
+      # Canary's namespace; its provider address is patched per environment).
       - name: {{ project_name | replace: "_", "-" }}-custom-metric
         templateRef:
           name: custom-metric
