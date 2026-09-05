@@ -114,6 +114,26 @@ jobs:
           AWS_SECRET_ACCESS_KEY: minioadmin
           {% endif %}
 
+  {% if feature_flagger %}
+  # ==========================================================================
+  # Manifest Validation - overlays must reference the configured Prometheus
+  # per environment (see docs/FLAGGER.md "Prerequisites")
+  # ==========================================================================
+  manifests:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify per-env canary gate addresses in overlays
+        run: |
+          set -euo pipefail
+          grep -Fq "{{ flagger_prometheus_url_staging }}" deploy/overlays/staging/kustomization.yaml \
+            || { echo "staging overlay does not reference the configured staging Prometheus"; exit 1; }
+          grep -Fq "{{ flagger_prometheus_url_prod }}" deploy/overlays/prod/kustomization.yaml \
+            || { echo "prod overlay does not reference the configured prod Prometheus"; exit 1; }
+  {% endif %}
+
   # ==========================================================================
   # Build & Push Docker Image
   # ==========================================================================
