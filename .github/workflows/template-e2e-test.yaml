@@ -777,10 +777,9 @@ jobs:
               -l app=prometheus \
               -n observability \
               --timeout=60s || { echo "❌ Prometheus not ready"; exit 1; }
-            kubectl wait --for=condition=ready pod \
-              -l app=flagger-loadtester \
-              -n flagger-system \
-              --timeout=60s || { echo "❌ Flagger loadtester not ready"; exit 1; }
+            kubectl rollout status deployment/flagger-loadtester \
+              -n flagger-system --timeout=60s \
+              || { echo "❌ Flagger loadtester not ready"; exit 1; }
             echo "  ✓ Observability + Flagger healthy"
           fi
 
