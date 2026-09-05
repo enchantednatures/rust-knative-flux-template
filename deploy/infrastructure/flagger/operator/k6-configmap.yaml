@@ -35,22 +35,27 @@ data:
     };
 
     // Smoke test export — used by the pre-rollout webhook to validate the
-    // canary revision is alive before shifting any traffic to it.
+    // service is reachable before any traffic is shifted. For the Knative
+    // provider the target URL routes to the primary until Flagger starts
+    // shifting weights, so this is an availability check, not a canary check.
     export function smokeTest() {
       const res = http.get(
-        // FQDN of the canary revision stable URL created by Flagger + Knative.
-        // Cross-namespace traffic from flagger-system requires a full cluster-local FQDN.
-        'http://{{ project_name | replace: "_", "-" }}-canary.{{ target_namespace }}.svc.cluster.local/health/live'
+        // FQDN of the Knative Service under canary control. Cross-namespace
+        // traffic from flagger-system requires a full cluster-local FQDN.
+        'http://{{ project_name | replace: "_", "-" }}.{{ target_namespace }}.svc.cluster.local/health/live'
       );
       check(res, {
         'smoke: status is 200': (r) => r.status === 200,
       });
     }
 
-    // Default export — used by the rollout load test webhook.
+    // Default export — used by the rollout load test webhook. Traffic goes
+    // through the Knative Service Flagger controls, so it lands on the
+    // canary/primary revisions per the analysis weights — which is what the
+    // Kourier gateway Envoy stats (the builtin metric gates) observe.
     export default function () {
       const res = http.get(
-        'http://{{ project_name | replace: "_", "-" }}-canary.{{ target_namespace }}.svc.cluster.local/'
+        'http://{{ project_name | replace: "_", "-" }}.{{ target_namespace }}.svc.cluster.local/'
       );
 
       const ok = check(res, {

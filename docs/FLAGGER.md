@@ -96,11 +96,15 @@ are evaluated; a breach causes a non-zero exit, which Flagger counts as a failed
 Edit `deploy/infrastructure/flagger/operator/k6-configmap.yaml`. The script targets:
 
 ```
-http://{{ project_name | replace: "_", "-" }}-canary.{{ target_namespace }}.svc.cluster.local/
+http://{{ project_name | replace: "_", "-" }}.{{ target_namespace }}.svc.cluster.local/
 ```
 
-The URL uses the full cluster-local FQDN because the loadtester pod runs in the
-`flagger-system` namespace and makes cross-namespace requests.
+For the Knative provider the canary is a **revision of the target service** —
+Flagger shifts analysis weights on that service, so k6 traffic must go through
+its cluster-local FQDN and lands on the canary/primary revisions per the current
+weights. The full FQDN is required because the loadtester pod runs in the
+`flagger-system` namespace and makes cross-namespace requests. The pre-rollout
+smoke test routes to the primary until weights are shifted (availability check).
 
 To change VUs, duration, or thresholds:
 
@@ -261,12 +265,15 @@ webhooks. See the [Flagger alerting docs](https://docs.flagger.app/usage/alertin
 
 ## Cross-Namespace Considerations
 
-The `flagger-loadtester` runs in `flagger-system`. The k6 script targets the canary
-revision using its full cluster-local FQDN:
+The `flagger-loadtester` runs in `flagger-system`. The k6 script targets the
+Knative Service under canary control via its full cluster-local FQDN:
 
 ```
-<service>-canary.<target_namespace>.svc.cluster.local
+<service>.<target_namespace>.svc.cluster.local
 ```
+
+For the Knative provider, Flagger shifts analysis weights on that service, so
+k6 traffic reaches the canary/primary revisions per the current weights.
 
 If your staging and production overlays use different namespaces (e.g. `staging` and
 `production`), you'll need to patch the k6 script or the webhook `cmd` per overlay:

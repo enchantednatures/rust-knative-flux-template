@@ -989,7 +989,17 @@ jobs:
             kubectl logs -n flagger-system deploy/flagger --tail=60 || true
             exit 1
           }
-          kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s
+          kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s \
+            || {
+              # Flagger sets Initialized before the primary write is visible —
+              # poll for existence, then wait.
+              for i in $(seq 1 60); do
+                kubectl get ksvc/${SERVICE_NAME}-primary >/dev/null 2>&1 && break
+                sleep 5
+              done
+              kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s \
+                || { echo "❌ primary KnativeService never became ready"; kubectl get ksvc; exit 1; }
+            }
           echo "✓ Canary Initialized — Flagger created the primary KnativeService"
 
           # Preflight: the builtin Knative gates query Kourier gateway Envoy

@@ -81,7 +81,10 @@ spec:
 
       # Stage 2 — Load test (rollout):
       # Runs on EACH analysis interval while traffic is being shifted.
-      # Calls the k6 default export which targets the canary stable URL.
+      # Calls the k6 default export which targets the Knative Service Flagger
+      # controls — traffic lands on the canary/primary revisions per the
+      # analysis weights, which is what the Kourier gateway Envoy stats (the
+      # builtin metric gates) observe.
       # k6 thresholds (p95 < 500ms, error rate < 1%) act as a hard gate:
       # a threshold breach causes a non-zero exit → Flagger increments the
       # failure counter → rollback after `threshold` consecutive failures.
@@ -90,10 +93,6 @@ spec:
         url: http://flagger-loadtester.flagger-system/gate/halt
         timeout: 2m
         metadata:
-          # Knative creates a stable canary URL:
-          #   <service>-canary.<namespace>.svc.cluster.local
-          # The k6 script targets this FQDN (baked in at generation time).
-          # If staging/prod use different namespaces, patch this per overlay.
           cmd: "k6 run /scripts/canary-test.js"
 
       # Post-promotion notification webhook (optional)
