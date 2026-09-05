@@ -1082,6 +1082,19 @@ jobs:
           kubectl patch ksvc ${SERVICE_NAME} --type merge \
             -p '{"spec":{"template":{"metadata":{"annotations":{"e2e.test/rev":"v3"}}}}}'
           echo ""
+          echo "Waiting for the new analysis cycle to start (phase must leave Succeeded)..."
+          PHASE="Succeeded"
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get canary ${SERVICE_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            [ "$PHASE" != "Succeeded" ] && break
+            sleep 10
+          done
+          [ "$PHASE" != "Succeeded" ] || {
+            echo "❌ canary never left the promoted state — Flagger did not start the v3 analysis"
+            kubectl describe canary ${SERVICE_NAME} || true
+            kubectl logs -n flagger-system deploy/flagger --tail=60 || true
+            exit 1
+          }
           echo "Waiting for the canary to fail and roll back to primary..."
           PHASE=""
           for i in $(seq 1 60); do
