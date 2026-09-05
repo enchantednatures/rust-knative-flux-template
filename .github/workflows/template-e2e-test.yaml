@@ -604,9 +604,23 @@ jobs:
           echo "✓ Checkpoint 3: Validating OCI artifact"
 
           mkdir -p ./oci-verify
-          flux pull artifact \
-            oci://${{ steps.image-meta.outputs.manifest_image }} \
-            --output ./oci-verify
+          # GHCR is occasionally not immediately consistent after a push
+          # (MANIFEST_UNKNOWN right after a 201) — retry the pull.
+          PULL_OK=0
+          for i in 1 2 3 4 5; do
+            if flux pull artifact \
+              oci://${{ steps.image-meta.outputs.manifest_image }} \
+              --output ./oci-verify; then
+              PULL_OK=1
+              break
+            fi
+            echo "  ⚠ artifact pull attempt $i failed (GHCR propagation delay?) — retrying in 5s"
+            sleep 5
+          done
+          [ "$PULL_OK" = "1" ] || {
+            echo "❌ OCI artifact not retrievable after 5 attempts"
+            exit 1
+          }
 
           if [[ ! -f "./oci-verify/all.yaml" ]]; then
             echo "❌ OCI artifact missing all.yaml"
