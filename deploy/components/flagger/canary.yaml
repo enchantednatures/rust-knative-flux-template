@@ -68,12 +68,14 @@ spec:
     webhooks:
       # Stage 1 — Smoke test (pre-rollout):
       # Runs BEFORE any traffic is shifted to the canary revision.
-      # Calls the k6 `smokeTest` export to verify the new revision is alive.
+      # Calls the k6 `smokeTest` export to verify the service is reachable.
       # A non-zero k6 exit code aborts the canary immediately (no traffic shifted).
+      # The k6 run lasts k6's configured duration (1m), so the webhook timeout
+      # must exceed it.
       - name: smoke-test
         type: pre-rollout
-        url: http://flagger-loadtester.flagger-system/gate/halt
-        timeout: 30s
+        url: http://flagger-loadtester.flagger-system/
+        timeout: 2m
         metadata:
           # --export-only runs only the named exported function, not the default.
           # /scripts/canary-test.js is mounted from k6-configmap.yaml.
@@ -90,7 +92,10 @@ spec:
       # failure counter → rollback after `threshold` consecutive failures.
       - name: load-test
         type: rollout
-        url: http://flagger-loadtester.flagger-system/gate/halt
+        # The loadtester's root endpoint executes the webhook command
+        # (flagger >= 1.41 / loadtester 0.32+: /gate/halt is a manual
+        # always-halt gate and must not be used for command webhooks).
+        url: http://flagger-loadtester.flagger-system/
         timeout: 2m
         metadata:
           cmd: "k6 run /scripts/canary-test.js"
