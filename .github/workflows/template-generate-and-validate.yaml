@@ -278,7 +278,8 @@ jobs:
               echo "namespace: $kust_ns"
               echo "components:"
               echo "  - ../../components/flagger"
-              yq eval '.patches |= [.[] | select(.target.kind == "MetricTemplate")]' "$overlay"
+              echo "patches:"
+              yq eval '.patches | map(select(.target.kind == "MetricTemplate"))' "$overlay" | sed 's/^/  /'
             } > "$tmp/kustomization.yaml"
             kubectl kustomize "$tmp" > "$outfile"
             rm -rf "$tmp"

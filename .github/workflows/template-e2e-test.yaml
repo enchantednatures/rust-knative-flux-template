@@ -932,8 +932,9 @@ jobs:
             echo "namespace: default"
             echo "components:"
             echo "  - ../../components/flagger"
-            yq eval '.patches |= [.[] | select(.target.kind == "MetricTemplate")]' \
-              "${GENERATED_DIR}/deploy/overlays/staging/kustomization.yaml"
+            echo "patches:"
+            yq eval '.patches | map(select(.target.kind == "MetricTemplate"))' \
+              "${GENERATED_DIR}/deploy/overlays/staging/kustomization.yaml" | sed 's/^/  /'
             cat <<'PATCH'
             - target:
                 kind: Canary
