@@ -2,7 +2,7 @@
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
-{% if feature_s3 or feature_kafka or event_source_kafka %}
+{% if feature_s3 or feature_kafka or event_source_kafka or feature_flagger %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
@@ -18,6 +18,9 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 - 📤 **Kafka Event Publishing**: Optional event publishing from HTTP handlers
 - 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 spec compliance via vendored axum-cloudevents
 - 📊 **Publisher Metrics**: Built-in Prometheus metrics for event publishing
+{% endif %}
+{% if feature_flagger %}
+- 🚦 **Canary Releases**: Automated progressive delivery with Flagger (Knative provider) + k6 load testing
 {% endif %}
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
 - 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
@@ -525,6 +528,16 @@ Exported metrics:
 - HTTP request duration and count (by method, path, status)
 - Redis connection pool stats
 - Custom application metrics
+
+{% if feature_flagger %}
+### Canary Metric Gates
+
+Flagger evaluates canary gates against Prometheus (see `docs/FLAGGER.md`). The gate
+address is configured **per environment** at generation time
+(`flagger_prometheus_url_{staging,prod}`) and must be reachable from every cluster
+that runs canaries — the defaults point at the dev-only observability stack
+(`make dev-observability`).
+{% endif %}
 
 ### Logs
 

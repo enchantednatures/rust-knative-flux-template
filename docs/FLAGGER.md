@@ -5,6 +5,35 @@ with Knative Serving. When a new image is deployed, Flagger gradually shifts tra
 the new revision while evaluating metric gates and running k6 load tests. If any gate
 fails, the rollout is automatically rolled back.
 
+## Prerequisites
+
+1. **Flagger operator + loadtester** installed cluster-wide (see
+   [Installing the Flagger Operator](#installing-the-flagger-operator)).
+
+2. **A Prometheus reachable from Flagger in every environment that runs canaries.**
+   Without it, every metric gate check fails and — after `threshold` (5) consecutive
+   failures — Flagger rolls back and halts rollouts (safe, but no new revision is
+   ever promoted).
+
+   The gate address is configured **per environment** at generation time:
+
+   | Variable | Used by | Default |
+   |----------|---------|---------|
+   | `flagger_prometheus_url_staging` | staging overlay patch | `http://prometheus.observability.svc.cluster.local:9090` |
+   | `flagger_prometheus_url_prod` | prod overlay patch | same dev URL |
+   | `flagger_operator_metrics_server` | Flagger operator `metricsServer` (cluster-wide install) | same dev URL |
+
+   The default points at the **dev-only** observability stack (`deploy/dev/observability/`,
+   installed by `make dev-observability`). Staging/prod clusters typically have no such
+   endpoint — set each environment's real Prometheus URL during generation. To change it
+   after generation, edit the `MetricTemplate` address patch in
+   `deploy/overlays/{staging,prod}/kustomization.yaml` — that patch is the source of
+   truth; the fallback address in `metric-templates.yaml` is overridden by it.
+
+3. **Prometheus must scrape Knative Serving revision metrics** (`revision_request_count`,
+   `revision_request_latencies_bucket`). The dev observability stack is wired for this;
+   for staging/prod, make sure your Prometheus scrapes Knative's metrics endpoints.
+
 ## How It Works
 
 ```
@@ -43,9 +72,10 @@ into the loadtester pod at `/scripts/canary-test.js`.
 
 | File | Purpose |
 |------|---------|
-| `deploy/components/flagger/k6-configmap.yaml` | ConfigMap containing the k6 script |
-| `deploy/components/flagger/loadtester-patch.yaml` | Patches the loadtester HelmRelease to mount the ConfigMap |
+| `deploy/infrastructure/flagger/operator/k6-configmap.yaml` | ConfigMap containing the k6 script (flagger-system) |
+| `deploy/infrastructure/flagger/operator/loadtester-patch.yaml` | Patches the loadtester HelmRelease to mount the ConfigMap |
 | `deploy/components/flagger/canary.yaml` | Defines the two webhook stages |
+| `deploy/components/flagger/metric-templates.yaml` | Prometheus MetricTemplate CRDs (address patched per environment) |
 
 ### Two-stage webhook workflow
 
@@ -61,7 +91,7 @@ are evaluated; a breach causes a non-zero exit, which Flagger counts as a failed
 
 ### Customizing the k6 script
 
-Edit `deploy/components/flagger/k6-configmap.yaml`. The script targets:
+Edit `deploy/infrastructure/flagger/operator/k6-configmap.yaml`. The script targets:
 
 ```
 http://{{ project_name | replace: "_", "-" }}-canary.{{ target_namespace }}.svc.cluster.local/
@@ -96,6 +126,19 @@ Each 1-minute analysis step must pass all Prometheus metric gates:
 
 Thresholds are defined in `deploy/components/flagger/canary.yaml`.
 PromQL queries are defined in `deploy/components/flagger/metric-templates.yaml`.
+
+All three gates query the Prometheus address configured on each MetricTemplate's
+provider. That address is patched **per environment** in
+`deploy/overlays/{staging,prod}/kustomization.yaml` (JSON6902 patch targeting
+`kind: MetricTemplate`), so staging and prod can point at different Prometheus
+instances. See [Prerequisites](#prerequisites).
+
+The MetricTemplates deploy into the **app namespace** (the overlay's namespace
+transformer applies), and the `templateRef` entries in `canary.yaml` intentionally
+omit `namespace` — Flagger resolves namespace-less templateRefs against the
+Canary's own namespace. Do not re-add `namespace: flagger-system` there: the
+templates do not live in that namespace, and Flagger resolves explicit namespaces
+strictly (no fallback to the Canary's namespace).
 
 ## Installing the Flagger Operator
 
