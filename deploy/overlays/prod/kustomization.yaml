@@ -74,6 +74,18 @@ patches:
                   backoffDelay: "PT2S"
           {% endif %}
 
+  {% if feature_flagger %}
+  # Canary metric gates must query THIS environment's Prometheus. The flagger
+  # component's fallback (dev observability URL) does not exist here.
+  # See docs/FLAGGER.md "Prerequisites".
+  - target:
+      kind: MetricTemplate
+    patch: |-
+      - op: replace
+        path: /spec/provider/address
+        value: "{{ flagger_prometheus_url_prod }}"
+  {% endif %}
+
  {% if feature_s3 %}
 configMapGenerator:
   - name: s3-config
