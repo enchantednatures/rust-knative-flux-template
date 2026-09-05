@@ -4,17 +4,12 @@ kind: Component
 resources:
   - canary.yaml
   - metric-templates.yaml
-  - k6-configmap.yaml
 
-# Patch the flagger-loadtester HelmRelease to mount the k6 script ConfigMap.
-# This targets the HelmRelease in flagger-system (where the operator lives),
-# not the app namespace — the configMap name is service-specific.
-patches:
-  - path: loadtester-patch.yaml
-    target:
-      kind: HelmRelease
-      name: flagger-loadtester
-      namespace: flagger-system
+# The k6 script ConfigMap and the flagger-loadtester HelmRelease patch live in
+# deploy/infrastructure/flagger/operator (flagger-system namespace): the app
+# overlay's namespace transformer would relocate them to the app namespace,
+# where the loadtester pod (in flagger-system) could not mount the ConfigMap,
+# and the patch target (the loadtester HelmRelease) would not exist.
 
 labels:
   - pairs:

@@ -36,10 +36,11 @@ spec:
     metrics:
       # Gate 1: HTTP success rate — rollback if < {{ canary_success_rate_threshold }}% of requests succeed
       - name: request-success-rate
-        # References the MetricTemplate in flagger-system namespace
+        # Namespace omitted on purpose: Flagger resolves the template in the
+        # Canary's own namespace — the overlay deploys MetricTemplates there,
+        # keeping each environment's Prometheus address isolated per app.
         templateRef:
           name: request-success-rate
-          namespace: flagger-system
         thresholdRange:
           min: {{ canary_success_rate_threshold }}
         interval: 1m
@@ -48,7 +49,6 @@ spec:
       - name: request-duration
         templateRef:
           name: request-duration
-          namespace: flagger-system
         thresholdRange:
           max: {{ canary_latency_threshold_ms }}
         interval: 1m
@@ -59,14 +59,13 @@ spec:
       - name: {{ project_name | replace: "_", "-" }}-custom-metric
         templateRef:
           name: custom-metric
-          namespace: flagger-system
         thresholdRange:
           min: 0
         interval: 1m
 
     # Webhooks: executed by the flagger-loadtester at each analysis step.
     # The loadtester pod runs the k6 script mounted from k6-configmap.yaml.
-    # See deploy/components/flagger/k6-configmap.yaml for the script source.
+    # See deploy/infrastructure/flagger/operator/k6-configmap.yaml for the script source.
     webhooks:
       # Stage 1 — Smoke test (pre-rollout):
       # Runs BEFORE any traffic is shifted to the canary revision.
