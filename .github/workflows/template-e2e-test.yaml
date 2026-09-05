@@ -674,9 +674,17 @@ jobs:
           GENERATED_DIR="./generated/${PROJECT_NAME}"
 
           # Operator + loadtester install through the project's own Flux
-          # HelmReleases (chart >= 1.38.0, meshProvider: knative).
+          # HelmReleases (chart >= 1.41.0, meshProvider: knative). The
+          # deployments are created asynchronously by helm-controller — poll
+          # for existence first (kubectl wait errors instantly on missing
+          # resources), then wait for availability.
           kubectl apply -k "${GENERATED_DIR}/deploy/infrastructure/flagger/operator"
 
+          for i in $(seq 1 60); do
+            if kubectl get deployment/flagger deployment/flagger-loadtester \
+                 -n flagger-system >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
           kubectl wait --for=condition=available \
             --timeout=600s \
             -n flagger-system \
