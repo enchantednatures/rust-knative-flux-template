@@ -1014,10 +1014,16 @@ jobs:
             exit 1
           }
           GW_IP=$(kubectl get pod "$GW_POD" -n kourier-system -o jsonpath='{.status.podIP}')
-          GW_STATS=$(kubectl_curl -s "http://${GW_IP}:9000/stats/prometheus" || true)
-          if ! echo "$GW_STATS" | grep -q 'envoy_cluster_upstream_rq'; then
+          # Read via a temp file: 'echo | grep -q' under pipefail turns
+          # grep's early exit into a SIGPIPE failure even on a match.
+          kubectl_curl -s "http://${GW_IP}:9000/stats/prometheus" > /tmp/gw-stats.txt 2>/dev/null || true
+          if ! grep -q 'envoy_cluster_upstream_rq' /tmp/gw-stats.txt; then
             echo "❌ kourier gateway :9000/stats/prometheus serves no envoy_cluster_upstream_rq — builtin gates would have no data"
-            echo "$GW_STATS" | head -20 || true
+            head -30 /tmp/gw-stats.txt || true
+            exit 1
+          fi
+          if ! grep -q "envoy_cluster_name=\"default/${SERVICE_NAME}" /tmp/gw-stats.txt; then
+            echo "❌ no Envoy cluster for the app revision in gateway stats"
             exit 1
           fi
           echo "✓ kourier gateway serves Envoy cluster stats (gate data source verified)"
