@@ -27,14 +27,15 @@ spec:
     # this address per environment (JSON6902 on kind: MetricTemplate — see
     # deploy/overlays/{staging,prod}/kustomization.yaml and docs/FLAGGER.md).
     address: http://prometheus.observability.svc.cluster.local:9090
-  query: |
-    # TODO: Replace with your application-specific metric query.
-    # The variable {% raw %}{{ target }}{% endraw %} resolves to the canary revision name.
-    # The variable {% raw %}{{ namespace }}{% endraw %} resolves to the deployment namespace.
-    #
-    # Example: HTTP 5xx error rate from your app's own counter
-    # sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}", status=~"5.."}[{% raw %}{{ interval }}{% endraw %}]))
-    # / sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}"}[{% raw %}{{ interval }}{% endraw %}]))
-    #
-    # Returning 0 makes this gate always pass until you fill it in.
-    vector(0)
+  query: vector(0)
+
+  # Replace the placeholder above with your application-specific PromQL.
+  # Template variables: {{ target }} (canary revision name), {{ namespace }},
+  # {{ interval }}. Example (error rate from the app's own counter):
+  #   sum(rate(http_requests_total{job="app", status=~"5.."}[{{ interval }}]))
+  #   / sum(rate(http_requests_total{job="app"}[{{ interval }}]))
+  #
+  # IMPORTANT: keep the query free of '#' comment lines and trailing prose —
+  # Flagger collapses the query to a single line (whitespace removal), so a
+  # leading comment turns the whole query into one Prometheus comment and the
+  # gate fails with "no expression found in input". vector(0) always passes.
