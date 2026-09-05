@@ -14,7 +14,7 @@ jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -44,6 +44,16 @@ jobs:
             event_source_kafka: "false"
             project_name: "test-app-with-runner"
             deploy: "false"
+
+          - scenario: with-flagger
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "true"
+            feature_gha_runner: "false"
+            event_source_kafka: "false"
+            project_name: "test-app-with-flagger"
+            deploy: "true"
 
     env:
       SCENARIO: ${{ matrix.scenario }}
@@ -80,6 +90,48 @@ jobs:
             curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
             sudo mv kustomize /usr/local/bin/
           fi
+
+          # Shared deterministic HTTP probe: detached pod + poll + logs —
+          # cannot lose stdout on fast-exit containers (k8s attach race:
+          # kubernetes#27264, #28695). Sourced by the probe and canary steps.
+          cat > /tmp/kubectl_curl.sh <<'KUBECTL_CURL_EOF'
+          kubectl_curl() {
+            local pod exit_code output phase i
+            pod="curl-e2e-$RANDOM-$$"
+            if ! kubectl run "$pod" --image=curlimages/curl:latest --restart=Never --quiet \
+                 --command -- curl "$@" >/dev/null 2>&1; then
+              echo "  ⚠ kubectl run failed to create probe pod $pod" >&2
+              return 1
+            fi
+            phase=""; i=0
+            while [ "$i" -lt 90 ]; do
+              phase=$(kubectl get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+              case "$phase" in Succeeded|Failed) break ;; esac
+              sleep 1; i=$((i + 1))
+            done
+            if [ "$phase" != "Succeeded" ] && [ "$phase" != "Failed" ]; then
+              echo "  ⚠ probe pod $pod did not finish within 90s (phase=$phase)" >&2
+              kubectl describe pod "$pod" 2>/dev/null | tail -20 >&2 || true
+              kubectl delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+              return 1
+            fi
+            exit_code=$(kubectl get pod "$pod" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null)
+            [ -n "$exit_code" ] || exit_code=1
+            output=$(kubectl logs "$pod" 2>/dev/null || true)
+            kubectl delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+            echo "$output" | awk '
+              BEGIN { body=0; saw_header=0 }
+              /^pod.*/ { next }
+              /^HTTP\// { saw_header=1; next }
+              /^< HTTP\// { saw_header=1; next }
+              /^< [A-Za-z-]+:/ { saw_header=1; next }
+              /^[A-Za-z-]+:/ { saw_header=1; next }
+              /^$/ { if (saw_header) { body=1; next } }
+              { if (!saw_header || body) print }
+            '
+            return "$exit_code"
+          }
+          KUBECTL_CURL_EOF
 
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -160,6 +212,20 @@ jobs:
           gha_runner_storage_class = "openebs-hostpath"
           gha_runner_priority_class = "actions-runner-high-priority"
           gha_runner_storage_size = "50Gi"
+          EOF
+          fi
+
+          # Flagger values (prompted when feature_flagger = true). All three
+          # Prometheus URLs use the dev observability address on purpose: the
+          # in-cluster Prometheus of this E2E installs at exactly that address.
+          if [ "${{ matrix.feature_flagger }}" = "true" ]; then
+            cat >> template-values.toml <<EOF
+          canary_success_rate_threshold = "99"
+          canary_latency_threshold_ms = "500"
+          k6_vus = "10"
+          flagger_prometheus_url_staging = "http://prometheus.observability.svc.cluster.local:9090"
+          flagger_prometheus_url_prod = "http://prometheus.observability.svc.cluster.local:9090"
+          flagger_operator_metrics_server = "http://prometheus.observability.svc.cluster.local:9090"
           EOF
           fi
 
@@ -588,6 +654,46 @@ jobs:
             deployment/controller \
             deployment/webhook
 
+      - name: Install Observability (canary prerequisites)
+        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          # The canary metric gates need Prometheus scraping the kourier
+          # gateway (annotation-based job in the dev observability config).
+          kubectl apply -k "${GENERATED_DIR}/deploy/dev/observability"
+
+          kubectl wait --for=condition=available \
+            --timeout=300s \
+            -n observability \
+            deployment/prometheus deployment/jaeger deployment/otel-collector
+
+      - name: Install Flagger operator (canary test)
+        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          # Operator + loadtester install through the project's own Flux
+          # HelmReleases (chart >= 1.38.0, meshProvider: knative).
+          kubectl apply -k "${GENERATED_DIR}/deploy/infrastructure/flagger/operator"
+
+          kubectl wait --for=condition=available \
+            --timeout=600s \
+            -n flagger-system \
+            deployment/flagger deployment/flagger-loadtester \
+            || {
+              echo "❌ Flagger stack did not become ready"
+              kubectl get helmreleases,helmrepositories -A
+              kubectl get pods -n flagger-system
+              kubectl describe helmrelease/flagger -n flagger-system | tail -20
+              kubectl logs -n flux-system deployment/helm-controller --tail=30
+              exit 1
+            }
+
+          kubectl rollout status deploy/flagger -n flagger-system --timeout=120s
+          kubectl rollout status deploy/flagger-loadtester -n flagger-system --timeout=120s
+          echo "✓ Flagger operator + loadtester ready"
+
       - name: Install Redis
         if: matrix.deploy == 'true'
         run: |
@@ -654,6 +760,20 @@ jobs:
               -l app=minio \
               --timeout=60s || { echo "❌ MinIO not ready"; exit 1; }
             echo "  ✓ MinIO healthy"
+          fi
+
+          if [ "${{ matrix.feature_flagger }}" = "true" ]; then
+            echo ""
+            echo "Checking Prometheus + Flagger stack..."
+            kubectl wait --for=condition=ready pod \
+              -l app=prometheus \
+              -n observability \
+              --timeout=60s || { echo "❌ Prometheus not ready"; exit 1; }
+            kubectl wait --for=condition=ready pod \
+              -l app=flagger-loadtester \
+              -n flagger-system \
+              --timeout=60s || { echo "❌ Flagger loadtester not ready"; exit 1; }
+            echo "  ✓ Observability + Flagger healthy"
           fi
 
           echo "✅ Checkpoint 4 passed: All cluster dependencies healthy"
@@ -779,6 +899,160 @@ jobs:
 
           echo "✅ Checkpoint 5 passed: Application deployed and ready"
 
+      - name: Run Flagger canary promotion test
+        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
+        run: |
+          set -euo pipefail
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+          source /tmp/kubectl_curl.sh
+
+          # Flux re-applies the rendered manifests every 1m and would revert
+          # manual KnativeService template changes. Suspend the app
+          # Kustomization so revision bumps stick during the canary test.
+          flux suspend kustomization ${PROJECT_NAME} -n flux-system
+
+          # Render the canary surface exactly as the staging overlay applies
+          # it: component + namespace transformer + the MetricTemplate address
+          # patch pulled verbatim from the generated overlay (yq), plus
+          # CI-speed analysis params (shipped canary.yaml keeps production
+          # defaults). The extracted address is the dev observability URL,
+          # which is where the E2E Prometheus actually runs.
+          CANARY_TMP="${GENERATED_DIR}/deploy/overlays/.canary-e2e"
+          rm -rf "$CANARY_TMP" && mkdir -p "$CANARY_TMP"
+          {
+            echo "apiVersion: kustomize.config.k8s.io/v1beta1"
+            echo "kind: Kustomization"
+            echo "namespace: default"
+            echo "components:"
+            echo "  - ../../components/flagger"
+            yq eval '.patches |= [.[] | select(.target.kind == "MetricTemplate")]' \
+              "${GENERATED_DIR}/deploy/overlays/staging/kustomization.yaml"
+            cat <<'PATCH'
+            - target:
+                kind: Canary
+              patch: |-
+                - op: replace
+                  path: /spec/analysis/interval
+                  value: 30s
+                - op: replace
+                  path: /spec/analysis/stepWeight
+                  value: 50
+                - op: replace
+                  path: /spec/analysis/maxWeight
+                  value: 50
+                - op: replace
+                  path: /spec/analysis/threshold
+                  value: 1
+                - op: replace
+                  path: /spec/progressDeadlineSeconds
+                  value: 600
+          PATCH
+          } > "$CANARY_TMP/kustomization.yaml"
+          kustomize build "$CANARY_TMP" > /tmp/canary-rendered.yaml
+          grep -E '^kind:|prometheus' /tmp/canary-rendered.yaml | head -8 || true
+          kubectl apply -f /tmp/canary-rendered.yaml
+          rm -rf "$CANARY_TMP"
+
+          echo ""
+          echo "Waiting for the canary to be Initialized (Flagger adopts the KSvc)..."
+          PHASE=""
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get canary ${SERVICE_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            [ "$PHASE" = "Initialized" ] && break
+            sleep 5
+          done
+          [ "$PHASE" = "Initialized" ] || {
+            echo "❌ Canary never reached Initialized (phase: '$PHASE')"
+            kubectl describe canary ${SERVICE_NAME} || true
+            kubectl logs -n flagger-system deploy/flagger --tail=60 || true
+            exit 1
+          }
+          kubectl wait --for=condition=ready ksvc/${SERVICE_NAME}-primary --timeout=300s
+          echo "✓ Canary Initialized — Flagger created the primary KnativeService"
+
+          # Preflight: the builtin Knative gates query Kourier gateway Envoy
+          # stats (via the operator's metrics server) — verify the gateway
+          # actually serves them.
+          GW_POD=$(kubectl get pods -n kourier-system -l app=kourier-gateway \
+            -o jsonpath='{.items[0].metadata.name}')
+          GW_IP=$(kubectl get pod "$GW_POD" -n kourier-system -o jsonpath='{.status.podIP}')
+          GW_STATS=$(kubectl_curl -s "http://${GW_IP}:9000/stats/prometheus" || true)
+          if ! echo "$GW_STATS" | grep -q 'envoy_cluster_upstream_rq'; then
+            echo "❌ kourier gateway :9000/stats/prometheus serves no envoy_cluster_upstream_rq — builtin gates would have no data"
+            echo "$GW_STATS" | head -20 || true
+            exit 1
+          fi
+          echo "✓ kourier gateway serves Envoy cluster stats (gate data source verified)"
+
+          # Trigger v2: a pod-template annotation change creates a new revision.
+          kubectl patch ksvc ${SERVICE_NAME} --type merge \
+            -p '{"spec":{"template":{"metadata":{"annotations":{"e2e.test/rev":"v2"}}}}}'
+          echo ""
+          echo "Waiting for canary analysis (interval 30s, single 50% step, k6 load test per step)..."
+          PHASE=""; WEIGHT="0"
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get canary ${SERVICE_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            WEIGHT=$(kubectl get canary ${SERVICE_NAME} -o jsonpath='{.status.canaryWeight}' 2>/dev/null || echo "?")
+            echo "  phase=${PHASE} canaryWeight=${WEIGHT}"
+            [ "$PHASE" = "Succeeded" ] && break
+            [ "$PHASE" = "Failed" ] && break
+            sleep 15
+          done
+          [ "$PHASE" = "Succeeded" ] || {
+            echo "❌ Canary promotion failed (phase: '$PHASE')"
+            kubectl describe canary ${SERVICE_NAME} || true
+            kubectl logs -n flagger-system deploy/flagger --tail=120 || true
+            kubectl logs -n flagger-system deploy/flagger-loadtester --tail=60 || true
+            exit 1
+          }
+          echo "✅ Checkpoint 6 passed: Canary promoted (phase=Succeeded, last canaryWeight=${WEIGHT})"
+
+      - name: Run Flagger rollback test
+        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
+        run: |
+          set -euo pipefail
+          source /tmp/kubectl_curl.sh
+
+          # Make the custom-metric gate deterministically failing: the
+          # placeholder query returns vector(0), so with min=2 every analysis
+          # step fails and threshold=1 triggers an immediate rollback.
+          kubectl patch canary ${SERVICE_NAME} --type=json \
+            -p='[{"op":"replace","path":"/spec/analysis/metrics/2/thresholdRange/min","value":2}]'
+
+          # Trigger v3.
+          kubectl patch ksvc ${SERVICE_NAME} --type merge \
+            -p '{"spec":{"template":{"metadata":{"annotations":{"e2e.test/rev":"v3"}}}}}'
+          echo ""
+          echo "Waiting for the canary to fail and roll back to primary..."
+          PHASE=""
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get canary ${SERVICE_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            echo "  phase=${PHASE}"
+            [ "$PHASE" = "Failed" ] && break
+            if [ "$PHASE" = "Succeeded" ]; then
+              echo "❌ Rollback test unexpectedly succeeded — the failing gate did not fail"
+              exit 1
+            fi
+            sleep 15
+          done
+          [ "$PHASE" = "Failed" ] || {
+            echo "❌ Canary never reached Failed (phase: '$PHASE')"
+            kubectl describe canary ${SERVICE_NAME} || true
+            kubectl logs -n flagger-system deploy/flagger --tail=120 || true
+            exit 1
+          }
+
+          # Rollback semantics: exactly one traffic route at 100% (primary).
+          ROUTES=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[] | select(.percent > 0)] | length' -)
+          TOP_PCT=$(kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '[.status.traffic[].percent] | max' -)
+          echo "Traffic routes >0%: ${ROUTES}, top percent: ${TOP_PCT}"
+          [ "$ROUTES" = "1" ] && [ "$TOP_PCT" = "100" ] || {
+            echo "❌ Traffic not restored to primary after rollback"
+            kubectl get ksvc ${SERVICE_NAME} -o json | yq eval '.status.traffic' -
+            exit 1
+          }
+          echo "✅ Checkpoint 7 passed: Rollback verified (phase=Failed, traffic restored to primary)"
+
       - name: Get application URL
         if: matrix.deploy == 'true'
         id: app-url
@@ -795,52 +1069,10 @@ jobs:
         run: |
           echo "Running E2E tests against: ${SERVICE_URL}"
 
-          # Run curl inside the cluster via a detached pod, then read results
-          # from pod state. Unlike `kubectl run --rm -i` (attach), this cannot
-          # lose the container's stdout when it exits quickly (k8s attach
-          # race: kubernetes#27264, #28695).
-          kubectl_curl() {
-            local pod exit_code output phase i
-            pod="curl-e2e-$RANDOM-$$"
-            # 1. Create detached pod (no attach, no --rm)
-            if ! kubectl run "$pod" --image=curlimages/curl:latest --restart=Never --quiet \
-                 --command -- curl "$@" >/dev/null 2>&1; then
-              echo "  ⚠ kubectl run failed to create probe pod $pod" >&2
-              return 1
-            fi
-            # 2. Poll until terminal phase (covers first image pull, ~5-15s)
-            phase=""; i=0
-            while [ "$i" -lt 90 ]; do
-              phase=$(kubectl get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)
-              case "$phase" in Succeeded|Failed) break ;; esac
-              sleep 1; i=$((i + 1))
-            done
-            if [ "$phase" != "Succeeded" ] && [ "$phase" != "Failed" ]; then
-              echo "  ⚠ probe pod $pod did not finish within 90s (phase=$phase)" >&2
-              kubectl describe pod "$pod" 2>/dev/null | tail -20 >&2 || true
-              kubectl delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
-              return 1
-            fi
-            # 3. Exit code from terminated container state (fail-closed default)
-            exit_code=$(kubectl get pod "$pod" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null)
-            [ -n "$exit_code" ] || exit_code=1
-            # 4. Durable, complete output (valid for terminated containers)
-            output=$(kubectl logs "$pod" 2>/dev/null || true)
-            # 5. Cleanup without hanging
-            kubectl delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
-            # Filter out residual pod noise and HTTP headers, keep response body
-            echo "$output" | awk '
-              BEGIN { body=0; saw_header=0 }
-              /^pod.*/ { next }
-              /^HTTP\// { saw_header=1; next }
-              /^< HTTP\// { saw_header=1; next }
-              /^< [A-Za-z-]+:/ { saw_header=1; next }
-              /^[A-Za-z-]+:/ { saw_header=1; next }
-              /^$/ { if (saw_header) { body=1; next } }
-              { if (!saw_header || body) print }
-            '
-            return "$exit_code"
-          }
+          # Deterministic HTTP probe (shared helper written by the
+          # dependencies-install step): detached pod + poll + logs — cannot
+          # lose stdout on fast-exit containers.
+          source /tmp/kubectl_curl.sh
 
           FAILED=0
 
