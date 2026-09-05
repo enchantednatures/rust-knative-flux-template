@@ -1,70 +1,8 @@
 ---
-# MetricTemplate: HTTP request success rate
-# Queries the Prometheus instance already scraping Knative revision pods.
-# Flagger evaluates this against the canary revision's traffic subset.
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: request-success-rate
-  namespace: flagger-system
-spec:
-  provider:
-    type: prometheus
-    # Points to the in-cluster Prometheus deployed by this template's observability stack.
-    # Update to your Prometheus service address if different.
-    address: http://prometheus.observability.svc.cluster.local:9090
-  query: |
-    100 - sum(
-      rate(
-        revision_request_count{
-          namespace="{% raw %}{{ namespace }}{% endraw %}",
-          configuration_name="{% raw %}{{ target }}{% endraw %}",
-          response_code_class!="2xx"
-        }[{% raw %}{{ interval }}{% endraw %}]
-      )
-    )
-    /
-    sum(
-      rate(
-        revision_request_count{
-          namespace="{% raw %}{{ namespace }}{% endraw %}",
-          configuration_name="{% raw %}{{ target }}{% endraw %}"
-        }[{% raw %}{{ interval }}{% endraw %}]
-      )
-    ) * 100
-
----
-# MetricTemplate: p99 request latency in milliseconds
-# Rollback if the 99th-percentile response time exceeds the configured threshold.
-#
-# Knative Serving exposes revision_request_latencies as a histogram whose bucket
-# boundaries are in MILLISECONDS. The histogram_quantile result is therefore
-# already in ms — no unit conversion is needed.
-# Threshold in canary.yaml is compared directly in ms (e.g. max: 500 = 500ms).
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: request-duration
-  namespace: flagger-system
-spec:
-  provider:
-    type: prometheus
-    address: http://prometheus.observability.svc.cluster.local:9090
-  query: |
-    histogram_quantile(
-      0.99,
-      sum(
-        rate(
-          revision_request_latencies_bucket{
-            namespace="{% raw %}{{ namespace }}{% endraw %}",
-            configuration_name="{% raw %}{{ target }}{% endraw %}"
-          }[{% raw %}{{ interval }}{% endraw %}]
-        )
-      ) by (le)
-    )
-
----
-# MetricTemplate: Custom application metric
+# Custom app-metric gate — the only MetricTemplate in this component.
+# Flagger's builtin request-success-rate / request-duration gates do NOT use
+# templates for the Knative provider: they are resolved by metric name from
+# the operator's metrics server (Kourier gateway Envoy stats).
 #
 # Replace the query below with a PromQL expression that reflects a business KPI
 # or application-level SLO for your service. This template is a placeholder — if
@@ -85,15 +23,19 @@ metadata:
 spec:
   provider:
     type: prometheus
+    # Default: the dev observability Prometheus. Staging/prod overlays patch
+    # this address per environment (JSON6902 on kind: MetricTemplate — see
+    # deploy/overlays/{staging,prod}/kustomization.yaml and docs/FLAGGER.md).
     address: http://prometheus.observability.svc.cluster.local:9090
-  query: |
-    # TODO: Replace with your application-specific metric query.
-    # The variable {% raw %}{{ target }}{% endraw %} resolves to the Knative configuration name (== service name).
-    # The variable {% raw %}{{ namespace }}{% endraw %} resolves to the deployment namespace.
-    #
-    # Example: HTTP 5xx error rate from your app's own counter
-    # sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}", status=~"5.."}[{% raw %}{{ interval }}{% endraw %}]))
-    # / sum(rate(http_requests_total{job="{% raw %}{{ target }}{% endraw %}"}[{% raw %}{{ interval }}{% endraw %}]))
-    #
-    # Returning 0 makes this gate always pass until you fill it in.
-    vector(0)
+  query: vector(0)
+
+  # Replace the placeholder above with your application-specific PromQL.
+  # Template variables: {{ target }} (canary revision name), {{ namespace }},
+  # {{ interval }}. Example (error rate from the app's own counter):
+  #   sum(rate(http_requests_total{job="app", status=~"5.."}[{{ interval }}]))
+  #   / sum(rate(http_requests_total{job="app"}[{{ interval }}]))
+  #
+  # IMPORTANT: keep the query free of '#' comment lines and trailing prose —
+  # Flagger collapses the query to a single line (whitespace removal), so a
+  # leading comment turns the whole query into one Prometheus comment and the
+  # gate fails with "no expression found in input". vector(0) always passes.
