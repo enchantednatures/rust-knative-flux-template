@@ -30,10 +30,13 @@ spec:
     # No Istio, Linkerd, or other service mesh is required.
     meshProvider: knative
 
-    # Point Flagger at the in-cluster Prometheus already deployed by this
-    # template's observability stack (deploy/dev/observability/prometheus.yaml).
-    # Update the address if your Prometheus is in a different namespace/service.
-    metricsServer: http://prometheus.observability.svc.cluster.local:9090
+    # Prometheus used by the Flagger operator's built-in metric checks. All
+    # canary gates in this template instead query per-environment addresses
+    # via their MetricTemplates (patched per overlay — see
+    # deploy/overlays/{staging,prod}/kustomization.yaml and docs/FLAGGER.md).
+    # This operator install is cluster-wide: override in cluster management
+    # tooling if this cluster's Prometheus lives elsewhere.
+    metricsServer: "{{ flagger_operator_metrics_server }}"
 
     # Cluster-wide watch — Flagger will manage Canary objects in all namespaces
     clusterName: ""

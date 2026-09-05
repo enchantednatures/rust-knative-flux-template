@@ -164,6 +164,8 @@ k6_vus = { prompt = "Number of k6 virtual users for canary load test", type = "s
 flagger_prometheus_url_staging = { prompt = "Prometheus URL for staging canary metric gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
 # Prometheus URL queried by canary metric gates in prod (patched into the flagger component)
 flagger_prometheus_url_prod = { prompt = "Prometheus URL for prod canary metric gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
+# Prometheus URL for the Flagger operator's built-in metric checks (cluster-wide install)
+flagger_operator_metrics_server = { prompt = "Prometheus URL for the Flagger operator metrics server", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
 
 [conditional.'!feature_flagger']
 ignore = [
