@@ -288,3 +288,11 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 .PHONY: dev staging prod production development
 dev staging prod production development:
 	@:
+
+# ============================================================================
+# Production Setup Commands
+# ============================================================================
+
+.PHONY: prod-github-env
+prod-github-env: ## Create GitHub 'production' environment + branch policies (local-only; requires gh auth)
+	@GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' ./scripts/prod/create-github-env.sh || { echo "${RED}✗ Failed to create GitHub environment${NC}"; exit 1; }
