@@ -26,6 +26,7 @@ ignore = [
   "scripts/README.md",
   "CHANGELOG-LOCAL-E2E.md",
   "scripts/test-template-matrix.sh",
+  "scripts/test-prod-deploy-static.sh",
   "template-values.toml",
 ]
 
