@@ -96,6 +96,8 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
     make bootstrap production
     ```
 
+    For the one-command production flow (`make prod-deploy`), GitHub Actions deploys, and deploy-key setup, see [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) in the deployment guide.
+
 {% if event_source_kafka %}
 #### Kafka Event Source Deployment
 
@@ -743,6 +745,8 @@ kubectl apply -k deploy/overlays/staging
 # Production
 kubectl apply -k deploy/overlays/prod
 ```
+
+For the one-command production flow (`make prod-deploy`), GitHub Actions deploys, and deploy-key setup, see [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) in the deployment guide.
 
 ## Project Structure
 
