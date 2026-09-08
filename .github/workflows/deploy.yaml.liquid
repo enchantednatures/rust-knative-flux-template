@@ -1,0 +1,76 @@
+name: Deploy Production
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Pinned tool versions — deploys must be reproducible (never floating tags)
+env:
+  KUBECTL_VERSION: v1.31.4
+  FLUX_VERSION: v2.4.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "prod-deploy-{% raw %}${{ github.ref }}{% endraw %}"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install kubectl
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Install flux CLI
+        run: |
+          set -euo pipefail
+          FLUX_VER="${FLUX_VERSION#v}"
+          curl -fsSL \
+            "https://github.com/fluxcd/flux2/releases/download/${FLUX_VERSION}/flux_${FLUX_VER}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin flux
+          chmod +x /usr/local/bin/flux
+          flux --version
+
+      {% unless feature_gha_runner %}
+      - name: Write production kubeconfig
+        env:
+          PROD_KUBECONFIG: {% raw %}${{ secrets.PROD_KUBECONFIG }}{% endraw %}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PROD_KUBECONFIG:-}" ]]; then
+            echo "✗ set the PROD_KUBECONFIG secret in the production environment"
+            exit 1
+          fi
+          # Never echo secret content — write to a 0600 file and export via GITHUB_ENV
+          umask 077
+          printf '%s' "$PROD_KUBECONFIG" > "$GITHUB_WORKSPACE/.kubeconfig-prod"
+          echo "KUBECONFIG=$GITHUB_WORKSPACE/.kubeconfig-prod" >> "$GITHUB_ENV"
+      {% endunless %}
+
+      - name: Deploy semantics note
+        run: |
+          echo "Flux deploys the default branch + image automation tags — a tag push triggers deployment of the current main ref, not the tag itself"
+
+      - name: Deploy to production
+        run: make prod-deploy
+
+      - name: Deploy diagnostics
+        if: failure()
+        run: |
+          echo "Deploy failed — dumping Flux resource states..."
+          kubectl get kustomization,gitrepository,helmrelease -A --no-headers || true
