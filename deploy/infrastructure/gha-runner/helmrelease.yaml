@@ -52,6 +52,7 @@ spec:
     template:
       spec:
         priorityClassName: {{ gha_runner_priority_class }}
+        serviceAccountName: {{ project_name | replace: "_", "-" }}-runner
         containers:
           - name: runner
             image: ghcr.io/actions/actions-runner:{{ gha_runner_image_tag }}

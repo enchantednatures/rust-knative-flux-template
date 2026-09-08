@@ -1,0 +1,183 @@
+# =============================================================================
+# Runner ServiceAccount + RBAC (in-cluster kubectl access for prod deploy)
+# =============================================================================
+# The ARC runner pod (created in actions-runner-system) executes the prod-deploy
+# flow with in-cluster kubectl. Access is namespace-scoped ONLY — no
+# cluster-scoped roles or bindings:
+#
+#   flux-system  — Flux reconciliation objects (apply + wait steps) and the
+#                  github-deploy-key secret (deploy key auto-creation)
+#   production   — Knative services (wait + URL) and smoke-test pod lifecycle
+#
+# Both RoleBindings reference the runner ServiceAccount in its OWN namespace
+# (actions-runner-system) — ARC creates runner pods there.
+# =============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner
+  namespace: actions-runner-system
+  labels:
+    app.kubernetes.io/managed-by: flux
+
+---
+# ── flux-system: Flux CRs + deploy-key secret ────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-flux
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/managed-by: flux
+rules:
+  # GitRepository apply + wait steps
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - gitrepositories
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+  # HelmChart reads (wait steps / reconciliation diagnostics)
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmcharts
+    verbs:
+      - get
+      - list
+      - watch
+  # HelmRelease apply + wait steps
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+  # Kustomization apply + wait steps
+  - apiGroups:
+      - kustomize.toolkit.fluxcd.io
+    resources:
+      - kustomizations
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+  # Deploy key creation (flux create secret git github-deploy-key)
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+{% if enable_image_updates %}
+  # Image automation CRs (ImageUpdateAutomation commits new image tags)
+  - apiGroups:
+      - image.toolkit.fluxcd.io
+    resources:
+      - imagerepositories
+      - imagepolicies
+      - imageupdateautomations
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+{% endif %}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-flux
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/managed-by: flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ project_name | replace: "_", "-" }}-runner-flux
+subjects:
+  - kind: ServiceAccount
+    name: {{ project_name | replace: "_", "-" }}-runner
+    namespace: actions-runner-system
+
+---
+# ── production: Knative service reads + smoke-test pod lifecycle ─────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-production
+  namespace: production
+  labels:
+    app.kubernetes.io/managed-by: flux
+rules:
+  # Knative service wait + URL extraction (ksvc is the short name for services)
+  - apiGroups:
+      - serving.knative.dev
+    resources:
+      - ksvc
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  # Detached smoke-test curl pods (create, poll phase, delete)
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+  # Smoke-test pod logs (diagnostics)
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  # Event reads (diagnostic dump on failure)
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-production
+  namespace: production
+  labels:
+    app.kubernetes.io/managed-by: flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ project_name | replace: "_", "-" }}-runner-production
+subjects:
+  - kind: ServiceAccount
+    name: {{ project_name | replace: "_", "-" }}-runner
+    namespace: actions-runner-system
