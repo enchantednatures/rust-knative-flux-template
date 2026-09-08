@@ -16,60 +16,83 @@ patches:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
     patch: |-
-      apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      metadata:
-        name: {{ project_name | replace: "_", "-" }}
-      spec:
-        values:
-          services:
-            "":
-              scaling:
-                minScale: {% if use_default_scaling %}1{% else %}{{ staging_min_scale }}{% endif %}
-                maxScale: {% if use_default_scaling %}5{% else %}{{ staging_max_scale }}{% endif %}
-              resources:
-                requests:
-                  cpu: "{% if use_default_scaling %}200m{% else %}{{ staging_cpu_request }}{% endif %}"
-                  memory: "{% if use_default_scaling %}128Mi{% else %}{{ staging_memory_request }}{% endif %}"
-                limits:
-                  cpu: "{% if use_default_scaling %}800m{% else %}{{ staging_cpu_limit }}{% endif %}"
-                  memory: "{% if use_default_scaling %}384Mi{% else %}{{ staging_memory_limit }}{% endif %}"
-          {% if feature_postgres %}
-          postgres:
-            instances: 2
-            parameters:
-              synchronous_commit: "on"
-              shared_buffers: "512Mi"
-              max_connections: "200"
-            resources:
-              requests:
-                cpu: "750m"
-                memory: "1Gi"
-              limits:
-                cpu: "1500m"
-                memory: "2Gi"
-            storage:
-              size: "100Gi"
-            backup:
-              objectStore:
-                destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/staging/"
-                data:
-                  compression: zstd
-                  jobs: 2
-                wal:
-                  compression: zstd
-                  maxParallel: 4
-              retentionPolicy: "{{ backup_retention_staging }}d"
-          {% endif %}
-          {% if event_source_kafka %}
-          kafka:
-            sources:
-              {{ kafka_topic }}:
-                bootstrapServers:
-                  - "{{ kafka_bootstrap_servers_staging }}"
-                consumers: 5
-                initialOffset: earliest
-          {% endif %}
+      - op: replace
+        path: /spec/values/services//scaling/minScale
+        value: {% if use_default_scaling %}1{% else %}{{ staging_min_scale }}{% endif %}
+      - op: replace
+        path: /spec/values/services//scaling/maxScale
+        value: {% if use_default_scaling %}5{% else %}{{ staging_max_scale }}{% endif %}
+      - op: replace
+        path: /spec/values/services//resources/requests/cpu
+        value: "{% if use_default_scaling %}200m{% else %}{{ staging_cpu_request }}{% endif %}"
+      - op: replace
+        path: /spec/values/services//resources/requests/memory
+        value: "{% if use_default_scaling %}128Mi{% else %}{{ staging_memory_request }}{% endif %}"
+      - op: replace
+        path: /spec/values/services//resources/limits/cpu
+        value: "{% if use_default_scaling %}800m{% else %}{{ staging_cpu_limit }}{% endif %}"
+      - op: replace
+        path: /spec/values/services//resources/limits/memory
+        value: "{% if use_default_scaling %}384Mi{% else %}{{ staging_memory_limit }}{% endif %}"
+      {% if feature_postgres %}
+      - op: replace
+        path: /spec/values/postgres/instances
+        value: 2
+      - op: replace
+        path: /spec/values/postgres/parameters/synchronous_commit
+        value: "on"
+      - op: replace
+        path: /spec/values/postgres/parameters/shared_buffers
+        value: "512Mi"
+      - op: replace
+        path: /spec/values/postgres/parameters/max_connections
+        value: "200"
+      - op: replace
+        path: /spec/values/postgres/resources/requests/cpu
+        value: "750m"
+      - op: replace
+        path: /spec/values/postgres/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/values/postgres/resources/limits/cpu
+        value: "1500m"
+      - op: replace
+        path: /spec/values/postgres/resources/limits/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/values/postgres/storage/size
+        value: "100Gi"
+      - op: replace
+        path: /spec/values/postgres/backup/objectStore/destinationPath
+        value: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/staging/"
+      - op: replace
+        path: /spec/values/postgres/backup/objectStore/data/compression
+        value: zstd
+      - op: replace
+        path: /spec/values/postgres/backup/objectStore/data/jobs
+        value: 2
+      - op: replace
+        path: /spec/values/postgres/backup/objectStore/wal/compression
+        value: zstd
+      - op: replace
+        path: /spec/values/postgres/backup/objectStore/wal/maxParallel
+        value: 4
+      - op: replace
+        path: /spec/values/postgres/backup/retentionPolicy
+        value: "{{ backup_retention_staging }}d"
+      {% endif %}
+      {% if event_source_kafka %}
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
+        value:
+          - "{{ kafka_bootstrap_servers_staging }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 5
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: earliest
+      {% endif %}
 
   {% if feature_flagger %}
   # Canary metric gates must query THIS environment's Prometheus. The flagger
