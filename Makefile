@@ -9,6 +9,12 @@ PROJECT_NAME := {{ project_name | replace: "_", "-" }}
 # Binary name (with underscores as per Rust convention)
 CRATE_NAME := {{ crate_name }}
 
+# Production deployment (baked at template generation time)
+PROD_KUBECONFIG_PATH := .kubeconfig-prod
+GITHUB_ORG := {{ github_org }}
+GITHUB_REPO := {{ github_repo }}
+GITHUB_REPO_SSH := ssh://git@github.com/{{ github_org }}/{{ github_repo }}.git
+
 # Colored output
 RED := \033[0;31m
 GREEN := \033[0;32m
@@ -296,3 +302,15 @@ dev staging prod production development:
 .PHONY: prod-github-env
 prod-github-env: ## Create GitHub 'production' environment + branch policies (local-only; requires gh auth)
 	@GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' ./scripts/prod/create-github-env.sh || { echo "${RED}✗ Failed to create GitHub environment${NC}"; exit 1; }
+
+# ============================================================================
+# Production Deploy Commands
+# ============================================================================
+
+.PHONY: prod-deploy
+prod-deploy: ## Deploy to production via FluxCD + run in-cluster health smoke suite
+	@GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' GITHUB_REPO_SSH='$(GITHUB_REPO_SSH)' ./scripts/prod/deploy.sh || { echo "${RED}✗ Failed to deploy to production${NC}"; exit 1; }
+
+.PHONY: prod-kubeconfig
+prod-kubeconfig: ## Show production kubeconfig export command
+	@echo "export KUBECONFIG=$(PWD)/$(PROD_KUBECONFIG_PATH)"
