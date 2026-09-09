@@ -8,14 +8,14 @@ on:
 
 # Pinned tool versions — deploys must be reproducible (never floating tags)
 env:
-  KUBECTL_VERSION: v1.31.4
-  FLUX_VERSION: v2.4.0
+  KUBECTL_VERSION: v1.37.0
+  FLUX_VERSION: v2.9.5
 
 permissions:
   contents: read
 
 concurrency:
-  group: "prod-deploy-{% raw %}${{ github.ref }}{% endraw %}"
+  group: "prod-deploy-production"
   cancel-in-progress: false
 
 jobs:
