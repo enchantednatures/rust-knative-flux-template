@@ -19,7 +19,8 @@
 #   ./scripts/prod/deploy.sh --dry-run  (print the full plan, touch nothing)
 #
 # Environment:
-#   KUBECONFIG         kubeconfig to use (else ${PROJECT_ROOT}/.kubeconfig-prod)
+#   KUBECONFIG         kubeconfig to use (else ${PROJECT_ROOT}/.kubeconfig-prod,
+#                      else in-cluster ServiceAccount credentials)
 #   PROJECT_NAME       override service name (default: parsed from Makefile)
 #   GITHUB_ORG         GitHub org (Makefile passes; baked at generation time)
 #   GITHUB_REPO        GitHub repo (Makefile passes)
@@ -42,9 +43,6 @@ PROD_NAMESPACE="production"
 FLUX_NAMESPACE="flux-system"
 DEPLOY_KEY_SECRET="github-deploy-key"
 SMOKE_IMAGE="curlimages/curl:8.10.1"
-GITREPO_INITIAL_WAIT="90s"      # first GitRepository Ready wait
-DEPLOY_KEY_POLL_ATTEMPTS=20     # 20 x 15s kubectl wait = 5m max
-DEPLOY_KEY_POLL_WAIT="15s"
 RECONCILE_WAIT="5m"             # Kustomization + HelmRelease readiness
 KSVS_WAIT="5m"                  # Knative service readiness
 SMOKE_TIMEOUT=90                # per-check pod poll (seconds, covers image pull + cold start)
@@ -80,6 +78,14 @@ step() {
 	echo ""
 	echo -e "${YELLOW}[${n}/9]${NC} ${title}"
 }
+
+# ---------------------------------------------------------------------------
+# Deploy-key / GitRepository helper (shared with scripts/prod/deploy-key.sh,
+# which can also run standalone: ./scripts/prod/deploy-key.sh [--dry-run]).
+# Sourced before the definitions below, so this file's own variants of
+# resolve_project_name/resolve_github_repo_ssh/usage/dry_run_flow/main win.
+# ---------------------------------------------------------------------------
+source "${SCRIPT_DIR}/deploy-key.sh"
 
 usage() {
 	cat <<EOF
@@ -145,6 +151,7 @@ resolve_project_name() {
 	else
 		# Template context (liquid not yet rendered) or no Makefile — best effort.
 		PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+		validate_project_name
 	fi
 }
 
@@ -179,7 +186,6 @@ resolve_github_repo_ssh() {
 declare -a SMOKE_PODS=()
 SMOKE_EXIT_CODE=1
 SMOKE_OUTPUT=""
-SMOKE_POD_PHASE=""
 SMOKE_HTTP_CODE=""
 SMOKE_BODY=""
 CURRENT_CHECK=""
@@ -202,13 +208,12 @@ trap cleanup EXIT
 # logs, deletes the pod.
 #
 # Sets globals: SMOKE_EXIT_CODE (curl rc; 124=pod stuck; 125=create failed),
-# SMOKE_OUTPUT (pod logs: body + trailing http_code line), SMOKE_POD_PHASE.
+# SMOKE_OUTPUT (pod logs: body + trailing http_code line).
 # Always returns 0 — outcome is communicated via SMOKE_EXIT_CODE (set -e safe).
 pod_curl() {
 	local url="$1"
 	SMOKE_EXIT_CODE=1
 	SMOKE_OUTPUT=""
-	SMOKE_POD_PHASE=""
 	SMOKE_HTTP_CODE=""
 	SMOKE_BODY=""
 
@@ -217,6 +222,7 @@ pod_curl() {
 
 	log_info "  probe pod: kubectl run ${pod} -n ${PROD_NAMESPACE} (image ${SMOKE_IMAGE})"
 	if ! kubectl run "${pod}" -n "${PROD_NAMESPACE}" --restart=Never \
+		--requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi \
 		--image="${SMOKE_IMAGE}" --quiet -- \
 		curl -f -s --max-time 60 -w '\n%{http_code}' "${url}" >/dev/null 2>&1; then
 		log_error "  failed to create probe pod ${pod}"
@@ -225,19 +231,18 @@ pod_curl() {
 		return 0
 	fi
 
-	local phase="" i=1
-	while ((i <= SMOKE_TIMEOUT)); do
+	local phase="" start=$SECONDS elapsed=0
+	while ((SECONDS - start < SMOKE_TIMEOUT)); do
 		phase="$(kubectl get pod "${pod}" -n "${PROD_NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
 		case "${phase}" in
 		Succeeded | Failed) break ;;
 		esac
-		if ((i == 1 || i % 10 == 0)); then
-			log_info "  waiting for probe pod ${pod} — attempt ${i}/${SMOKE_TIMEOUT} (phase=${phase:-Pending})"
+		elapsed=$((SECONDS - start))
+		if ((elapsed == 0 || elapsed % 10 == 0)); then
+			log_info "  waiting for probe pod ${pod} — ${elapsed}/${SMOKE_TIMEOUT}s elapsed (phase=${phase:-Pending})"
 		fi
 		sleep 1
-		i=$((i + 1))
 	done
-	SMOKE_POD_PHASE="${phase}"
 
 	if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" ]]; then
 		log_warning "  probe pod ${pod} did not reach a terminal phase within ${SMOKE_TIMEOUT}s (last phase=${phase:-unknown})"
@@ -270,8 +275,10 @@ smoke_parse() {
 }
 
 # One smoke assertion: 200 + body contains <expect_body>.
-# curl exit 6 (DNS) / 7 (connect) / 28 (timeout) or a stuck pod triggers one
-# retry against the in-cluster service URL.
+# curl exit 6 (DNS) / 7 (connect) / 28 (timeout) / 52 (empty reply) /
+# 56 (connection reset), a stuck pod (124), or a probe-pod creation
+# failure (125, e.g. API throttling) triggers one retry against the
+# in-cluster service URL.
 run_smoke_check() {
 	local check_name="$1"
 	local path="$2"
@@ -287,7 +294,7 @@ run_smoke_check() {
 	pod_curl "${url}"
 	local rc="${SMOKE_EXIT_CODE}"
 
-	if [[ "${rc}" == "6" || "${rc}" == "7" || "${rc}" == "28" || "${rc}" == "124" ]]; then
+	if [[ "${rc}" == "6" || "${rc}" == "7" || "${rc}" == "28" || "${rc}" == "124" || "${rc}" == "52" || "${rc}" == "56" || "${rc}" == "125" ]]; then
 		local fallback_url="http://${PROJECT_NAME}.${PROD_NAMESPACE}.svc.cluster.local${path}"
 		log_warning "  probe failed (curl exit ${rc}) — retrying against in-cluster URL: ${fallback_url}"
 		pod_curl "${fallback_url}"
@@ -359,113 +366,6 @@ check_flagger_dependency() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4 helper: deploy-key auto-detection
-# ---------------------------------------------------------------------------
-print_deploy_key() {
-	local pub
-	pub="$(kubectl get secret "${DEPLOY_KEY_SECRET}" -n "${FLUX_NAMESPACE}" \
-		-o jsonpath='{.data.identity\.pub}' 2>/dev/null | base64 --decode 2>/dev/null || true)"
-	if [[ -z "${pub}" ]]; then
-		log_warning "Could not read identity.pub from secret ${DEPLOY_KEY_SECRET}"
-		return 0
-	fi
-	echo ""
-	echo -e "${GREEN}════════════════ DEPLOY KEY (public) ════════════════${NC}"
-	echo "${pub}"
-	echo -e "${GREEN}═════════════════════════════════════════════════════${NC}"
-}
-
-print_github_instructions() {
-	echo ""
-	log_info "Add this key on GitHub:"
-	log_info "  Repo → Settings → Deploy keys → 'Add deploy key'"
-	log_info "  Title: ${PROJECT_NAME}-prod-flux (any name)"
-	log_info "  Key:   paste the public key above"
-	log_info "  ☐ Allow write access — REQUIRED only if Flux image updates are enabled (enable_image_updates)"
-	echo ""
-}
-
-poll_gitrepository_after_key() {
-	local i=1
-	while ((i <= DEPLOY_KEY_POLL_ATTEMPTS)); do
-		log_info "Waiting for GitRepository ${PROJECT_NAME} — attempt ${i}/${DEPLOY_KEY_POLL_ATTEMPTS} (up to 5m total)..."
-		if kubectl wait --for=condition=Ready "gitrepository/${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" \
-			--timeout="${DEPLOY_KEY_POLL_WAIT}" >/dev/null 2>&1; then
-			log_success "GitRepository ${PROJECT_NAME} is Ready"
-			return 0
-		fi
-		i=$((i + 1))
-	done
-
-	log_error "GitRepository ${PROJECT_NAME} still not Ready after 5m."
-	log_error "FIRST RUN FAILS BY DESIGN until the deploy key is added to GitHub:"
-	echo ""
-	print_deploy_key
-	print_github_instructions
-	echo ""
-	echo "GitRepository conditions (for debugging):"
-	kubectl get gitrepository "${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" -o jsonpath='{.status.conditions}' 2>/dev/null || true
-	echo ""
-	log_info "After adding the key on GitHub, re-run: make prod-deploy"
-	exit 1
-}
-
-handle_auth_failure() {
-	log_warning "Authentication failure detected on GitRepository ${PROJECT_NAME}"
-	echo ""
-
-	# Secret-existence guard FIRST — never rotate/recreate an existing key.
-	if kubectl get secret "${DEPLOY_KEY_SECRET}" -n "${FLUX_NAMESPACE}" >/dev/null 2>&1; then
-		log_info "Secret ${DEPLOY_KEY_SECRET} already exists — NOT recreating it (never rotates an existing key)"
-		print_deploy_key
-		print_github_instructions
-	else
-		log_info "Creating SSH deploy key secret '${DEPLOY_KEY_SECRET}' via flux CLI..."
-		if ! flux create secret git "${DEPLOY_KEY_SECRET}" -n "${FLUX_NAMESPACE}" --url "${GITHUB_REPO_SSH}"; then
-			log_error "Failed to create deploy key secret"
-			log_info "Ensure the flux CLI is installed: https://fluxcd.io/flux/installation/"
-			log_info "Manual equivalent: flux create secret git ${DEPLOY_KEY_SECRET} -n ${FLUX_NAMESPACE} --url ${GITHUB_REPO_SSH}"
-			exit 1
-		fi
-		log_success "Secret ${DEPLOY_KEY_SECRET} created"
-		print_deploy_key
-		print_github_instructions
-	fi
-
-	poll_gitrepository_after_key
-}
-
-ensure_gitrepository_ready() {
-	log_info "Waiting for GitRepository ${PROJECT_NAME} to become Ready (timeout ${GITREPO_INITIAL_WAIT})..."
-	if kubectl wait --for=condition=Ready "gitrepository/${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" \
-		--timeout="${GITREPO_INITIAL_WAIT}" >/dev/null 2>&1; then
-		log_success "GitRepository ${PROJECT_NAME} is Ready"
-		return 0
-	fi
-
-	log_warning "GitRepository ${PROJECT_NAME} not Ready within ${GITREPO_INITIAL_WAIT} — inspecting conditions..."
-	echo ""
-	echo "GitRepository conditions:"
-	kubectl get gitrepository "${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" -o jsonpath='{.status.conditions}' 2>/dev/null || true
-	echo ""
-
-	local msg
-	msg="$(kubectl get gitrepository "${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" \
-		-o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)"
-
-	if [[ "${msg}" =~ (authentication|permission|publickey|credentials|unauthorized|forbidden) ]]; then
-		handle_auth_failure
-		return 0
-	fi
-
-	# Network/DNS or any other non-auth failure — diagnostics + exit.
-	log_error "GitRepository failed for a NON-auth reason (message: ${msg:-unknown})"
-	log_info "This is usually cluster→github.com network/DNS connectivity, or the branch not existing."
-	log_info "Check: kubectl describe gitrepository ${PROJECT_NAME} -n ${FLUX_NAMESPACE}"
-	exit 1
-}
-
-# ---------------------------------------------------------------------------
 # Dry-run: print every planned action; zero cluster access
 # ---------------------------------------------------------------------------
 dry_run_flow() {
@@ -475,7 +375,7 @@ dry_run_flow() {
 	elif [[ -f "${PROJECT_ROOT}/${PROD_KUBECONFIG_PATH}" ]]; then
 		kubeconfig_plan="${PROJECT_ROOT}/${PROD_KUBECONFIG_PATH}"
 	else
-		kubeconfig_plan="NOT FOUND — real run would exit 1 (set KUBECONFIG or create ${PROD_KUBECONFIG_PATH}; see: make prod-kubeconfig)"
+		kubeconfig_plan="NOT SET — real run falls back to in-cluster ServiceAccount credentials (verified via kubectl auth can-i)"
 	fi
 
 	local service_url_plan="${SERVICE_URL:-}"
@@ -503,7 +403,7 @@ dry_run_flow() {
 	echo "  [dry-run] kubectl apply --server-side -f deploy/flux/git-repository.yaml   (GitRepository ${PROJECT_NAME} in ${FLUX_NAMESPACE})"
 
 	step "4" "Deploy key auto-detection"
-	echo "  [dry-run] kubectl wait --for=condition=Ready gitrepository/${PROJECT_NAME} -n ${FLUX_NAMESPACE} --timeout=${GITREPO_INITIAL_WAIT}"
+	echo "  [dry-run] wait for GitRepository Ready: ${GITREPO_POLL_ATTEMPTS} attempts x ${GITREPO_POLL_WAIT} each (conditions inspected between attempts)"
 	echo "  [dry-run] on auth failure: if secret ${DEPLOY_KEY_SECRET} exists → print existing identity.pub (never recreate)"
 	echo "  [dry-run]   else: flux create secret git ${DEPLOY_KEY_SECRET} -n ${FLUX_NAMESPACE} --url ${GITHUB_REPO_SSH}"
 	echo "  [dry-run]   → print identity.pub + GitHub deploy-key instructions → poll GitRepository Ready up to 5m"
@@ -522,11 +422,11 @@ dry_run_flow() {
 
 	step "8" "Smoke suite (detached curl pods, image ${SMOKE_IMAGE})"
 	echo "  [dry-run] SERVICE_URL: ${service_url_plan}"
-	echo "  [dry-run] fallback URL: http://${PROJECT_NAME}.${PROD_NAMESPACE}.svc.cluster.local (on curl exit 6/7/28 or stuck pod)"
-	echo "  [dry-run] kubectl run prod-smoke-health-live-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/live"
-	echo "  [dry-run] kubectl run prod-smoke-health-ready-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/ready"
-	echo "  [dry-run] kubectl run prod-smoke-metrics-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/metrics"
-	echo "  [dry-run] kubectl run prod-smoke-hello-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/api/v1/hello"
+	echo "  [dry-run] fallback URL: http://${PROJECT_NAME}.${PROD_NAMESPACE}.svc.cluster.local (on curl exit 6/7/28/52/56/125 or stuck pod)"
+	echo "  [dry-run] kubectl run prod-smoke-health-live-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/live"
+	echo "  [dry-run] kubectl run prod-smoke-health-ready-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/ready"
+	echo "  [dry-run] kubectl run prod-smoke-metrics-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/metrics"
+	echo "  [dry-run] kubectl run prod-smoke-hello-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/api/v1/hello"
 
 	step "9" "Summary"
 	echo "  [dry-run] assert: /health/live → 200 + body contains {\"status\":\"alive\"}"
@@ -556,15 +456,26 @@ main() {
 		export KUBECONFIG="${PROJECT_ROOT}/${PROD_KUBECONFIG_PATH}"
 		log_info "Using ${KUBECONFIG}"
 	else
-		log_error "No production kubeconfig available"
+		log_warning "No kubeconfig provided — falling back to in-cluster ServiceAccount credentials"
+	fi
+
+	# Fail fast when NEITHER the kubeconfig nor the in-cluster ServiceAccount
+	# credentials can read Flux resources (covers both causes in one probe).
+	local cani_out cani_rc
+	cani_out="$(kubectl auth can-i get gitrepositories -n "${FLUX_NAMESPACE}" 2>&1)" && cani_rc=0 || cani_rc=$?
+	if [[ ${cani_rc} -ne 0 || "${cani_out}" != "yes" ]]; then
+		log_error "No working cluster access — neither the kubeconfig nor in-cluster ServiceAccount credentials work"
+		log_error "Probe failed: kubectl auth can-i get gitrepositories -n ${FLUX_NAMESPACE} (rc=${cani_rc}, output: ${cani_out:-none})"
 		echo ""
 		echo "  Provide one of:"
 		echo "    1. export KUBECONFIG=/path/to/prod-kubeconfig"
 		echo "    2. Place the kubeconfig at ${PROJECT_ROOT}/${PROD_KUBECONFIG_PATH}"
 		echo "       (show the path hint with: make prod-kubeconfig)"
+		echo "    3. Run with an in-cluster ServiceAccount that can read Flux resources"
 		echo ""
 		exit 1
 	fi
+	log_success "Cluster access verified (can read GitRepositories in ${FLUX_NAMESPACE})"
 
 	if ! command -v kubectl >/dev/null 2>&1; then
 		log_error "kubectl is required but not installed"
@@ -638,11 +549,9 @@ main() {
 
 	# [3/9] Apply GitRepository
 	step "3" "Applying GitRepository"
-	if ! kubectl apply --server-side -f "${PROJECT_ROOT}/deploy/flux/git-repository.yaml"; then
-		log_error "Failed to apply deploy/flux/git-repository.yaml"
+	if ! apply_gitrepository; then
 		exit 1
 	fi
-	log_success "GitRepository ${PROJECT_NAME} applied (namespace ${FLUX_NAMESPACE})"
 
 	# [4/9] Deploy key auto-detection
 	step "4" "Deploy key auto-detection"
@@ -695,8 +604,9 @@ main() {
 			echo "HelmRelease conditions:"
 			kubectl get helmrelease "${PROJECT_NAME}" -n "${PROD_NAMESPACE}" -o jsonpath='{.status.conditions}' 2>/dev/null || true
 			echo ""
-			echo "HelmRelease yaml:"
-			kubectl get helmrelease "${PROJECT_NAME}" -n "${PROD_NAMESPACE}" -o yaml 2>/dev/null || true
+			echo "HelmRelease conditions (type/status/message):"
+			kubectl get helmrelease "${PROJECT_NAME}" -n "${PROD_NAMESPACE}" \
+				-o jsonpath='{range .status.conditions[*]}{.type}{"\t"}{.status}{"\t"}{.message}{"\n"}{end}' 2>/dev/null || true
 			exit 1
 		fi
 	else
@@ -776,7 +686,5 @@ if [[ "${DRY_RUN}" == "true" ]]; then
 	dry_run_flow
 	exit 0
 fi
-
-if [[ ! -t 0 ]]; then :; fi # no interactive prompts anywhere (CI-safe)
 
 main "$@"
