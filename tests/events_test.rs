@@ -1,6 +1,8 @@
 mod common;
 
 use axum::http::StatusCode;
+use std::net::SocketAddr;
+
 use axum_test::TestServer;
 use serde_json::json;
 
@@ -10,7 +12,10 @@ use {{ crate_name }}::routes;
 async fn test_cloudevent_ping() {
     let state = common::create_test_state().await;
     let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     let response = server
         .post("/")
@@ -37,7 +42,10 @@ async fn test_cloudevent_ping() {
 async fn test_cloudevent_missing_id() {
     let state = common::create_test_state().await;
     let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     let response = server
         .post("/")
@@ -59,7 +67,10 @@ async fn test_cloudevent_missing_id() {
 async fn test_cloudevent_invalid_json() {
     let state = common::create_test_state().await;
     let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     let response = server
         .post("/")
@@ -74,7 +85,10 @@ async fn test_cloudevent_invalid_json() {
 async fn test_cloudevent_with_custom_message() {
     let state = common::create_test_state().await;
     let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     let response = server
         .post("/")
