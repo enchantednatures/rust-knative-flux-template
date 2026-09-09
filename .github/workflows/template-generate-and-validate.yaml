@@ -266,7 +266,8 @@ jobs:
           # tracked separately). Validate the flagger surface exactly as the
           # overlay applies it: component + namespace transformer + the
           # MetricTemplate address patch extracted verbatim from the generated
-          # overlay file.
+          # overlay file. Overlay resources are dropped on purpose — relative
+          # paths (namespace.yaml, ../../base) do not resolve from the temp dir.
           validate_env() {
             local overlay="$1" kust_ns="$2" outfile="$3"
             local tmp="deploy/overlays/.tmp-flagger-validation"
@@ -277,8 +278,7 @@ jobs:
               echo "namespace: $kust_ns"
               echo "components:"
               echo "  - ../../components/flagger"
-              echo "patches:"
-              yq eval '.patches | map(select(.target.kind == "MetricTemplate"))' "$overlay" | sed 's/^/  /'
+              yq eval 'del(.resources) | .patches |= [.[] | select(.target.kind == "MetricTemplate")]' "$overlay"
             } > "$tmp/kustomization.yaml"
             kubectl kustomize "$tmp" > "$outfile"
             rm -rf "$tmp"
