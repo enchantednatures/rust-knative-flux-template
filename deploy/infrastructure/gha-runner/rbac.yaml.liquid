@@ -5,11 +5,15 @@
 # flow with in-cluster kubectl. Access is namespace-scoped ONLY — no
 # cluster-scoped roles or bindings:
 #
-#   flux-system  — Flux reconciliation objects (apply + wait steps) and the
-#                  github-deploy-key secret (deploy key auto-creation)
-#   production   — Knative services (wait + URL) and smoke-test pod lifecycle
+#   actions-runner-system — runner-container-hooks job pod lifecycle (the
+#                           runner pod's SA token creates CI job pods)
+#   flux-system           — Flux reconciliation objects (apply + wait steps)
+#                           and the github-deploy-key secret (deploy key
+#                           auto-creation)
+#   production            — app HelmRelease (wait), Knative services (wait +
+#                           URL) and smoke-test pod lifecycle
 #
-# Both RoleBindings reference the runner ServiceAccount in its OWN namespace
+# All RoleBindings reference the runner ServiceAccount in its OWN namespace
 # (actions-runner-system) — ARC creates runner pods there.
 # =============================================================================
 
@@ -43,27 +47,6 @@ rules:
       - create
       - update
       - patch
-  # HelmChart reads (wait steps / reconciliation diagnostics)
-  - apiGroups:
-      - source.toolkit.fluxcd.io
-    resources:
-      - helmcharts
-    verbs:
-      - get
-      - list
-      - watch
-  # HelmRelease apply + wait steps
-  - apiGroups:
-      - helm.toolkit.fluxcd.io
-    resources:
-      - helmreleases
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
   # Kustomization apply + wait steps
   - apiGroups:
       - kustomize.toolkit.fluxcd.io
@@ -83,10 +66,7 @@ rules:
       - secrets
     verbs:
       - get
-      - list
       - create
-      - update
-      - patch
 {% if enable_image_updates %}
   # Image automation CRs (ImageUpdateAutomation commits new image tags)
   - apiGroups:
@@ -121,7 +101,7 @@ subjects:
     namespace: actions-runner-system
 
 ---
-# ── production: Knative service reads + smoke-test pod lifecycle ─────────────
+# ── production: app HelmRelease + Knative service reads + smoke-test pods ────
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -130,11 +110,19 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: flux
 rules:
-  # Knative service wait + URL extraction (ksvc is the short name for services)
+  # App HelmRelease wait (deploy.sh waits on reconciliation here)
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases
+    verbs:
+      - get
+      - list
+      - watch
+  # Knative service wait + URL extraction
   - apiGroups:
       - serving.knative.dev
     resources:
-      - ksvc
       - services
     verbs:
       - get
@@ -164,6 +152,7 @@ rules:
       - events
     verbs:
       - get
+      - list
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -177,6 +166,86 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ project_name | replace: "_", "-" }}-runner-production
+subjects:
+  - kind: ServiceAccount
+    name: {{ project_name | replace: "_", "-" }}-runner
+    namespace: actions-runner-system
+
+---
+# ── actions-runner-system: runner-container-hooks job pod lifecycle ──────────
+# The HelmRelease sets template.spec.serviceAccountName, which opts the runner
+# out of the chart's auto-created kubernetes-mode Role. The
+# runner-container-hooks plugin uses the runner pod's SA token to create job
+# pods — without these rules every CI job 403s. Verbs mirror
+# charts/gha-runner-scale-set/templates/kube_mode_role.yaml at 0.13.1.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-hooks
+  namespace: actions-runner-system
+  labels:
+    app.kubernetes.io/managed-by: flux
+rules:
+  # Job pod lifecycle (hooks create/poll/delete the runner job pods)
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+  # Exec into listener pod (registration handshake)
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
+  # Pod log streaming (hook diagnostics)
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch
+  # Job pod lifecycle (batch jobs)
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+  # Listener registration secret reads/writes
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-runner-hooks
+  namespace: actions-runner-system
+  labels:
+    app.kubernetes.io/managed-by: flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ project_name | replace: "_", "-" }}-runner-hooks
 subjects:
   - kind: ServiceAccount
     name: {{ project_name | replace: "_", "-" }}-runner
