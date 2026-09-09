@@ -317,3 +317,46 @@ jobs:
 
           echo "Flagger per-env metric gate validation passed"
         shell: bash
+
+  # ==========================================================================
+  # Static validation — prod deploy tooling harness (no cluster needed)
+  # ==========================================================================
+  static-validation:
+    name: Static validation (prod deploy harness)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-static-validation-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Install kustomize
+        run: |
+          if ! command -v kustomize &> /dev/null; then
+            echo "Installing kustomize..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          fi
+
+      - name: Install PyYAML (harness degrades to grep/awk checks without it)
+        run: |
+          python3 -m pip install --user PyYAML \
+            || python3 -m pip install --user --break-system-packages PyYAML
+
+      - name: Run prod deploy static validation harness (full matrix)
+        run: timeout 20m ./scripts/test-prod-deploy-static.sh
