@@ -38,7 +38,7 @@ pub static EMAIL_REGEX: Lazy<Regex> = Lazy::new(|| {
 /// assert!(!is_safe_name("<script>alert('xss')</script>"));
 /// ```
 pub fn is_safe_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 100 {
+    if name.is_empty() || name.chars().count() > 100 {
         return false;
     }
     SAFE_NAME_REGEX.is_match(name)
@@ -54,7 +54,7 @@ pub fn is_safe_name(name: &str) -> bool {
 ///
 /// `true` if the identifier is safe, `false` otherwise
 pub fn is_safe_identifier(id: &str) -> bool {
-    if id.is_empty() || id.len() > 50 {
+    if id.is_empty() || id.chars().count() > 50 {
         return false;
     }
     SAFE_IDENTIFIER_REGEX.is_match(id)
