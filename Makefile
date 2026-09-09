@@ -260,10 +260,10 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 	@ENV="$(word 2,$(MAKECMDGOALS))"; \
 	export KUBECONFIG=$(KUBECONFIG_PATH); \
 	if [ -z "$$ENV" ]; then \
-		echo "${BLUE}Applying Flux GitRepository...${NC}"; \
-		kubectl apply --server-side -f deploy/flux/git-repository.yaml || { echo "${RED}✗ Failed to apply GitRepository${NC}"; exit 1; }; \
+		echo "${BLUE}Provisioning Flux GitRepository + deploy key...${NC}"; \
+		GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' GITHUB_REPO_SSH='$(GITHUB_REPO_SSH)' ./scripts/prod/deploy-key.sh || { echo "${RED}✗ Failed to provision GitRepository / deploy key${NC}"; exit 1; }; \
 		echo ""; \
-		echo "${GREEN}✓ GitRepository applied${NC}"; \
+		echo "${GREEN}✓ GitRepository Ready (deploy key provisioned if it was missing)${NC}"; \
 		echo ""; \
 		echo "${YELLOW}Next:${NC} bootstrap an environment:"; \
 		echo "  ${GREEN}make bootstrap production${NC}"; \
@@ -279,8 +279,8 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 		fi; \
 		echo "${BLUE}Bootstrapping Flux for environment: $${RESOLVED}${NC}"; \
 		echo ""; \
-		echo "${YELLOW}[1/2]${NC} Applying GitRepository..."; \
-		kubectl apply --server-side -f deploy/flux/git-repository.yaml || { echo "${RED}✗ Failed to apply GitRepository${NC}"; exit 1; }; \
+		echo "${YELLOW}[1/2]${NC} Provisioning GitRepository + deploy key..."; \
+		GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' GITHUB_REPO_SSH='$(GITHUB_REPO_SSH)' ./scripts/prod/deploy-key.sh || { echo "${RED}✗ Failed to provision GitRepository / deploy key${NC}"; exit 1; }; \
 		echo ""; \
 		echo "${YELLOW}[2/2]${NC} Applying Flux Kustomizations from $$CONFIG ..."; \
 		kubectl apply --server-side -k "$$CONFIG" || { echo "${RED}✗ Failed to apply $$CONFIG${NC}"; exit 1; }; \
@@ -310,6 +310,10 @@ prod-github-env: ## Create GitHub 'production' environment + branch policies (lo
 .PHONY: prod-deploy
 prod-deploy: ## Deploy to production via FluxCD + run in-cluster health smoke suite
 	@GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' GITHUB_REPO_SSH='$(GITHUB_REPO_SSH)' ./scripts/prod/deploy.sh || { echo "${RED}✗ Failed to deploy to production${NC}"; exit 1; }
+
+.PHONY: deploy-key
+deploy-key: ## Provision Flux GitRepository + deploy key only (idempotent; never rotates an existing key)
+	@GITHUB_ORG='$(GITHUB_ORG)' GITHUB_REPO='$(GITHUB_REPO)' GITHUB_REPO_SSH='$(GITHUB_REPO_SSH)' ./scripts/prod/deploy-key.sh || { echo "${RED}✗ Failed to provision GitRepository / deploy key${NC}"; exit 1; }
 
 .PHONY: prod-kubeconfig
 prod-kubeconfig: ## Show production kubeconfig export command

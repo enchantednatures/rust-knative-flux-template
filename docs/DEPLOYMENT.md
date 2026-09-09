@@ -259,6 +259,8 @@ spec:
 make bootstrap production
 ```
 
+`make bootstrap` (with or without an environment) runs `scripts/prod/deploy-key.sh`: it applies the GitRepository, waits for it to become Ready, and — on the first run — creates the `github-deploy-key` secret and prints the **public key** plus instructions (it polls for ~5 minutes while you add the key and never rotates an existing secret).
+
 Or apply manually per environment:
 
 ```bash
@@ -539,7 +541,7 @@ The template ships a one-command production deploy flow: `make prod-deploy` driv
 
    This creates the `production` environment with deployment branch policies for `main` and `v*` tags, using `gh api`. It is idempotent (existing environment and policies are left as-is) and supports `--dry-run` via `./scripts/prod/create-github-env.sh --dry-run`.
 
-2. **Run the deploy key flow**:
+2. **Run the deploy key flow** (standalone alternative: `make deploy-key` provisions just the GitRepository + key, without deploying):
 
    ```bash
    make prod-deploy
@@ -559,6 +561,7 @@ The template ships a one-command production deploy flow: `make prod-deploy` driv
 
 ```bash
 make prod-deploy                       # full deploy + in-cluster smoke suite
+make deploy-key                        # provision GitRepository + deploy key only (no deploy)
 ./scripts/prod/deploy.sh --dry-run     # print the full 9-step plan, touch nothing
 ```
 
