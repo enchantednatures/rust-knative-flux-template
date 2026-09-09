@@ -97,11 +97,11 @@ pub fn is_valid_email(email: &str) -> bool {
 /// ```
 pub fn sanitize_input(input: &str) -> String {
     input
+        .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
-        .replace('&', "&amp;")
 }
 
 #[cfg(test)]
