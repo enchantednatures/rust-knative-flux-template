@@ -51,6 +51,7 @@ project_author = { prompt = "Project authors", type = "string", default = "Your 
 # array variables in conditional expressions due to a bug in the Rhai on_var callback)
 feature_s3 = { prompt = "Enable S3/MinIO object storage?", type = "bool", default = false }
 feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
+feature_dragonfly = { prompt = "Enable DragonflyDB Redis-compatible cache cluster?", type = "bool", default = false }
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
 feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
