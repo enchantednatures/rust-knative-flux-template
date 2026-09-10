@@ -224,7 +224,10 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
 
+      # Code scanning SARIF upload requires GHAS on private repos; keep the
+      # scan (the actual gate) unconditional and only upload when public.
       - name: Upload Trivy scan results
+        if: {% raw %}${{ !github.event.repository.private }}{% endraw %}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
