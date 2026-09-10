@@ -221,13 +221,28 @@ pod_curl() {
 	SMOKE_PODS+=("${pod}")
 
 	log_info "  probe pod: kubectl run ${pod} -n ${PROD_NAMESPACE} (image ${SMOKE_IMAGE})"
-	if ! kubectl run "${pod}" -n "${PROD_NAMESPACE}" --restart=Never \
-		--overrides='{"spec":{"containers":[{"resources":{"requests":{"cpu":"10m","memory":"16Mi"},"limits":{"cpu":"100m","memory":"64Mi"}}}]}}' \
-		--image="${SMOKE_IMAGE}" --quiet -- \
-		curl -f -s --max-time 60 -w '\n%{http_code}' "${url}" >/dev/null 2>&1; then
-		log_error "  failed to create probe pod ${pod}"
-		kubectl delete pod "${pod}" -n "${PROD_NAMESPACE}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
-		SMOKE_EXIT_CODE=125
+	if ! kubectl create -n "${PROD_NAMESPACE}" -f - <<PODEOF >/dev/null 2>&1
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${pod}
+  labels:
+    app.kubernetes.io/part-of: prod-smoke
+spec:
+  restartPolicy: Never
+  containers:
+  - name: probe
+    image: ${SMOKE_IMAGE}
+    command: ["curl", "-f", "-s", "--max-time", "60", "-w", "\n%{http_code}", "${url}"]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+PODEOF
+	then
 		return 0
 	fi
 
@@ -643,6 +658,20 @@ main() {
 		if [[ -z "${SERVICE_URL}" ]]; then
 			log_warning "ksvc status.url is empty — defaulting to the in-cluster service URL"
 			SERVICE_URL="http://${PROJECT_NAME}.${PROD_NAMESPACE}.svc.cluster.local"
+		fi
+		if [[ "${SERVICE_URL}" == *.svc.cluster.local ]]; then
+			# Cluster-local URL: route through the latest ready revision's
+			# private service (activator-backed) rather than requiring the
+			# ingress provisioned a cluster-local gateway listener (their
+			# istio-ingress instance lacks a 8081 listener).
+			local latest_rev priv_svc priv_ip
+			latest_rev="$(kubectl get ksvc "${PROJECT_NAME}" -n "${PROD_NAMESPACE}" -o jsonpath='{.status.latestCreatedRevisionName}' 2>/dev/null || true)"
+			priv_svc="${latest_rev}-private"
+			priv_ip="$(kubectl get svc "${priv_svc}" -n "${PROD_NAMESPACE}" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+			if [[ -n "${priv_ip}" && "${priv_ip}" != "None" ]]; then
+				log_info "Cluster-local URL — routing smoke probes via ${priv_svc} cluster IP ${priv_ip}"
+				SERVICE_URL="http://${priv_ip}"
+			fi
 		fi
 	fi
 	log_info "Service URL: ${SERVICE_URL}"
