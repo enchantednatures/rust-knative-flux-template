@@ -1,9 +1,9 @@
 {%- if feature_s3 -%}
 //! S3-compatible storage integration tests
 //!
-//! These tests require MinIO running locally:
+//! These tests require MinIO running in the dev environment:
 //! ```bash
-//! docker-compose up -d minio
+//! make dev-up && make dev-forward
 //! ```
 //!
 //! Run with:
@@ -35,7 +35,7 @@ fn create_test_operator() -> Operator {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires MinIO running (make dev-up && make dev-forward)"]
 async fn test_write_and_read() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());
@@ -48,7 +48,7 @@ async fn test_write_and_read() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires MinIO running (make dev-up && make dev-forward)"]
 async fn test_stat() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());
@@ -60,7 +60,7 @@ async fn test_stat() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires MinIO running (make dev-up && make dev-forward)"]
 async fn test_list() {
     let op = create_test_operator();
     let prefix = format!("test-list-{}/", Uuid::new_v4());
@@ -80,7 +80,7 @@ async fn test_list() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires MinIO running (make dev-up && make dev-forward)"]
 async fn test_delete() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());

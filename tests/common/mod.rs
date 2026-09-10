@@ -5,7 +5,7 @@ use opendal::Operator;
 {%- endif %}
 
 /// Create a test AppState with a mock Redis connection
-/// For integration tests, use a real Redis instance (e.g., via docker-compose or testcontainers)
+/// For integration tests, use a real Redis instance (e.g., from the dev environment via `make dev-up`)
 pub async fn create_test_state() -> AppState {
     let redis_url =
         std::env::var("APP__REDIS__URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
