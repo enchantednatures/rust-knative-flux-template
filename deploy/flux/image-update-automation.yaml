@@ -11,7 +11,7 @@
 # The ImageUpdateAutomation watches the app repo's {{ default_branch }} branch and commits
 # image updates when new tags are available.
 # =============================================================================
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageUpdateAutomation
 metadata:
   name: {{ project_name | replace: "_", "-" }}
