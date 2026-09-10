@@ -1,0 +1,21 @@
+### F3 Task6 Scenario: Rendered workflow parses + required keys + non-ARC kubeconfig fallback (combo 0,0,0)
+### Source: /tmp/tmp.PjEsF6kcZK/combo-0-0-0/prod-matrix-app/.github/workflows/deploy.yaml (from KEEP_OUTPUT run /tmp/tmp.PjEsF6kcZK)
+### yaml.safe_load:
+PARSE-OK rc=0
+### secrets.PROD_KUBECONFIG count (expect >=1): 1
+### fail-fast message present: 1
+### runs-on line:
+24:    runs-on: ubuntu-latest
+### environment / concurrency / permissions / timeout:
+14:permissions:
+15:  contents: read
+17:concurrency:
+19:  cancel-in-progress: false
+25:    environment: production
+26:    timeout-minutes: 45
+### make prod-deploy invoked: 1
+### @latest occurrences (expect 0): 0
+### liquid residue (expect 0): 0
+### pinned versions:
+11:  KUBECTL_VERSION: v1.31.4
+12:  FLUX_VERSION: v2.4.0

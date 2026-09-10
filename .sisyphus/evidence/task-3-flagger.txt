@@ -1,0 +1,19 @@
+
+===================================================================
+Production Deploy: demo-app
+===================================================================
+
+[1;33m[1/9][0m Resolving kubeconfig
+[0;34m→[0m Using KUBECONFIG from environment: /tmp/opencode/dummy-prod-kubeconfig
+
+[1;33m[2/9][0m Running pre-flight checks
+[0;32m✓[0m Kubernetes cluster reachable
+[0;32m✓[0m Flux namespace 'flux-system' present
+[0;32m✓[0m Flux source-controller is Available
+[0;32m✓[0m Knative namespace 'knative-serving' present
+[0;34m→[0m Kustomization depends on 'flagger' — verifying the flagger Kustomization exists...
+[0;31m✗[0m deploy/flux/kustomization-prod.yaml declares dependsOn: flagger, but
+[0;31m✗[0m Kustomization 'flagger' was not found in namespace flux-system
+[0;34m→[0m Install the Flagger operator CLUSTER-WIDE first (see docs/FLAGGER.md):
+[0;34m→[0m   flux create kustomization flagger ...  or your cluster management tooling
+[0;34m→[0m This script never auto-installs cluster-wide operators.

@@ -1,0 +1,22 @@
+### F3 Task4 RBAC counts on rendered gha-runner (combo 1,0,0, image_updates=OFF)
+### kustomize build EXIT_CODE=0 (expect 0)
+### kind: ServiceAccount count (expect 1): 1
+### kind: Role count (expect 2): 2
+### kind: RoleBinding count (expect 2): 2
+### ClusterRole occurrences (expect 0): 0
+### subjects[].namespace=actions-runner-system count: 5
+### imageupdateautomations present (expect 0 for image_updates=OFF): 0
+### image.toolkit.fluxcd.io occurrences (expect 0): 0
+### liquid residue (expect 0): 0
+### serviceAccountName in helmrelease: 1
+### runner SA name rendered:   name: prod-matrix-app-runner
+  name: prod-matrix-app-runner
+
+### F3 Task6 workflow toggle checks (combo 1,0,0, gha_runner=ON)
+### secrets.PROD_KUBECONFIG count (expect 0): 0
+### PROD_KUBECONFIG any mention (expect 0): 0
+### runs-on line (expect prod-matrix-app-runner):
+24:    runs-on: prod-matrix-app-runner
+### yaml.safe_load:
+PARSE-OK rc=0
+### liquid residue (expect 0): 0

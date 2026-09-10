@@ -1,0 +1,4 @@
+### F3 Task1 Scenario: Harness syntax validity
+### CMD: bash -n scripts/test-prod-deploy-static.sh
+STDERR_ABOVE(empty=pass)
+EXIT_CODE=0

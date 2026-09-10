@@ -1,0 +1,388 @@
+================================================================================
+F4 — SCOPE FIDELITY CHECK (Final Verification Wave)
+Plan: .sisyphus/plans/prod-deploy-target.md
+Range: 6dea175..HEAD (7 commits)
+Auditor: F4 (deep) | Date: 2026-09-08 | Audit only — no files modified
+================================================================================
+
+METHOD
+------
+For each plan task (1-8): read "What to do" + "Must NOT do" from the CURRENT plan
+text, then read the actual commit diff (git show <sha>) and the cumulative diff
+(git diff 6dea175..HEAD -- <file>). Every spec bullet mapped to diff evidence or
+to a documented plan amendment. Must-NOT-do patterns grepped per commit. Every
+file in the cumulative diffstat mapped to a task.
+
+--------------------------------------------------------------------------------
+1. COMMIT → TASK MAPPING (7 commits, chronological oldest-first)
+--------------------------------------------------------------------------------
+  sha       task  message (matches plan Commit Strategy verbatim)          files
+  1089fcd   1     test(prod): add static validation harness ...              2
+  93c2287   2     feat(flux): switch GitRepository to SSH deploy-key auth    5
+  329e357   4     feat(gha-runner): add runner ServiceAccount and RBAC       3
+  70aa199   5     feat(make): add prod-github-env setup target               2
+  6fd3174   3     feat(make): add prod-deploy and prod-kubeconfig targets    3
+  0767c10   6     feat(ci): add production deploy workflow                   1
+  b14495b   7     docs: document production deployment workflow              2
+
+  Commit-order note: actual order is tasks 1,2,4,5,3,6,7; the plan's Commit
+  Strategy list (lines 1048-1054) reads 1,2,4,3,5,6,7 — commits 4 and 5 are
+  swapped vs that literal list. Consistent with the plan's own Wave structure
+  (Task 5 = Wave 2, Task 3 = Wave 3) and with the F4 briefing ("Task 3
+  committed 5th, Task 5 committed 4th; per-plan, not a deviation"). Benign:
+  the two commits are independent; only interaction is Task 5's target
+  referencing $(GITHUB_ORG)/$(GITHUB_REPO) before Task 3 defined the vars
+  (undefined make vars expand empty; script has a fallback; resolved by the
+  later commit). All 7 messages are Conventional Commits, verbatim per plan.
+  Also: Commit Strategy line 1049 still says commit 2 includes "+ e2e
+  mitigation" — STALE summary line; the amended Task 2 body (plan L319) drops
+  it and the actual commit 2 contains no e2e changes. Plan-internal staleness,
+  not an execution deviation.
+
+--------------------------------------------------------------------------------
+2. PER-TASK FIDELITY TABLE  (task → spec items → diff evidence → verdict)
+--------------------------------------------------------------------------------
+TASK 1 — Static Validation Harness (1089fcd: scripts/test-prod-deploy-static.sh
+         +562; cargo-generate.toml +1 [documented companion, see §5])
+  CLEAN except 1 minor MISSING (below).
+  [x] Gen-1 style: #!/bin/bash (L1), set -euo pipefail (L44), colors + →/✓/✗
+  [x] mktemp -d (L525) + trap cleanup EXIT (L109)
+  [x] 8-combo matrix gha_runner × image_updates × flagger (task-8-matrix 8/8)
+  [x] bash -n deploy.sh + create-github-env.sh assertions (L235)
+  [x] kustomize build deploy/flux/config/prod + no {% residue (L248, L220)
+  [x] overlays/prod build + 'namespace: production' + kind: Namespace (L262/267/271)
+  [x] gha-runner build + exactly 1 SA (L303) + 2 RoleBinding (L309) + subject
+      namespace == actions-runner-system (L323) + conditional image CRs (L330/335)
+      + no {% residue
+  [x] rendered deploy.yaml python3 yaml.safe_load (L356)
+  [x] Makefile needles: prod-deploy: / prod-github-env: / prod-kubeconfig: /
+      PROD_KUBECONFIG_PATH / GITHUB_ORG — all 5 in needle loop (L411)
+  [x] git-repository: uncommented secretRef github-deploy-key (L437/440) +
+      ssh:// URL (L431)
+  [x] workflow assertions: environment: production, concurrency:,
+      cancel-in-progress: false, permissions:, timeout-minutes: 45,
+      make prod-deploy, pinned versions / @latest ban (L370-394)
+  [x] PROD_DEPLOY_MATRIX override (L58, L498-503)
+  [x] TDD red state confirmed (evidence task-1-red.txt)
+  MISSING (minor): spec listed "the runs-on conditional" among workflow grep
+    assertions — harness has NO runs-on / <project>-runner / ubuntu-latest
+    assertion for deploy.yaml (grep 'runs-on|ubuntu-latest|<project>-runner'
+    over workflow checks = 0 matches). Product workflow itself implements the
+    conditional correctly; toggle was verified manually (task-6 evidence).
+    Verification-coverage gap, not a product defect.
+  EXTRA (in-spirit, harness-only): gha-runner dir must be ABSENT when
+    feature_gha_runner=0 (L287); image-CR toggle asserted in BOTH directions
+    (spec required only ON). No product creep.
+  Must NOT do: created none of the feature artifacts ✓ (commit = harness +
+    1-line ignore entry only); no cluster required ✓ (0 kubectl calls); no
+    common.sh ✓ (0).
+
+TASK 2 — GitRepository SSH + prod Namespace + JSON6902 conversion (93c2287:
+         git-repository.yaml, 3 overlay kustomizations, namespace.yaml)
+  CLEAN (amendment fully honored).
+  [x] spec.url → ssh://git@github.com/{{ github_org }}/{{ github_repo }}.git
+      (exact form per spec; diff)
+  [x] secretRef {name: github-deploy-key} uncommented / active (diff: 3
+      commented lines removed, 2 active lines added)
+  [x] interval: 1m and ref.branch: {{ default_branch }} unchanged (diff context)
+  [x] namespace.yaml: v1 / Namespace / production + app.kubernetes.io/part-of
+      label; listed FIRST in prod overlay resources (inserted above ../../base)
+  [x] AMENDMENT — all 3 overlays (prod/staging/dev) SMP → JSON6902, RAW //
+      paths (e.g. /spec/values/services//scaling/minScale); grep '~1' = 0 in
+      all 3; grep SMP 'apiVersion: helm.toolkit.fluxcd.io' inside patches = 0
+      in all 3; flagger MetricTemplate patch untouched ✓
+  [x] AMENDMENT — conditional postgres/kafka blocks: leaf-level ops
+      (op: replace on existing base leaves, e.g. /spec/values/postgres/instances,
+      /spec/values/kafka/sources/<topic>/delivery/retry). Matches the
+      orchestrator-declared amendment ("incl. postgres/kafka leaf-replace fix")
+      and learnings §"Task 2 fix (JSON6902 add-regression)". NOTE: plan L318
+      still reads "Keep conditional blocks as JSON6902 `add` ops" — stale
+      wording vs the implemented leaf-replace refinement (documented).
+  [x] AMENDMENT — e2e mitigation DROPPED: 0 commits touching
+      scripts/test-template-e2e-local.sh (verified via git log path filter)
+  [x] HTTPS-URL reference sweep: helmrelease githubConfigUrl left as HTTPS
+      (ARC config, correct); docs left to Task 7 (learnings L37)
+  Must NOT do: ref branch→tag NOT changed ✓; deploy/base/helmrelease.yaml
+    untouched ✓ (0 commits); no ~1 escapes ✓; e2e not fixed ✓; scripts/dev/*
+    untouched ✓ (0 commits). Note: dev overlay patches image repository/tag —
+    PRE-EXISTING SMP content transcribed to JSON6902 (pre-image grep = 3
+    matches pre-commit), mandated by "convert ALL overlay SMP patches"; the
+    Must-NOT targets deploy/base/helmrelease.yaml, which is untouched.
+  → CLEAN
+
+TASK 3 — prod-deploy target + deploy.sh (6fd3174: Makefile +18, deploy.sh
+         +782, .gitignore +1)
+  CLEAN (2 documented micro-deviations, both empirically forced).
+  [x] Makefile vars: PROD_KUBECONFIG_PATH := .kubeconfig-prod,
+      GITHUB_ORG / GITHUB_REPO / GITHUB_REPO_SSH (exact liquid forms) — diff
+  [x] prod-deploy target: || { echo "✗ Failed to deploy..."; exit 1; } +
+      ## doc comment for help — diff
+  [x] prod-kubeconfig echoes export line with .kubeconfig-prod (mirrors
+      dev-kubeconfig pattern) — diff
+  [x] No prod-github-env wiring in this commit (appears only as diff context
+      from Task 5's earlier commit)
+  [x] .gitignore: .kubeconfig-prod added directly under .kubeconfig-dev — diff
+  [x] deploy.sh: kubeconfig resolution KUBECONFIG env → .kubeconfig-prod file →
+      exit 1 with 'make prod-kubeconfig' guidance (L473-475)
+  [x] Pre-flights: cluster reachable (cluster-info with readyz fallback),
+      flux-system + source-controller, knative-serving
+  [x] Flagger dependency check (L328-357): greps dependsOn/name: flagger in
+      kustomization-prod.yaml, verifies kustomization/flagger; NOT-found →
+      exit 1 "Install the Flagger operator CLUSTER-WIDE first", never
+      auto-installs. DEVIATION (documented): Forbidden/403 → warn+continue
+      (spec letter: any failure → exit). Rationale: RBAC-restricted identities
+      (learnings §Task 3); fail-fast preserved for genuinely-missing flagger.
+  [x] Apply GitRepository: kubectl apply --server-side -f
+      deploy/flux/git-repository.yaml (L641)
+  [x] Deploy-key auto-detect: wait Ready 90s + conditions dump; auth-pattern
+      classification (non-auth failures excluded, L462); SECRET GUARD FIRST —
+      existing secret → print existing identity.pub, explicitly "NOT
+      recreating" (L414-421); missing → flux create secret git (L424); pubkey
+      printed prominently + GitHub instructions incl. write-access-if-
+      enable_image_updates; re-poll up to 5m; still-not-Ready → exit 1
+      "FIRST RUN FAILS BY DESIGN" + diagnostics
+  [x] Apply prod Flux config (L658). DEVIATION (documented): spec said
+      `kubectl apply --server-side -k deploy/flux/config/prod`; implemented
+      as `kubectl kustomize --load-restrictor LoadRestrictionsNone ... |
+      kubectl apply --server-side -f -` — kubectl apply -k empirically fails
+      LoadRestrictionsRootOnly on ../../kustomization-prod.yaml (learnings).
+      Output still contains ONLY Flux config objects → no workload applied,
+      guardrail intact.
+  [x] Waits: kustomization <name>-prod, helmrelease <name> (403-aware skip to
+      ksvc gate), ksvc <name> — all with diagnostic dumps on failure
+  [x] Detached-pod smoke: kubectl run --restart=Never (L219), poll phase +
+      terminated.exitCode, logs, delete; in-cluster .svc.cluster.local retry
+      fallback; grep for attach-mode '--rm -i' = 0
+  [x] 4 assertions with EXACT bodies (L740-743): {"status":"alive"},
+      {"status":"ready"}, '# HELP', 'message'; PASSED/FAILED counter;
+      exit 1 if any FAILED (L754-759)
+  [x] --dry-run flag: prints all 9 steps + 4 checks, zero mutations
+  Must NOT do: dev targets / KUBECONFIG_PATH := .kubeconfig-dev untouched ✓
+    (Makefile diff = 0 deleted lines; only 'KUBECONFIG_PATH :=' match in diff
+    is the NEW prod var); no image build/push ✓ (0 docker refs); no direct
+    workload apply ✓ (only git-repository.yaml + config/prod render); no
+    flagger auto-install ✓ ("never auto-installs"); no read -p ✓ (0); no
+    attach-mode ✓ (0); no common.sh ✓ (0).
+  → CLEAN
+
+TASK 4 — gha-runner RBAC + serviceAccountName (329e357: rbac.yaml.liquid +183,
+         kustomization.yaml +1, helmrelease.yaml +1)
+  CLEAN — verbs match spec exactly.
+  [x] SA <name>-runner in actions-runner-system (L17-20)
+  [x] flux-system Role: gitrepositories get/list/watch/create/update/patch;
+      helmcharts get/list/watch; helmreleases glcw+c/u/p; kustomizations
+      glcw+c/u/p; secrets get/list/create/update/patch — all verified line-level
+  [x] Conditional {% if enable_image_updates %}: imagerepositories,
+      imagepolicies, imageupdateautomations (image.toolkit.fluxcd.io), same
+      verbs — renders per flag (toggle verified task-4-rbac-toggle.txt)
+  [x] production Role: ksvc + services (serving.knative.dev) get/list/watch;
+      pods create/delete/get/list; pods/log get; events get
+  [x] NO secrets in production Role (grep = 0)
+  [x] Both RoleBindings: subjects[].namespace == actions-runner-system
+      (L121, L183)
+  [x] kustomization.yaml: rbac.yaml listed FIRST (before oci-repository.yaml
+      AND helmrelease.yaml — supersedes spec's "before helmrelease.yaml")
+  [x] helmrelease.yaml: serviceAccountName under values.template.spec,
+      directly adjacent to priorityClassName (diff context)
+  Must NOT do: no ClusterRole/ClusterRoleBinding ✓ (grep 'clusterrole' = 0,
+    comments reworded to avoid false positives per learnings); no secret grants
+    in production ✓; runner resource limits / priority class / dind untouched ✓
+    (helmrelease diff = exactly 1 added line).
+  → CLEAN
+
+TASK 5 — prod-github-env (70aa199: create-github-env.sh +331, Makefile +8)
+  CLEAN.
+  [x] Gen-1 style: #!/bin/bash, set -euo pipefail, colors, →/✓/⚠/✗
+  [x] --dry-run flag printing all planned gh api calls (L75, L300+) without
+      network (resolves placeholders when vars unset)
+  [x] Auth check: gh auth status → fail fast "gh auth login (with admin
+      access)" (L100-102)
+  [x] Repo slug from baked GITHUB_ORG/GITHUB_REPO; explicit comment rejecting
+      git remote derivation (L111)
+  [x] Environment create: GET-first (404 → create), 409/422 treated as
+      idempotent success (L141-169, L223); deployment_branch_policy
+      protected_branches=false / custom_branch_policies=true
+  [x] Branch policies: deployment-branch-policies with name=main and name=v*
+      (L234, L300); v* rejection → graceful manual-path advice + continue
+      (non-fatal; exit stays 0 — learnings L54, task-5 evidence)
+  [x] Next steps printed: PROD_KUBECONFIG secret (operator-provided), repo
+      settings location, environment-gates-workflow reminder (L253-272)
+  [x] Makefile: prod-github-env target with ## doc + || fail echo (Task 3's
+      later vars commit completed the $(GITHUB_ORG)/$(GITHUB_REPO) wiring)
+  Must NOT do: no required reviewers ✓ (0 matches); no environment secrets
+    auto-created ✓ (explicit "never created automatically" comment, L253);
+    not called from any workflow ✓ (grep across .github/workflows = NONE).
+  → CLEAN
+
+TASK 6 — deploy.yaml.liquid (0767c10: +76)
+  CLEAN except 1 partial (diagnostics transport).
+  [x] name: Deploy Production
+  [x] Triggers: push tags v* + workflow_dispatch
+  [x] permissions: contents: read (top level)
+  [x] concurrency: group "prod-deploy-{% raw %}${{ github.ref }}{% endraw %}",
+      cancel-in-progress: false
+  [x] environment: production (job level)
+  [x] runs-on conditional copied verbatim from ci.yaml.liquid:20 idiom
+  [x] timeout-minutes: 45
+  [x] Steps: actions/checkout@v6; pinned KUBECTL_VERSION v1.31.4 +
+      FLUX_VERSION v2.4.0 as env vars (dl.k8s.io + flux2 release URLs); no
+      @latest anywhere; semantics-note echo ("current main ref, not the tag
+      itself"); make prod-deploy; diagnostics step if: failure()
+  [x] Non-ARC-only kubeconfig step ({% unless feature_gha_runner %}): secret
+      passed via step env (never interpolated into run script), umask 077 →
+      0600 file, exported via GITHUB_ENV, empty-secret fail-fast with exact
+      "set the PROD_KUBECONFIG secret in the production environment" message
+  [x] Minimal — no lint/test jobs, no release steps
+  PARTIAL (minor): spec step 6 "Upload smoke-suite diagnostics on failure
+    (if: failure() — capture deploy.sh output + kubectl dumps)" — implemented
+    as a log-based kubectl dump step (kubectl get kustomization,gitrepository,
+    helmrelease -A || true). No actions/upload-artifact upload; deploy.sh
+    output + dumps are available in the job log but not as downloadable
+    artifacts. Requirement's intent (failure diagnostics visible) met;
+    'upload' transport absent.
+  Required translations (not deviations): spec's `{% if not feature_gha_runner %}`
+    → {% unless %} (liquid has no `not` operator — parse error otherwise;
+    repo convention); spec's `${{ github.workspace }}` → $GITHUB_WORKSPACE
+    (unwrapped {{ }} aborts liquid generation; documented trap).
+  Must NOT do: no image build/push ✓; no prod-github-env call ✓; no hardcoded
+    kubeconfig / echoed secrets ✓ (explicit comment); no floating versions ✓;
+    no lint/test jobs ✓.
+  → CLEAN (with 1 partial noted)
+
+TASK 7 — Docs (b14495b: DEPLOYMENT.md +90, README.md.liquid +4)
+  CLEAN.
+  [x] New "## Production Deployment" section with subsections: Prerequisites,
+      One-Time Setup, Usage, Kubeconfig Options, Runner RBAC Scope, Rollback,
+      Smoke Suite — every spec bullet covered (deploy-key first-run-fails-by-
+      design flow, write-access-if-image-updates, GHA v*/workflow_dispatch +
+      production environment, tag-does-not-pin-ref semantics, kubeconfig
+      options incl. in-cluster SA, runner SA security rationale, rollback =
+      git revert + Flux / no tooling built)
+  [x] README.md.liquid pointer added in BOTH template branches (feature branch
+      after bootstrap block; else branch after prod apply)
+  [x] bootstrap cross-reference (complementing DEPLOYMENT.md:105, per plan WHY)
+  [x] Add-only: 90 added / 0 deleted → existing sections untouched
+  Must NOT do: no rewrite of existing sections ✓ (0 deleted lines); no new
+    top-level docs files ✓ (docs/ diff = DEPLOYMENT.md only); common.sh bug
+    not documented ✓ (0 matches); no TODO/PLACEHOLDER/FIXME ✓ (0).
+  → CLEAN
+
+TASK 8 — Final Validation Sweep (no commit — verification only, per plan)
+  CLEAN.
+  [x] Evidence present: task-8-matrix.txt (8/8), task-8-diffstat.txt,
+      task-8-commits.txt
+  [x] No changes made (7 commits total in range; newest = Task 7's docs commit)
+  [x] Its file-mapping (16/17 exact + 1 attributable) independently
+      reproduced by this audit (§5)
+  [x] Note: task-8 learning stated commit order "matches plan EXACTLY" — the
+      4↔5 swap vs the Commit Strategy literal list was glossed (§1); the
+      underlying data was correct, interpretation loose. Cosmetic.
+
+--------------------------------------------------------------------------------
+3. MUST-NOT-DO COMPLIANCE (per task, greps against the task's own commit)
+--------------------------------------------------------------------------------
+  T1: no feature artifacts in commit ✓ | no kubectl/cluster ✓ (0) | no
+      common.sh ✓ (0)
+  T2: ref still branch ✓ | deploy/base/helmrelease.yaml 0 commits ✓ | '~1'
+      count 0 in all 3 overlays ✓ | e2e script 0 commits ✓ | scripts/dev/* 0
+      commits ✓
+  T3: Makefile diff deleted-lines = 0 (dev targets/KUBECONFIG_PATH := intact;
+      single 'KUBECONFIG_PATH :=' diff match = NEW prod var) ✓ | read -p = 0 ✓
+      | secret guard-first + "NOT recreating" ✓ | 0 docker build/push ✓ | 0
+      direct workload apply ✓ | flagger never auto-installed ✓ | '--rm -i' = 0
+      ✓ | common.sh = 0 ✓
+  T4: 'clusterrole' count = 0 ✓ | secrets-in-production = 0 ✓ | helmrelease
+      diff = 1 line (no limits/priority/dind edits) ✓
+  T5: required reviewers = 0 ✓ | no auto secret creation ✓ | 0 workflow
+      references to create-github-env ✓
+  T6: no image build ✓ | no prod-github-env call ✓ | no secret echo ✓ | no
+      @latest ✓ | no lint/test jobs ✓
+  T7: 0 deleted doc lines ✓ | no new docs files ✓ | 0 common.sh mentions ✓ |
+      0 TODO/PLACEHOLDER/FIXME ✓
+  Global guardrails (plan L100-110): all verified — see per-task above; no
+      staging-deploy/prod-destroy/rollback targets added (only prod-deploy,
+      prod-kubeconfig, prod-github-env).
+  VIOLATIONS FOUND: none.
+
+--------------------------------------------------------------------------------
+4. CROSS-TASK CONTAMINATION
+--------------------------------------------------------------------------------
+  Per-commit file sets vs plan-declared task file lists:
+    1089fcd = {test-prod-deploy-static.sh, cargo-generate.toml*}   → T1 only
+    93c2287 = {git-repository.yaml, namespace.yaml,
+               overlays/{prod,staging,dev}/kustomization.yaml}     → T2 only
+    329e357 = {gha-runner/rbac.yaml.liquid, kustomization.yaml,
+               helmrelease.yaml}                                   → T4 only
+    70aa199 = {create-github-env.sh, Makefile(+8: prod-github-env block)} → T5
+    6fd3174 = {deploy.sh, Makefile(+18: vars+prod-deploy+prod-kubeconfig),
+               .gitignore}                                         → T3 only
+    0767c10 = {deploy.yaml.liquid}                                  → T6 only
+    b14495b = {DEPLOYMENT.md, README.md.liquid}                     → T7 only
+  Makefile is legitimately shared by Tasks 3+5 (both list it); their hunks are
+  disjoint, add-only, in each task's own block. No commit touched another
+  task's files; no cross-task edits anywhere in the range.
+  → CLEAN (0 issues)
+
+--------------------------------------------------------------------------------
+5. UNACCOUNTED CHANGES (git diff 6dea175..HEAD --stat = 17 files)
+--------------------------------------------------------------------------------
+  16/17 map exactly to plan task file lists (see §4).
+  1/17 = cargo-generate.toml (+1): DOCUMENTED ATTRIBUTABLE EXCEPTION
+    (Task 1 harness companion — adds scripts/test-prod-deploy-static.sh to
+    template ignore[] so the harness doesn't ship into generated projects).
+    Verified diff = ONLY the single ignore entry line; nothing else.
+  → CLEAN (1 known attributable, verified minimal)
+
+--------------------------------------------------------------------------------
+6. PLAN AMENDMENT VERIFICATION (Task 2 mid-execution amendment)
+--------------------------------------------------------------------------------
+  Reflected in CURRENT plan text:
+    [x] L318 BLOCKER FIX paragraph: overlay SMP → JSON6902 conversion, raw //
+        paths, empirical evanphx-v4 validation, flagger MetricTemplate left
+        as-is — all present
+    [x] L319 "E2E MITIGATION DROPPED (scope amendment)" paragraph — present
+  Diffs match amended scope:
+    [x] 3 overlays converted (raw //, zero ~1, zero SMP residue)
+    [x] e2e script + scripts/dev/* + deploy/base untouched
+  Stale wording (plan-internal, no execution deviation):
+    (a) L318 "Keep conditional blocks as JSON6902 `add` ops" vs implemented
+        leaf `op: replace` — the leaf-replace fix IS part of the
+        orchestrator-declared amendment and documented in learnings
+        ("Task 2 fix (postgres/kafka JSON6902 add-regression)"); plan sentence
+        predates that refinement
+    (b) Commit Strategy L1049 still lists "+ e2e mitigation" for commit 2;
+        actual commit 2 has no e2e changes (consistent with amended body)
+
+--------------------------------------------------------------------------------
+7. DEVIATIONS LEDGER (all minor, all non-blocking, all documented)
+--------------------------------------------------------------------------------
+  D1. T1 (MISSING-minor): harness lacks the spec'd runs-on conditional
+      assertion for deploy.yaml. Workflow itself is correct; toggle verified
+      manually (task-6 evidence). Suggested follow-up: add a grep assertion.
+  D2. T3 (documented): flagger pre-flight Forbidden/403 → warn+continue
+      (spec letter: any failure → exit). NotFound still fail-fast; prevents
+      false failures for RBAC-restricted identities.
+  D3. T3 (documented): 'kubectl apply -k' → 'kubectl kustomize
+      --load-restrictor LoadRestrictionsNone | kubectl apply --server-side -f -'
+      (empirically forced; still applies ONLY Flux config objects).
+  D4. T6 (PARTIAL-minor): failure diagnostics are log-based kubectl dump; no
+      actions/upload-artifact upload. Diagnostics visibility met via job log.
+  D5. T6 (required translations, not deviations): {% unless %} for
+      {% if not %}; $GITHUB_WORKSPACE for ${{ github.workspace }}.
+  D6. T2 (documented): conditional blocks use leaf op: replace (matches
+      amendment; plan L318 wording stale).
+  D7. Commit order 4↔5 vs Commit Strategy literal list (per waves + F4
+      briefing); messages verbatim; functionally benign.
+  D8. Plan-internal staleness: Commit Strategy L1049 "+ e2e mitigation"
+      leftover (no e2e changes in actual commit 2).
+
+--------------------------------------------------------------------------------
+VERDICT
+--------------------------------------------------------------------------------
+  Tasks [8/8 compliant — D1/D4 are the only spec-letter gaps, both minor and
+         non-material to shipped behavior]
+  Contamination [CLEAN]
+  Unaccounted [CLEAN — 1 documented attributable: cargo-generate.toml,
+               verified 1-line-only]
+  VERDICT: APPROVE
+================================================================================

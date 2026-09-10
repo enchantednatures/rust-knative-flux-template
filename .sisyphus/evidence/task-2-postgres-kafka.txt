@@ -1,0 +1,123 @@
+=== prod: semantic assertions ===
+postgres.enabled count: 5
+    postgres:
+      backup:
+      1             backoffPolicy: exponential
+      1           consumerGroup: pgkafka-app-consumers
+      1           dlq:
+      1             enabled: true
+      3         enabled: true
+      1       enabled: true
+      1         instances: 3
+      1       instances: 3
+      1       monitoring:
+      1       pooler:
+      1       postInitSQL:
+      1           s3Credentials:
+      1       sharedPreloadLibraries:
+      1           sink: ""
+      1           topic: events
+      1       version: "16"
+--- overlay overrides ---
+          consumers: 10
+          initialOffset: latest
+          destinationPath: s3://pgkafka-app-postgres-backups/prod/
+            maxParallel: 8
+        retentionPolicy: 30d
+      instances: 3
+        synchronous_commit: remote_apply
+        instances: 3
+=== staging: semantic assertions ===
+postgres.enabled count: 5
+    postgres:
+      backup:
+      1             backoffPolicy: exponential
+      1           consumerGroup: pgkafka-app-consumers
+      1           dlq:
+      1             enabled: true
+      3         enabled: true
+      1       enabled: true
+      1       instances: 2
+      1         instances: 3
+      1       monitoring:
+      1       pooler:
+      1       postInitSQL:
+      1           s3Credentials:
+      1       sharedPreloadLibraries:
+      1           sink: ""
+      1           topic: events
+      1       version: "16"
+--- overlay overrides ---
+          consumers: 5
+          initialOffset: earliest
+          destinationPath: s3://pgkafka-app-postgres-backups/staging/
+            maxParallel: 4
+        retentionPolicy: 14d
+      instances: 2
+        synchronous_commit: "on"
+        instances: 3
+=== dev: semantic assertions ===
+postgres.enabled count: 7
+    postgres:
+      backup:
+      1             backoffPolicy: exponential
+      1           consumerGroup: pgkafka-app-consumers
+      1           dlq:
+      1                           enabled:
+      1                         enabled:
+      4                       enabled:
+      1                     enabled:
+      1                   enabled:
+      1                       enabled: true
+      1                     enabled: true
+      1             enabled: true
+      3         enabled: true
+      1       enabled: true
+      1                   instances:
+      4               instances:
+      1         instances: 1
+      1       instances: 1
+      2               monitoring:
+      1       monitoring:
+      1       pooler:
+      1                       postInitSQL:
+      1       postInitSQL:
+      1                         s3Credentials:
+      1                       s3Credentials:
+      1                   s3Credentials:
+      1               s3Credentials:
+      1           s3Credentials:
+      1       sharedPreloadLibraries:
+      1           sink: ""
+      1           topic: events
+      1                           version:
+      4                       version:
+      2                     version:
+      1       version: "16"
+--- overlay overrides ---
+              destinationPath:
+                      destinationPath:
+                          maxParallel:
+                    - destinationPath
+                  retentionPolicy:
+                        destinationPath:
+                            maxParallel:
+                      - destinationPath
+              instances:
+              instances:
+                  instances:
+                  destinationPath:
+                      maxParallel:
+                - destinationPath
+                  retentionPolicyIntervalSeconds:
+              retentionPolicy:
+              instances:
+              instances:
+          consumers: 1
+          initialOffset: earliest
+          destinationPath: s3://pgkafka-app-postgres-backups/dev/
+            maxParallel: 2
+        retentionPolicy: 7d
+      instances: 1
+        synchronous_commit: local
+        instances: 1
