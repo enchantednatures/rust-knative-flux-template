@@ -97,6 +97,12 @@ spec:
           - name: APP__TELEMETRY__SERVICE_NAME
             value: "{{ project_name | replace: '_', '-' }}"
 
+    {% if feature_dragonfly %}
+    dragonfly:
+      enabled: true
+      replicas: 3
+    {% endif %}
+
     {% if feature_postgres %}
     postgres:
       enabled: true
