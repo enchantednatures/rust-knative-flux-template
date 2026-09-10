@@ -222,7 +222,7 @@ pod_curl() {
 
 	log_info "  probe pod: kubectl run ${pod} -n ${PROD_NAMESPACE} (image ${SMOKE_IMAGE})"
 	if ! kubectl run "${pod}" -n "${PROD_NAMESPACE}" --restart=Never \
-		--requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi \
+		--overrides='{"spec":{"containers":[{"resources":{"requests":{"cpu":"10m","memory":"16Mi"},"limits":{"cpu":"100m","memory":"64Mi"}}}]}}' \
 		--image="${SMOKE_IMAGE}" --quiet -- \
 		curl -f -s --max-time 60 -w '\n%{http_code}' "${url}" >/dev/null 2>&1; then
 		log_error "  failed to create probe pod ${pod}"
@@ -423,10 +423,10 @@ dry_run_flow() {
 	step "8" "Smoke suite (detached curl pods, image ${SMOKE_IMAGE})"
 	echo "  [dry-run] SERVICE_URL: ${service_url_plan}"
 	echo "  [dry-run] fallback URL: http://${PROJECT_NAME}.${PROD_NAMESPACE}.svc.cluster.local (on curl exit 6/7/28/52/56/125 or stuck pod)"
-	echo "  [dry-run] kubectl run prod-smoke-health-live-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/live"
-	echo "  [dry-run] kubectl run prod-smoke-health-ready-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/ready"
-	echo "  [dry-run] kubectl run prod-smoke-metrics-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/metrics"
-	echo "  [dry-run] kubectl run prod-smoke-hello-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --requests=cpu=10m,memory=16Mi --limits=cpu=100m,memory=64Mi --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/api/v1/hello"
+	echo "  [dry-run] kubectl run prod-smoke-health-live-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/live"
+	echo "  [dry-run] kubectl run prod-smoke-health-ready-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/health/ready"
+	echo "  [dry-run] kubectl run prod-smoke-metrics-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/metrics"
+	echo "  [dry-run] kubectl run prod-smoke-hello-\$RANDOM -n ${PROD_NAMESPACE} --restart=Never --image=${SMOKE_IMAGE} -- curl -f -s --max-time 60 <url>/api/v1/hello"
 
 	step "9" "Summary"
 	echo "  [dry-run] assert: /health/live → 200 + body contains {\"status\":\"alive\"}"
