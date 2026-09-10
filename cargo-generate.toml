@@ -17,6 +17,7 @@ ignore = [
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
+  ".github/workflows/dev-setup-validation.yaml",
   ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
   "docs/LOCAL_E2E_TESTING.md",
   "docs/E2E_TROUBLESHOOTING.md",
