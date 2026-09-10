@@ -207,6 +207,7 @@ jobs:
     if: github.event_name != 'pull_request'
     permissions:
       contents: read
+      packages: read
       security-events: write
     steps:
       - name: Login to Container Registry
