@@ -27,7 +27,6 @@ deploy/
 # Docker
 Dockerfile
 .dockerignore
-docker-compose.yaml
 docker/
 
 # Tests
