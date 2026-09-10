@@ -241,7 +241,7 @@ ensure_gitrepository_ready() {
 		msg="$(kubectl get gitrepository "${PROJECT_NAME}" -n "${FLUX_NAMESPACE}" \
 			-o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)"
 
-		if [[ "${msg}" =~ (authentication|permission|publickey|credentials|unauthorized|forbidden) ]]; then
+		if [[ "${msg}" =~ (authentication|permission|publickey|credentials|unauthorized|forbidden|AuthenticationFailed|secret.*not[[:space:]]+found) ]]; then
 			handle_auth_failure
 			return 0
 		fi
