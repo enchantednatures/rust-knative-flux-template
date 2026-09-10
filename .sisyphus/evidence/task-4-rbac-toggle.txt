@@ -1,0 +1,98 @@
+=== Toggle ON: PROD_DEPLOY_MATRIX=1,1,0 ===
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Prod Deploy Static Validation Harness (TDD red gate)[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;34m→[0m Template: /home/hcasten/dev/rust-knative-flux-template
+[0;34m→[0m Generated project name: prod-matrix-app
+[0;34m→[0m Checking tools...
+[0;32m✓[0m cargo-generate: /home/hcasten/.cargo/bin/cargo-generate
+[0;32m✓[0m kustomize: /usr/bin/kustomize
+[0;32m✓[0m python3 + PyYAML available (workflow YAML parse enabled)
+[0;34m→[0m Working directory: /tmp/tmp.v8rdXi3ffM
+[0;34m→[0m (output will be preserved after the run)
+[0;34m→[0m Preparing template source copy (without .git/)...
+[0;32m✓[0m Template source ready: /tmp/tmp.v8rdXi3ffM/template-source
+[0;34m→[0m Single-combo mode: PROD_DEPLOY_MATRIX=1,1,0
+
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Combo 1: gha_runner=1 image_updates=1 flagger=0  |  dir: /tmp/tmp.v8rdXi3ffM/combo-1-1-0[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;34m→[0m Generating template...
+🔧   feature_gha_runner: "true" (value from CLI)
+🔧   enable_image_updates: "true" (value from CLI)
+🔧   feature_flagger: "false" (value from CLI)
+🔧   Destination: /tmp/tmp.v8rdXi3ffM/combo-1-1-0/prod-matrix-app ...
+🔧   project-name: prod-matrix-app ...
+🔧   Generating template ...
+🔧   gha_runner_chart_version: "0.13.1" (default value from template)
+🔧   gha_runner_image_tag: "2.331.0" (default value from template)
+🔧   gha_runner_max: "4" (default value from template)
+🔧   gha_runner_storage_class: "openebs-hostpath" (default value from template)
+🔧   gha_runner_priority_class: "actions-runner-high-priority" (default value from template)
+🔧   gha_runner_storage_size: "50Gi" (default value from template)
+
+╔════════════════════════════════════════════════════════╗
+║          Project Generation Complete! ✓               ║
+╚════════════════════════════════════════════════════════╝
+
+Naming Convention Info:
+  ✓ Rust code uses underscores in crate names (Cargo.toml)
+  ✓ Kubernetes services use hyphens in resource names
+  ✓ Docker images use hyphens in tags
+  ✓ All names are automatically normalized during generation
+
+🔧 Running clippy --fix...
+⚠️  clippy --fix failed (non-blocking): Cannot prompt for system command confirmation in silent mode. Use --allow-commands if you want to allow the template to run system commands in silent mode.
+    Fix later with: cargo clippy --fix --allow-dirty --allow-staged --allow-no-vcs
+🔧 Running cargo fmt...
+⚠️  cargo fmt failed (non-blocking): Cannot prompt for system command confirmation in silent mode. Use --allow-commands if you want to allow the template to run system commands in silent mode.
+    Fix later with: cargo fmt --all
+
+⚠️  Post-generation lint/format finished with 2 warning(s).
+    The project was generated successfully — apply the fixes above manually.
+
+Next steps:
+  1. Review the generated code
+  2. Update config files with your settings
+  3. Run: make dev-up  (to start development environment)
+🔧   Moving generated files into: `/tmp/tmp.v8rdXi3ffM/combo-1-1-0/prod-matrix-app`...
+🔧   Initializing a fresh Git repository
+✨   Done! New project created /tmp/tmp.v8rdXi3ffM/combo-1-1-0/prod-matrix-app
+[0;32m✓[0m Generated: /tmp/tmp.v8rdXi3ffM/combo-1-1-0/prod-matrix-app
+[0;34m→[0m Running assertions...
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: scripts/prod/deploy.sh (file missing)[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: scripts/prod/create-github-env.sh (file missing)[0m
+[0;32m✓[0m   kustomize build deploy/flux/config/prod
+[0;32m✓[0m   kustomize build deploy/overlays/prod
+[0;32m✓[0m   kustomize build deploy/infrastructure/gha-runner
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: .github/workflows/deploy.yaml (rendered workflow file missing)[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: Makefile (missing 'prod-deploy:')[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: Makefile (missing 'prod-github-env:')[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: Makefile (missing 'prod-kubeconfig:')[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: Makefile (missing 'PROD_KUBECONFIG_PATH')[0m
+[0;31m✗ [gha_runner=1 image_updates=1 flagger=0] missing/failed artifact: Makefile (missing 'GITHUB_ORG')[0m
+[0;31m✗[0m Combo FAILED: gha_runner=1 image_updates=1 flagger=0 (8 failed assertion(s))
+
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Results: 0/1 combos passed[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;31mFailed combos:[0m
+  [0;31m-[0m gha_runner=1 image_updates=1 flagger=0 (8 failed assertion(s))
+
+[0;31m✗[0m 1/1 combo(s) failed — see missing artifacts above.
+
+=== grep imageupdateautomations on rendered 1,1,0 output (expect >=1) ===
+1
+  - image.toolkit.fluxcd.io
+  resources:
+  - imagerepositories
+  - imagepolicies
+
+=== Toggle OFF (from task-4-rbac.txt run, 1,0,0): no imageupdateautomations failure reported (assertion green, rule absent) ===
+0

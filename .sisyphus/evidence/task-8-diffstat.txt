@@ -1,0 +1,18 @@
+ .github/workflows/deploy.yaml.liquid               |  76 ++
+ .gitignore                                         |   1 +
+ Makefile                                           |  26 +
+ README.md.liquid                                   |   4 +
+ cargo-generate.toml                                |   1 +
+ deploy/flux/git-repository.yaml                    |   7 +-
+ deploy/infrastructure/gha-runner/helmrelease.yaml  |   1 +
+ .../infrastructure/gha-runner/kustomization.yaml   |   1 +
+ deploy/infrastructure/gha-runner/rbac.yaml.liquid  | 183 +++++
+ deploy/overlays/dev/kustomization.yaml             | 204 +++---
+ deploy/overlays/prod/kustomization.yaml            | 141 ++--
+ deploy/overlays/prod/namespace.yaml                |   6 +
+ deploy/overlays/staging/kustomization.yaml         | 131 ++--
+ docs/DEPLOYMENT.md                                 |  90 +++
+ scripts/prod/create-github-env.sh                  | 331 +++++++++
+ scripts/prod/deploy.sh                             | 782 +++++++++++++++++++++
+ scripts/test-prod-deploy-static.sh                 | 562 +++++++++++++++
+ 17 files changed, 2345 insertions(+), 202 deletions(-)

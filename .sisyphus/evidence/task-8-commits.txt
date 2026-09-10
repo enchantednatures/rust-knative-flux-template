@@ -1,0 +1,7 @@
+b14495b docs: document production deployment workflow
+0767c10 feat(ci): add production deploy workflow
+6fd3174 feat(make): add prod-deploy and prod-kubeconfig targets
+70aa199 feat(make): add prod-github-env setup target
+329e357 feat(gha-runner): add runner ServiceAccount and RBAC
+93c2287 feat(flux): switch GitRepository to SSH deploy-key auth
+1089fcd test(prod): add static validation harness for prod deployment tooling

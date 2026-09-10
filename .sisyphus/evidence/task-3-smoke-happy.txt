@@ -1,0 +1,69 @@
+
+===================================================================
+Production Deploy: demo-app
+===================================================================
+
+[1;33m[1/9][0m Resolving kubeconfig
+[0;34m→[0m Using KUBECONFIG from environment: /tmp/opencode/dummy-prod-kubeconfig
+
+[1;33m[2/9][0m Running pre-flight checks
+[0;32m✓[0m Kubernetes cluster reachable
+[0;32m✓[0m Flux namespace 'flux-system' present
+[0;32m✓[0m Flux source-controller is Available
+[0;32m✓[0m Knative namespace 'knative-serving' present
+[0;34m→[0m Kustomization depends on 'flagger' — verifying the flagger Kustomization exists...
+[0;32m✓[0m Flagger dependency satisfied (kustomization/flagger found)
+
+[1;33m[3/9][0m Applying GitRepository
+[0;32m✓[0m GitRepository demo-app applied (namespace flux-system)
+
+[1;33m[4/9][0m Deploy key auto-detection
+[0;34m→[0m Waiting for GitRepository demo-app to become Ready (timeout 90s)...
+[0;32m✓[0m GitRepository demo-app is Ready
+
+[1;33m[5/9][0m Applying prod Flux config
+[0;32m✓[0m Prod Flux config applied (Kustomization demo-app-prod)
+
+[1;33m[6/9][0m Waiting for Flux reconciliation
+[0;34m→[0m Waiting for Kustomization demo-app-prod (timeout 5m)...
+condition met
+[0;32m✓[0m Kustomization demo-app-prod is Ready
+[0;34m→[0m Waiting for HelmRelease demo-app (namespace production, timeout 5m)...
+condition met
+[0;32m✓[0m HelmRelease demo-app is Ready
+
+[1;33m[7/9][0m Waiting for Knative service
+[0;34m→[0m Waiting for ksvc/demo-app (namespace production, timeout 5m)...
+condition met
+[0;32m✓[0m Knative service demo-app is Ready
+
+[1;33m[8/9][0m Running in-cluster health smoke suite
+[0;34m→[0m Service URL: http://demo-app.example.com
+
+[0;34m→[0m Test: Liveness probe — GET http://demo-app.example.com/health/live
+[0;34m→[0m   probe pod: kubectl run prod-smoke-health-live-10360 -n production (image curlimages/curl:8.10.1)
+  [0;32m✓ Liveness probe PASSED[0m (HTTP 200)
+
+[0;34m→[0m Test: Readiness probe — GET http://demo-app.example.com/health/ready
+[0;34m→[0m   probe pod: kubectl run prod-smoke-health-ready-9703 -n production (image curlimages/curl:8.10.1)
+  [0;32m✓ Readiness probe PASSED[0m (HTTP 200)
+
+[0;34m→[0m Test: Prometheus metrics — GET http://demo-app.example.com/metrics
+[0;34m→[0m   probe pod: kubectl run prod-smoke-metrics-9411 -n production (image curlimages/curl:8.10.1)
+  [0;32m✓ Prometheus metrics PASSED[0m (HTTP 200)
+
+[0;34m→[0m Test: Hello API — GET http://demo-app.example.com/api/v1/hello
+[0;34m→[0m   probe pod: kubectl run prod-smoke-hello-13527 -n production (image curlimages/curl:8.10.1)
+  [0;32m✓ Hello API PASSED[0m (HTTP 200)
+
+[1;33m[9/9][0m Summary
+
+[0;34m╔════════════════════════════════════════════════════════╗[0m
+[0;34m║           Production Deployment Summary                ║[0m
+[0;34m╚════════════════════════════════════════════════════════╝[0m
+
+  Service:      [0;32mdemo-app[0m (namespace production)
+  Service URL:  [0;32mhttp://demo-app.example.com[0m
+  Smoke checks: [0;32m4 passed[0m / [0;31m0 failed[0m
+
+[0;32m✓[0m Production deployment verified — 4/4 smoke checks passed

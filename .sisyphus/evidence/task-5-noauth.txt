@@ -1,0 +1,7 @@
+
+===================================================================
+GitHub Environment Setup: 'production'
+===================================================================
+
+[0;31m✗[0m GitHub CLI (gh) is not authenticated
+[0;34m→[0m Please run: gh auth login (with admin access to the repository)

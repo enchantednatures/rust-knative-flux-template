@@ -1,0 +1,37 @@
+=== Task 7 QA evidence — docs verification (2026-09-08T02:06:42Z) ===
+
+--- grep -n '## Production Deployment' docs/DEPLOYMENT.md
+520:## Production Deployment
+
+--- grep -c 'prod-deploy' docs/DEPLOYMENT.md (threshold: >= 3)
+9
+
+--- grep -c 'prod-github-env' docs/DEPLOYMENT.md (threshold: >= 1)
+2
+
+--- grep -ci 'deploy key' docs/DEPLOYMENT.md (threshold: >= 1)
+3
+
+--- grep -c 'TODO\|PLACEHOLDER\|FIXME' docs/DEPLOYMENT.md (threshold: 0)
+0
+
+--- grep -c 'prod-deploy' README.md.liquid (threshold: >= 1)
+2
+
+--- grep -n 'Production Deployment' README.md.liquid (pointer)
+99:    For the one-command production flow (`make prod-deploy`), GitHub Actions deploys, and deploy-key setup, see [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) in the deployment guide.
+749:For the one-command production flow (`make prod-deploy`), GitHub Actions deploys, and deploy-key setup, see [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) in the deployment guide.
+
+--- TOC entry present:
+45:- [Production Deployment](#production-deployment)
+
+--- dry-run documented:
+540:   This creates the `production` environment with deployment branch policies for `main` and `v*` tags, using `gh api`. It is idempotent (existing environment and policies are left as-is) and supports `--dry-run` via `./scripts/prod/create-github-env.sh --dry-run`.
+562:./scripts/prod/deploy.sh --dry-run     # print the full 9-step plan, touch nothing
+
+--- semantics note (tag vs ref) documented:
+572:> **Deploy semantics: a tag does NOT pin the deployed ref.** Flux tracks the default branch (`deploy/flux/git-repository.yaml` sets `ref.branch` to the default branch). A `v*` tag push triggers the workflow, but what gets deployed is the current default-branch ref plus whatever image tag the ImagePolicy has selected. Tags decide *when* to deploy, not *which ref* to deploy.
+
+--- flux bootstrap cross-reference:
+105:flux bootstrap github \
+524:> **Relationship to `flux bootstrap github`**: The [Install FluxCD](#install-fluxcd) section above shows `flux bootstrap github`, the alternative path for installing Flux on a cluster in the first place. The two complement each other: bootstrap installs Flux itself, while `make prod-deploy` deploys this service through an already-running Flux.
