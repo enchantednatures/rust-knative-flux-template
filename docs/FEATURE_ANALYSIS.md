@@ -439,7 +439,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 - **Testing**: axum-test 17, tokio-test 0.4
 - **Database Testing**: sqlx 0.8 (PostgreSQL)
 - **Local Kubernetes**: Kind (via make dev-up)
-- **Container Orchestration**: Docker Compose (implicit via Kind scripts)
+- **Container Orchestration**: Kind + Knative (via Makefile dev scripts)
 
 ### Optional/Conditional Dependencies
 - **S3 Feature**:

@@ -331,7 +331,7 @@ pub async fn copy_object(
 #[tokio::test]
 #[ignore]
 async fn test_copy_object() {
-    // Setup: Start docker-compose
+    // Setup: Start the dev environment (make dev-up)
     // Test copy operation
     // Verify source and destination exist
 }
