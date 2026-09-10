@@ -28,22 +28,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install kubectl
+      - name: Install kubectl + flux
         run: |
           set -euo pipefail
-          curl -fsSL -o /usr/local/bin/kubectl \
+          mkdir -p "$HOME/.bin"
+          curl -fsSL -o "$HOME/.bin/kubectl" \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x /usr/local/bin/kubectl
-          kubectl version --client
-
-      - name: Install flux CLI
-        run: |
-          set -euo pipefail
+          chmod +x "$HOME/.bin/kubectl"
           FLUX_VER="${FLUX_VERSION#v}"
           curl -fsSL \
             "https://github.com/fluxcd/flux2/releases/download/${FLUX_VERSION}/flux_${FLUX_VER}_linux_amd64.tar.gz" \
-            | tar -xz -C /usr/local/bin flux
-          chmod +x /usr/local/bin/flux
+            | tar -xz -C "$HOME/.bin" flux
+          chmod +x "$HOME/.bin/flux"
+          echo "PATH=$HOME/.bin:$PATH" >> "$GITHUB_ENV"
+          kubectl version --client
           flux --version
 
       {% unless feature_gha_runner %}
