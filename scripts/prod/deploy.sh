@@ -668,7 +668,12 @@ main() {
 			latest_rev="$(kubectl get ksvc "${PROJECT_NAME}" -n "${PROD_NAMESPACE}" -o jsonpath='{.status.latestCreatedRevisionName}' 2>/dev/null || true)"
 			priv_svc="${latest_rev}-private"
 			priv_ip="$(kubectl get svc "${priv_svc}" -n "${PROD_NAMESPACE}" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
-			if [[ -n "${priv_ip}" && "${priv_ip}" != "None" ]]; then
+			if [[ -z "${priv_ip}" || "${priv_ip}" == "None" ]]; then
+				# The placeholder service is ExternalName (istio) — fall back
+				# to the private revision service's DNS name (activator-backed).
+				SERVICE_URL="http://${priv_svc}.${PROD_NAMESPACE}.svc.cluster.local"
+				log_info "Cluster-local URL — routing smoke probes via ${priv_svc}"
+			elif [[ -n "${priv_ip}" ]]; then
 				log_info "Cluster-local URL — routing smoke probes via ${priv_svc} cluster IP ${priv_ip}"
 				SERVICE_URL="http://${priv_ip}"
 			fi
