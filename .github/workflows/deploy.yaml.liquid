@@ -65,7 +65,13 @@ jobs:
           echo "Flux deploys the default branch + image automation tags — a tag push triggers deployment of the current main ref, not the tag itself"
 
       - name: Deploy to production
-        run: make prod-deploy
+        run: |
+          set -euo pipefail
+          # The plain actions-runner image has no make; drive the steps that
+          # make prod-deploy performs directly.
+          export PATH="$HOME/.bin:$PATH"
+          pushd "$GITHUB_WORKSPACE" >/dev/null
+          ./scripts/prod/deploy.sh
 
       - name: Deploy diagnostics
         if: failure()
