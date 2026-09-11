@@ -41,8 +41,7 @@ jobs:
             | tar -xz -C "$HOME/.bin" flux
           chmod +x "$HOME/.bin/flux"
           echo "PATH=$HOME/.bin:$PATH" >> "$GITHUB_ENV"
-          kubectl version --client
-          flux --version
+          echo "KUBECTL=$(which kubectl)" >> "$GITHUB_ENV"
 
       {% unless feature_gha_runner %}
       - name: Write production kubeconfig
