@@ -1,0 +1,8 @@
+=== PROD overlay ===
+kind: Namespace
+  name: production
+          maxScale: 20
+          minScale: 2
+=== DEV overlay ===
+          maxScale: 3
+          minScale: 0

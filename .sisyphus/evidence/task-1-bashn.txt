@@ -1,0 +1,2 @@
+$ bash -n scripts/test-prod-deploy-static.sh
+exit=0

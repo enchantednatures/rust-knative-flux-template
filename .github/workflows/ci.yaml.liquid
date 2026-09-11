@@ -37,6 +37,12 @@ jobs:
           restore-keys: |
             {% raw %}${{ runner.os }}-cargo-{% endraw %}
 
+      - name: Install build deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -102,6 +108,12 @@ jobs:
         continue-on-error: true
 
       {% endif %}
+      - name: Install build deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev
+
       - name: Run tests
         run: cargo test --all-features
         env:
@@ -205,7 +217,18 @@ jobs:
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     needs: build
     if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
     steps:
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -213,7 +236,10 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
 
+      # Code scanning SARIF upload requires GHAS on private repos; keep the
+      # scan (the actual gate) unconditional and only upload when public.
       - name: Upload Trivy scan results
+        if: {% raw %}${{ !github.event.repository.private }}{% endraw %}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'

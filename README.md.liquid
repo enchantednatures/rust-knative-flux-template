@@ -34,31 +34,49 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 ### Local Development
 
 1. **Prerequisites**
-   - Docker & Docker Compose
+   - Docker (running) — Kind runs inside it
    - Rust 1.92+
-   - cargo-generate (optional, for new projects)
+   - kind, kubectl, helm, yq
+   - flux CLI (optional, for GitOps), cargo-generate (optional, for new projects)
 
-2. **Start Local Services**
+2. **Start the Development Environment**
    ```bash
-   docker-compose up -d
+   make dev-up
    ```
 
-   This starts:
-   - Redis (port 6379)
-   - MinIO with S3-compatible API (port 9000)
-   - MinIO Web Console (port 9001)
-   - Jaeger tracing (port 16686)
-   - Prometheus metrics (port 9090)
-   - OpenTelemetry Collector
+   One command bootstraps everything, in order:
+   - Kind cluster (Kubernetes 1.32) + local Docker registry (`localhost:5001`)
+   - Knative Serving v1.20.0 with Kourier ingress
+   - Redis (port 6379 in-cluster){% if feature_s3 %}, MinIO with S3-compatible API (port 9000), MinIO Web Console (port 9001){% endif %}{% if event_source_kafka %}, Kafka (KRaft, port 9092 in-cluster){% endif %}
+   - Jaeger tracing (port 16686), OpenTelemetry Collector, Prometheus (port 9090)
+   - Builds your Docker image, pushes it to the local registry, and deploys it as a Knative service
 
 3. **Run the Service**
+   The service runs **inside the cluster** as a Knative Service. The Kind node maps
+   container port 31080 to host port 8080 (Kourier ingress), so the app is reachable
+   at http://localhost:8080 with no port-forward required:
    ```bash
-   # Configure environment (optional, defaults work)
-   export APP__SERVER__PORT=8080
-   export APP__REDIS__URL=redis://localhost:6379
-   
-   # Run with auto-reload
-   cargo watch -q -c -w src -x run
+   # Health checks
+   make dev-test-health
+   curl http://localhost:8080/health/live
+   curl http://localhost:8080/health/ready
+
+   # Stream application logs / inspect status
+   make dev-logs
+   make dev-status
+
+   # Rebuild the image and redeploy after code changes
+   make dev-restart
+
+   # Redeploy only (image already in the local registry)
+   make dev-deploy
+   ```
+
+   **Optional: hot-reload without rebuilding images.** The cluster provides the backing
+   services; run the binary directly against them:
+   ```bash
+   make dev-forward                     # port-forwards Redis, MinIO, Jaeger, Prometheus
+   cargo watch -q -c -w src -x run      # separate terminal
    ```
 
 4. **Test S3 Integration**
@@ -75,58 +93,96 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
    curl http://localhost:8080/api/download/test.txt
    ```
 
-5. **View Traces & Metrics**
+5. **View Traces & Metrics** (run `make dev-forward` in a separate terminal first)
    - Jaeger: http://localhost:16686
    - Prometheus: http://localhost:9090
    - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
 
+6. **Teardown**
+   ```bash
+   make dev-down    # delete the cluster and local registry
+   make dev-reset   # tear down and recreate from scratch
+   ```
+
 ### Kubernetes Deployment
 
+Staging/production run through FluxCD GitOps on a cluster with **Knative Serving** (and FluxCD) installed. Local development uses the Kind flow above; this section covers real clusters.
+
 1. **Prerequisites**
-    - Kubernetes 1.24+
-    - Knative 1.5+
-    - FluxCD
+    - Kubernetes 1.32+ cluster
+    - Knative Serving 1.20+ installed cluster-wide
+    - FluxCD installed cluster-wide (`flux bootstrap github ...` installs Flux itself, once per cluster)
 
-2. **Deploy with FluxCD**
+2. **Bootstrap the GitOps source**
     ```bash
-    # Bootstrap Flux to track this repo (applies GitRepository + ImageRepository)
-    make bootstrap
-
-    # Bootstrap a specific environment (e.g., production)
-    make bootstrap production
+    # Applies the GitRepository (+ environment Kustomizations) and provisions the
+    # deploy key — the first run prints the public key to add on GitHub
+    # (Repo → Settings → Deploy keys). Re-run after adding the key.
+    make bootstrap                    # GitRepository + deploy key only
+    make bootstrap staging            # + staging environment wiring
+    make bootstrap production         # + production environment wiring
     ```
 
-{% if event_source_kafka %}
-#### Kafka Event Source Deployment
+3. **Deploy**
+    Continuous deployment runs through Flux: pushing to the default branch triggers CI,
+    which builds a `sha-<short>` image and pushes it to the registry; Flux image
+    automation then bumps the tag in `deploy/base/helmrelease.yaml` and Flux reconciles
+    a new Knative revision (with Flagger enabled, promoted via canary analysis).
 
-The KafkaSource and DLQ handler are automatically deployed with the application.
+    For an explicit production deploy, use the one-command flow (deploy-key
+    auto-detection, reconciliation waits, in-cluster smoke suite):
 
-For production/staging, ensure external Kafka is configured:
-- Update `deploy/overlays/staging/kafka-source-patch.yaml` with staging Kafka servers
-- Update `deploy/overlays/prod/kafka-source-patch.yaml` with production Kafka servers
-{% endif %}
+    ```bash
+    make prod-deploy
+    ```
 
-3. **Deploy Directly**
+    See [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) for the GitHub Actions path, deploy-key setup, and kubeconfig options.
+
+4. **Manual apply (alternative to Flux)**
    ```bash
    # Development environment
    kubectl apply -k deploy/overlays/dev
-   
+
    # Staging environment
    kubectl apply -k deploy/overlays/staging
-   
+
    # Production environment
    kubectl apply -k deploy/overlays/prod
    ```
+   This applies the same manifests without Flux watching; prefer the GitOps path above.
 
-4. **Configure S3 Credentials**
+5. **Configure Secrets**
+
+   The service reads its configuration from a `{{ project_name }}-secrets` secret
+   (Redis URL{% if feature_s3 %} and S3 credentials{% endif %} — see
+   `deploy/base/secret.yaml.example` for all options: kubectl, plain secret file,
+   External Secrets Operator, or Sealed Secrets):
+
    ```bash
-   kubectl create secret generic {{ project_name }}-s3 \
-     --from-literal=s3-endpoint=s3.amazonaws.com \
-     --from-literal=s3-bucket=my-bucket \
-     --from-literal=s3-region=us-east-1 \
-     --from-literal=aws-access-key-id=$AWS_ACCESS_KEY_ID \
-     --from-literal=aws-secret-access-key=$AWS_SECRET_ACCESS_KEY
+   {% if feature_s3 %}kubectl create secret generic {{ project_name }}-secrets \
+     --from-literal=redis-url='redis://:password@redis-host:6379/0' \
+     --from-literal=aws-access-key-id='$AWS_ACCESS_KEY_ID' \
+     --from-literal=aws-secret-access-key='$AWS_SECRET_ACCESS_KEY' \
+     -n {{ target_namespace }}
+   {% else %}kubectl create secret generic {{ project_name }}-secrets \
+     --from-literal=redis-url='redis://:password@redis-host:6379/0' \
+     -n {{ target_namespace }}
+   {% endif %}
    ```
+   {% if feature_postgres %}
+
+   Postgres backup storage uses a separate `postgres-backup-storage` secret — see
+   `deploy/base/object-storage-secret.yaml.example`.
+   {% endif %}
+
+{% if event_source_kafka %}
+
+> **Kafka Event Source**: The KafkaSource and DLQ handler are deployed with the app.
+> Topic, consumer group, bootstrap servers, retries, and DLQ settings live in the
+> HelmRelease `kafka` values (`deploy/base/helmrelease.yaml`), patched per environment
+> in `deploy/overlays/{staging,prod}/kustomization.yaml` — point `bootstrapServers` at
+> your external Kafka for production/staging. See [docs/KAFKA_EVENTING.md](./docs/KAFKA_EVENTING.md).
+{% endif %}
 
 ## Project Structure
 
@@ -163,14 +219,17 @@ For production/staging, ensure external Kafka is configured:
 ├── deploy/
 │   ├── base/
 │   │   ├── helmrelease.yaml         # Flux HelmRelease (S3 env vars via values)
-│   │   ├── secret.yaml.example      # Secret template for credentials
+│   │   ├── secret.yaml.example      # App secret template (Redis, S3 creds)
+│   │   ├── object-storage-secret.yaml.example  # Postgres backup storage secret
 │   │   └── kustomization.yaml       # Base Kustomize config
 │   ├── chart/                        # Local Helm chart (wraps ksvc dependency)
+│   ├── components/                   # Optional Kustomize Components (flagger, CNPG operator)
+│   ├── dev/                          # Local dev infra (Kind config, redis/minio/kafka, observability)
 │   ├── overlays/
 │   │   ├── dev/          # Development environment patches
 │   │   ├── staging/      # Staging environment patches
 │   │   └── prod/         # Production environment patches
-│   └── flux/             # FluxCD GitRepository and Kustomization
+│   └── flux/             # FluxCD GitRepository, Kustomizations, image automation
 │
 ├── terraform/
 │   ├── main.tf           # Root module with MinIO module
@@ -184,13 +243,9 @@ For production/staging, ensure external Kafka is configured:
 │   ├── storage_test.rs   # S3 integration tests
 │   └── common/mod.rs     # Test utilities
 │
-├── docker/
-│   ├── otel-collector-config.yaml  # OpenTelemetry configuration
-│   └── prometheus.yaml             # Prometheus config
-│
+├── Makefile              # dev-up / dev-restart / bootstrap / prod-deploy targets
 ├── Cargo.toml            # Rust dependencies with conditional S3
 ├── Dockerfile            # Multi-stage Docker build
-├── docker-compose.yaml   # Local development services with MinIO
 └── README.md             # This file
 ```
 
@@ -414,8 +469,11 @@ cargo test -- --nocapture
 # Run specific test
 cargo test test_name
 
-# Integration tests with services
-docker-compose up -d && cargo test --test '*'
+# Integration tests against the dev environment (Kind cluster)
+make dev-up          # if not already running
+cargo test -- --ignored
+# or simply:
+make dev-test
 ```
 
 ### Code Quality
@@ -457,20 +515,20 @@ The service is configured through the Flux HelmRelease values (rendered by `depl
 
 ### Environment Overlays
 
-**dev/** - Development settings
-- 1-10 replicas
+**dev/** - Development settings (local Kind cluster)
+- Scale-to-zero (min 0), max 3 replicas
 - Debug logging
-- MinIO endpoint
+- Local registry image, MinIO endpoint
 
 **staging/** - Staging settings
-- 2-20 replicas
+- 1-5 replicas
 - Info logging
-- AWS S3 with credentials from secret
+- Higher resource limits
 
 **prod/** - Production settings
-- 5-100 replicas
+- 2-20 replicas
 - Warn logging
-- AWS S3 with secret management
+- Largest resource limits
 
 Apply with:
 ```bash
@@ -481,8 +539,7 @@ kubectl apply -k deploy/overlays/prod
 
 ### Initial Setup
 
-1. Create Git repository with this template
-2. Configure FluxCD to watch the repository:
+1. Install Flux on the cluster (once per cluster, if not already present):
    ```bash
    flux bootstrap github \
      --owner=your-org \
@@ -491,22 +548,21 @@ kubectl apply -k deploy/overlays/prod
      --path=clusters/production
    ```
 
-3. Create FluxCD Kustomization:
+2. Point Flux at this repo and wire an environment:
    ```bash
-   # Bootstrap Flux to track this repo
-   make bootstrap
-
-   # Then bootstrap an environment
+   # Applies the GitRepository, provisions the deploy key (first run prints
+   # the public key to add on GitHub; re-run after adding it), then
+   # reconciles the environment
    make bootstrap production
    ```
 
 ### Automated Deployments
 
-The `deploy/flux/image-update-automation.yaml` automatically:
-- Monitors container registry for new images
-- Updates image references in manifests
-- Commits changes to Git
-- Triggers Knative service updates
+When image automation is enabled (`enable_image_updates`), the `deploy/flux/image-*.yaml` resources automatically:
+- Monitor the container registry for new `sha-*` images
+- Update the `{"$imagepolicy"}` marker in `deploy/base/helmrelease.yaml`
+- Commit the image bump to Git
+- Triggers a new Knative revision via Flux reconciliation
 
 ## Observability
 
@@ -549,7 +605,8 @@ Structured logging with:
 View with:
 ```bash
 RUST_LOG=debug cargo run
-docker logs <container-id>
+make dev-logs                      # stream Knative service logs from the dev cluster
+kubectl logs -f <pod-name> -n <namespace>
 ```
 
 ## Terraform Infrastructure
@@ -579,17 +636,21 @@ bucket_names = ["data", "data-staging", "data-prod"]
 
 ### Redis Connection Fails
 ```bash
-# Check Redis is running
-docker-compose ps redis
+# Check the Redis pod in the dev cluster
+kubectl get pods -n redis
 
-# Verify connection
+# Port-forward and verify connection (`make dev-forward` also covers this)
+kubectl port-forward -n redis svc/redis 6379:6379 &
 redis-cli -h localhost ping
 ```
 
 ### MinIO Access Issues
 ```bash
-# Check MinIO is healthy
+# Check MinIO is healthy (requires `make dev-forward` for localhost access)
 curl http://localhost:9000/minio/health/live
+
+# Check the pod directly in the cluster
+kubectl get pods -n minio
 
 # Check credentials in environment
 echo $AWS_ACCESS_KEY_ID
@@ -613,10 +674,11 @@ kubectl logs -f deployment/<deployment-name>
 
 ### S3 Integration Tests Fail
 ```bash
-# Ensure MinIO is running and healthy
-docker-compose logs minio
+# Ensure MinIO is running in the dev cluster and check its logs
+kubectl get pods -n minio
+kubectl logs -n minio deploy/minio
 
-# Check test output
+# Check test output (requires the dev environment: make dev-up)
 cargo test --test '*' -- --nocapture --test-threads=1
 ```
 
@@ -667,7 +729,7 @@ scaling:
 
 ## Contributing
 
-See the root TEMPLATE.md for:
+See [docs/TEMPLATE_GUIDE.md](./docs/TEMPLATE_GUIDE.md) for:
 - How to extend the template
 - Adding new configuration options
 - Customizing for your team
@@ -680,9 +742,10 @@ MIT License - See LICENSE file
 
 For issues or questions:
 1. Check [STORAGE.md](./STORAGE.md) for S3-specific issues
-2. Review [GETTING_STARTED.md](./GETTING_STARTED.md) for setup help
-3. Check [TEMPLATE.md](./TEMPLATE.md) for template structure
-4. Review service logs: `kubectl logs -f svc/{{ project_name }}`
+2. Review [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) for local development help
+3. Check [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for deployment issues
+4. Check [docs/TEMPLATE_GUIDE.md](./docs/TEMPLATE_GUIDE.md) for template structure
+5. Review service logs: `kubectl logs -f svc/{{ project_name }}`
 
 {% else %}
 ## Features
@@ -700,25 +763,37 @@ For issues or questions:
 ### Local Development
 
 1. **Prerequisites**
-   - Docker & Docker Compose
+   - Docker (running) — Kind runs inside it
    - Rust 1.92+
+   - kind, kubectl, helm, yq
 
-2. **Start Local Services**
+2. **Start the Development Environment**
    ```bash
-   docker-compose up -d
+   make dev-up
    ```
 
-   This starts:
-   - Redis (port 6379)
-   - Jaeger tracing (port 16686)
-   - Prometheus metrics (port 9090)
-   - OpenTelemetry Collector
+   One command bootstraps everything, in order:
+   - Kind cluster (Kubernetes 1.32) + local Docker registry (`localhost:5001`)
+   - Knative Serving v1.20.0 with Kourier ingress
+   - Redis (port 6379 in-cluster)
+   - Jaeger tracing (port 16686), OpenTelemetry Collector, Prometheus (port 9090)
+   - Builds your Docker image, pushes it to the local registry, and deploys it as a Knative service
 
 3. **Run the Service**
+   The service runs **inside the cluster** as a Knative Service. The Kind node maps
+   container port 31080 to host port 8080 (Kourier ingress), so the app is reachable
+   at http://localhost:8080 with no port-forward required:
    ```bash
-   export APP__SERVER__PORT=8080
-   export APP__REDIS__URL=redis://localhost:6379
-   cargo watch -q -c -w src -x run
+   make dev-test-health   # curl /health/live + /health/ready
+   make dev-logs          # stream application logs
+   make dev-restart       # rebuild the image and redeploy after code changes
+   ```
+
+   **Optional: hot-reload without rebuilding images.** The cluster provides the backing
+   services; run the binary directly against them:
+   ```bash
+   make dev-forward                    # port-forwards Redis, Jaeger, Prometheus
+   cargo watch -q -c -w src -x run     # separate terminal
    ```
 
 4. **Health Check**
@@ -727,22 +802,37 @@ For issues or questions:
    curl http://localhost:8080/health/ready
    ```
 
-5. **View Traces & Metrics**
+5. **View Traces & Metrics** (run `make dev-forward` in a separate terminal first)
    - Jaeger: http://localhost:16686
    - Prometheus: http://localhost:9090
 
+6. **Teardown**
+   ```bash
+   make dev-down    # delete the cluster and local registry
+   make dev-reset   # tear down and recreate from scratch
+   ```
+
 ### Kubernetes Deployment
 
+Staging/production run through FluxCD GitOps:
+
 ```bash
-# Development
-kubectl apply -k deploy/overlays/dev
+# Bootstrap Flux tracking + environment wiring (first run prints the
+# deploy key to add on GitHub; re-run after adding it)
+make bootstrap production
+```
 
-# Staging
+Pushing to the default branch then flows through CI → GHCR (`sha-*` tag) →
+Flux image automation → new Knative revision.
+
+```bash
+# Manual alternative (same manifests, without Flux watching)
+kubectl apply -k deploy/overlays/dev    # Development
 kubectl apply -k deploy/overlays/staging
-
-# Production
 kubectl apply -k deploy/overlays/prod
 ```
+
+For the one-command production flow (`make prod-deploy`), GitHub Actions deploys, and deploy-key setup, see [Production Deployment](./docs/DEPLOYMENT.md#production-deployment) in the deployment guide.
 
 ## Project Structure
 
@@ -780,13 +870,9 @@ kubectl apply -k deploy/overlays/prod
 │   ├── health_test.rs    # Health endpoint tests
 │   └── common/mod.rs     # Test utilities
 │
-├── docker/
-│   ├── otel-collector-config.yaml  # OpenTelemetry config
-│   └── prometheus.yaml             # Prometheus config
-│
+├── Makefile              # dev-up / dev-restart / bootstrap / prod-deploy targets
 ├── Cargo.toml            # Rust dependencies
 ├── Dockerfile            # Multi-stage Docker build
-├── docker-compose.yaml   # Local development services
 └── README.md             # This file
 ```
 

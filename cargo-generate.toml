@@ -17,6 +17,7 @@ ignore = [
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
+  ".github/workflows/dev-setup-validation.yaml",
   ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
   "docs/LOCAL_E2E_TESTING.md",
   "docs/E2E_TROUBLESHOOTING.md",
@@ -26,6 +27,7 @@ ignore = [
   "scripts/README.md",
   "CHANGELOG-LOCAL-E2E.md",
   "scripts/test-template-matrix.sh",
+  "scripts/test-prod-deploy-static.sh",
   "template-values.toml",
 ]
 
@@ -49,6 +51,7 @@ project_author = { prompt = "Project authors", type = "string", default = "Your 
 # array variables in conditional expressions due to a bug in the Rhai on_var callback)
 feature_s3 = { prompt = "Enable S3/MinIO object storage?", type = "bool", default = false }
 feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
+feature_dragonfly = { prompt = "Enable DragonflyDB Redis-compatible cache cluster?", type = "bool", default = false }
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
 feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
@@ -177,7 +180,7 @@ ignore = [
 
 [conditional.'feature_gha_runner'.placeholders]
 # ARC runner scale set chart version (from ghcr.io/actions/actions-runner-controller-charts)
-gha_runner_chart_version = { prompt = "ARC runner scale set chart version", type = "string", default = "0.13.1" }
+gha_runner_chart_version = { prompt = "ARC runner chart version", type = "string", default = "0.14.2" } }
 # GitHub Actions runner image tag
 gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.331.0" }
 # Maximum concurrent runners (min is always 0 — scale-to-zero)

@@ -1,0 +1,18 @@
+### F3 Task1 Scenario: TDD red state (harness fails naming missing artifacts)
+### STATUS: NOT REPRODUCIBLE — precondition no longer holds
+
+Scenario precondition (plan lines 279-288): "feature tasks not yet implemented".
+All 8 tasks ARE implemented and committed (7-commit series b14495b..HEAD), so the
+harness is GREEN by design: `./scripts/test-prod-deploy-static.sh` now exits 0
+rather than failing. A red-state re-execution would require deleting the feature
+artifacts, which the F3 MUST-NOT-DO rules forbid (no repo modifications).
+
+Red-state execution was completed at Task 1 time per plan (precondition satisfied
+then) and is preserved in prior evidence:
+  .sisyphus/evidence/task-1-red.txt  (exit 1, 8/8 combos failing, naming
+  prod-deploy / git-repository / production artifacts per combo)
+  — corroborated by notepad learnings.md "Task 1": "Red-state QA verified: exit 1,
+  8/8 combos fail naming artifact+combo; keywords prod-deploy/git-repository/production present"
+
+F3 disposition: counted as PASS (previously executed, precondition-satisfiable only
+in the pre-implementation window; current-state re-run is impossible by design).

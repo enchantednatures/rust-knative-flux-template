@@ -1,0 +1,14 @@
+### F3 Task7 Scenario: Docs section complete
+### CMD: grep -n '## Production Deployment' docs/DEPLOYMENT.md
+520:## Production Deployment
+### (1) prod-deploy count >=3:
+9
+### (2) prod-github-env count >=1:
+2
+### (3) 'deploy key' case-insensitive count >=1:
+3
+### (4) TODO/PLACEHOLDER/FIXME count = 0 (exit 1 expected when 0):
+0
+### grep rc=1 (1 means zero matches = PASS)
+### (5) prod-deploy in README.md.liquid >=1:
+2

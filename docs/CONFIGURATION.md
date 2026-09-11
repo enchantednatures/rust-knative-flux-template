@@ -64,7 +64,7 @@ export APP__REDIS__POOL_SIZE=10
 
 ```bash
 # S3 endpoint (for MinIO or S3-compatible service)
-# Local dev: http://minio:9000 (Docker Compose) or http://localhost:9000
+# Local dev (in-cluster): http://minio:9000 — http://localhost:9000 via `make dev-forward`
 # AWS S3: https://s3.amazonaws.com or https://s3.REGION.amazonaws.com
 export APP__S3__ENDPOINT=http://localhost:9000
 
