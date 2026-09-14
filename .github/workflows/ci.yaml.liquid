@@ -55,30 +55,10 @@ jobs:
   test:
     name: Test
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      {% if feature_s3 %}
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      {% endif %}
+    # ARC kubernetes-mode runners cannot start `services:` containers
+    # ("Job Container is required"); the test job brings up redis via the
+    # DinD sidecar instead.
+    services: {}
     steps:
       - uses: actions/checkout@v6
 
@@ -113,6 +93,19 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev
+
+      - name: Install redis
+        run: |
+          set -euo pipefail
+          docker run -d --name redis -p 6379:6379 \
+            --health-cmd "redis-cli ping" --health-interval 10s \
+            --health-timeout 5s --health-retries 5 redis:7-alpine
+          for i in $(seq 1 20); do
+            S=$(docker inspect --format '{{.State.Health.Status}}' redis 2>/dev/null || true)
+            [[ "$S" == healthy ]] && break
+            sleep 2
+          done
+          [[ "$S" == healthy ]] || { echo "redis failed to become healthy"; exit 1; }
 
       - name: Run tests
         run: cargo test --all-features
