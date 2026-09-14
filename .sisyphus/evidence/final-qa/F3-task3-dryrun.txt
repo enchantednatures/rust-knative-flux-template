@@ -1,0 +1,81 @@
+### F3 Task3 Scenario: Dry-run full flow (no cluster, KUBECONFIG unset)
+### CMD: env -u KUBECONFIG ./scripts/prod/deploy.sh --dry-run
+
+===================================================================
+Production Deploy (DRY RUN): rust-knative-flux-template
+===================================================================
+
+[0;34m→[0m Dry-run mode — printing planned actions (nothing will execute, no cluster access)
+
+
+[1;33m[1/9][0m Kubeconfig resolution
+  [dry-run] NOT FOUND — real run would exit 1 (set KUBECONFIG or create .kubeconfig-prod; see: make prod-kubeconfig)
+
+[1;33m[2/9][0m Pre-flight checks
+  [dry-run] kubectl cluster-info                      # cluster reachable (fallback: /readyz probe)
+  [dry-run] kubectl get namespace flux-system         # Flux installed
+  [dry-run] kubectl -n flux-system get deployment source-controller  # source-controller Available
+  [dry-run] kubectl get namespace knative-serving     # Knative installed
+  [dry-run] grep dependsOn deploy/flux/kustomization-prod.yaml → if 'flagger': kubectl get kustomization flagger -n flux-system (fail fast, never auto-install)
+
+[1;33m[3/9][0m Apply GitRepository
+  [dry-run] kubectl apply --server-side -f deploy/flux/git-repository.yaml   (GitRepository rust-knative-flux-template in flux-system)
+
+[1;33m[4/9][0m Deploy key auto-detection
+  [dry-run] kubectl wait --for=condition=Ready gitrepository/rust-knative-flux-template -n flux-system --timeout=90s
+  [dry-run] on auth failure: if secret github-deploy-key exists → print existing identity.pub (never recreate)
+  [dry-run]   else: flux create secret git github-deploy-key -n flux-system --url ssh://git@github.com/<org>/<repo>.git
+  [dry-run]   → print identity.pub + GitHub deploy-key instructions → poll GitRepository Ready up to 5m
+
+[1;33m[5/9][0m Apply prod Flux config
+  [dry-run] kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/flux/config/prod | kubectl apply --server-side -f -
+  [dry-run]   (config/prod references ../../kustomization-prod.yaml outside the build root — 'kubectl apply -k' would fail load restrictions)
+
+[1;33m[6/9][0m Wait for Flux reconciliation
+  [dry-run] kubectl wait --for=condition=Ready kustomization/rust-knative-flux-template-prod -n flux-system --timeout=5m
+  [dry-run] kubectl wait --for=condition=Ready helmrelease/rust-knative-flux-template -n production --timeout=5m
+
+[1;33m[7/9][0m Wait for Knative service
+  [dry-run] kubectl wait --for=condition=Ready ksvc/rust-knative-flux-template -n production --timeout=5m
+  [dry-run] on failure: dump ksvc yaml + pod list + last 50 logs + events
+
+[1;33m[8/9][0m Smoke suite (detached curl pods, image curlimages/curl:8.10.1)
+  [dry-run] SERVICE_URL: resolved at runtime via: kubectl get ksvc rust-knative-flux-template -n production -o jsonpath='{.status.url}'
+  [dry-run] fallback URL: http://rust-knative-flux-template.production.svc.cluster.local (on curl exit 6/7/28 or stuck pod)
+  [dry-run] kubectl run prod-smoke-health-live-$RANDOM -n production --restart=Never --image=curlimages/curl:8.10.1 -- curl -f -s --max-time 60 <url>/health/live
+  [dry-run] kubectl run prod-smoke-health-ready-$RANDOM -n production --restart=Never --image=curlimages/curl:8.10.1 -- curl -f -s --max-time 60 <url>/health/ready
+  [dry-run] kubectl run prod-smoke-metrics-$RANDOM -n production --restart=Never --image=curlimages/curl:8.10.1 -- curl -f -s --max-time 60 <url>/metrics
+  [dry-run] kubectl run prod-smoke-hello-$RANDOM -n production --restart=Never --image=curlimages/curl:8.10.1 -- curl -f -s --max-time 60 <url>/api/v1/hello
+
+[1;33m[9/9][0m Summary
+  [dry-run] assert: /health/live → 200 + body contains {"status":"alive"}
+  [dry-run] assert: /health/ready → 200 + body contains {"status":"ready"}
+  [dry-run] assert: /metrics → 200 + body contains # HELP
+  [dry-run] assert: /api/v1/hello → 200 + body contains message
+  [dry-run] exit non-zero if any check failed
+
+[0;32m✓[0m Dry-run complete — 9 steps + 4 smoke checks planned; zero cluster calls made
+### EXIT_CODE=0 (expect 0)
+### NEEDLE CHECKS:
+git-repository         -> 0
+github-deploy-key      -> 0
+config/prod            -> 0
+ksvc                   -> 0
+/health/live           -> 0
+/health/ready          -> 0
+/metrics               -> 0
+/api/v1/hello          -> 0
+\[1/9\]                -> 0
+\[9/9\]                -> 0
+needle git-repository     count=2
+needle github-deploy-key  count=3
+needle config/prod        count=3
+needle ksvc               count=4
+needle /health/live       count=3
+needle /health/ready      count=3
+needle /metrics           count=3
+needle /api/v1/hello      count=3
+needle \[1/9\]            count=1
+needle \[5/9\]            count=1
+needle \[9/9\]            count=1
+unprefixed mutating cmd lines (expect 0): 0

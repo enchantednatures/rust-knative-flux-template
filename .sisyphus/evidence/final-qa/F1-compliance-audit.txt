@@ -1,0 +1,140 @@
+=====================================================================
+F1 PLAN COMPLIANCE AUDIT — prod-deploy-target
+Auditor: F1 (plan-compliance reviewer) · Date: 2026-09-08
+Base: 6dea175..HEAD (7 commits: 1089fcd..b14495b)
+Method: plan read end-to-end; every check re-run by auditor (evidence files informed, not trusted)
+=====================================================================
+
+MUST HAVE (plan §Work Objectives, 6 bullets) — 6/6 PASS
+[MH-1] Non-interactive everywhere
+  PASS — grep -rn 'read -p' scripts/prod/ → 0 matches. All waits are bounded
+  polls: GITREPO_INITIAL_WAIT=90s, deploy-key poll 20x15s=5m, RECONCILE_WAIT=5m,
+  KSVS_WAIT=5m, SMOKE_TIMEOUT=90s (deploy.sh:42-48). deploy.sh:780 explicit
+  no-prompt note. Failures exit non-zero with diagnostics (dry-run/summary paths).
+[MH-2] Pre-flight checks (cluster, Flux, Knative, Flagger dep)
+  PASS — deploy.sh:574-637: cluster-info w/ /readyz fallback (:579-587);
+  flux-system ns + source-controller Available (:589-619); knative-serving ns
+  (:621-634); check_flagger_dependency (:330-358) — fail-fast on missing
+  kustomization/flagger, never auto-installs.
+[MH-3] Deploy key handling (check first, create+print+poll if missing, never rotate)
+  PASS — deploy.sh:413-436 handle_auth_failure: secret-existence guard FIRST
+  (:418 kubectl get secret), existing → prints identity.pub only, log "NOT
+  recreating" (:419); create path (:424 flux create secret git) only in else
+  branch; poll_gitrepository_after_key up to 5m (:388-411).
+[MH-4] Smoke suite: 4 exact checks, --max-time 60, detached pod
+  PASS — deploy.sh:740-743 exact assertions {"status":"alive"}, {"status":"ready"},
+  '# HELP', 'message'; --max-time 60 (:221); kubectl run --restart=Never detached
+  (:219-220), curlimages/curl:8.10.1 pinned (:44); .svc.cluster.local fallback
+  (:525,735); SERVICE_URL override supported (:729).
+[MH-5] All name-bearing files liquid-templated
+  PASS — git-repository.yaml:4 {{ project_name | replace: "_", "-" }};
+  namespace.yaml:6; rbac.yaml.liquid (SA/Role/RoleBinding names); Makefile:13-16
+  vars; deploy.yaml.liquid:24,52 runs-on + kubeconfig conditional.
+[MH-6] Workflow: permissions/concurrency/timeout/pins
+  PASS — deploy.yaml.liquid:14-15 permissions: contents: read; :17-19 concurrency
+  group "prod-deploy-${{ github.ref }}" + cancel-in-progress: false (queue);
+  :26 timeout-minutes: 45; :10-12 pinned KUBECTL_VERSION v1.31.4 / FLUX_VERSION
+  v2.4.0; checkout@v6 pinned (:29).
+
+MUST NOT HAVE (10 guardrails) — 10/10 PASS
+[G-1] No dev-* / KUBECONFIG_PATH semantics change
+  PASS — git diff 6dea175..HEAD -- Makefile | grep -E '^[-+].*dev-|KUBECONFIG_PATH'
+  → only additions: '+PROD_KUBECONFIG_PATH := .kubeconfig-prod' and '+@echo
+  "export KUBECONFIG=$(PWD)/$(PROD_KUBECONFIG_PATH)"'. Zero deletions. scripts/dev/
+  diff count = 0.
+[G-2] No interactive prompts
+  PASS — grep -rn 'read -p' scripts/prod/ → 0 matches.
+[G-3] No secret rotation
+  PASS — deploy.sh:424 'flux create secret git' reached ONLY via else-branch of
+  :418 secret-existence check (code path read). Message :419 "NOT recreating it
+  (never rotates an existing key)".
+[G-4] No image builds/pushes or HelmRelease tag touches
+  PASS — grep -rn 'docker build\|docker push' scripts/prod/ → 0 matches. Diff has
+  no deploy/base/helmrelease.yaml changes (image fields untouched).
+[G-5] No direct workload applies
+  PASS — kubectl apply appears only at deploy.sh:641 (git-repository.yaml) and
+  :658-659 (rendered deploy/flux/config/prod → server-side). kubectl run :219 =
+  smoke pods (plan step 8). No ksvc/HelmRelease apply anywhere. NOTE: plan
+  specified literal 'kubectl apply -k'; implementation renders via 'kubectl
+  kustomize --load-restrictor LoadRestrictionsNone | kubectl apply -f -'
+  (deploy.sh:653-657) — empirically justified (apply -k fails load restrictions),
+  intent preserved (Flux config objects only). Acceptable adaptation, not a
+  guardrail breach.
+[G-6] No Flagger auto-install
+  PASS — check_flagger_dependency (deploy.sh:330-358) exits 1 with "Install the
+  Flagger operator CLUSTER-WIDE first" (:355); :357 "This script never
+  auto-installs cluster-wide operators." No install path exists.
+[G-7] No common.sh sourcing/fix
+  PASS — grep -rn 'common.sh' scripts/prod/ scripts/test-prod-deploy-static.sh →
+  0 matches. scripts/dev/ untouched (0 diff).
+[G-8] No staging-deploy / prod-destroy / rollback targets
+  PASS — grep -n 'staging-deploy\|prod-destroy\|rollback' Makefile → 0 matches.
+[G-9] No prod-github-env from CI
+  PASS — grep -rn 'prod-github-env' .github/ → 0 matches (deploy.yaml.liquid runs
+  'make prod-deploy' only, :70).
+[G-10] No @latest
+  PASS — grep -n '@latest' .github/workflows/deploy.yaml.liquid → 0 matches;
+  versions pinned (v1.31.4, v2.4.0, checkout@v6).
+
+TASKS 8/8 (plan TODOs 1-8 all [x]; commits verified)
+  git log 6dea175..HEAD: 1089fcd harness → 93c2287 SSH → 329e357 RBAC → 6fd3174
+  prod-deploy → 70aa199 prod-github-env → 0767c10 workflow → b14495b docs.
+  Matches Commit Strategy order (plan:1046-1054).
+
+EVIDENCE FILES — PRESENT
+  task-1: bashn, red, single · task-2: secretref, harness, overlay-values,
+  postgres-kafka · task-3: dryrun, nokubeconfig, flagger, deploykey-auth,
+  smoke-happy, smoke-failure · task-4: rbac, rbac-toggle · task-5: dryrun,
+  noauth · task-6: workflow, workflow-toggle · task-7: docs · task-8: matrix,
+  diffstat, commits. (23 files, all task-1..task-8 covered.)
+
+CONCRETE DELIVERABLES 10/10
+  1. scripts/prod/deploy.sh — 782 lines, Gen-1 style, --dry-run verified (exit 0,
+     9 steps + 4 checks, all commands [dry-run] prefixed).
+  2. scripts/prod/create-github-env.sh — 331 lines, idempotent GET-first, 409/422
+     tolerated, v* non-fatal, --dry-run zero-network.
+  3. scripts/test-prod-deploy-static.sh — 562 lines; full matrix run by auditor:
+     exit 0, 8/8 combos PASSED.
+  4. Makefile — PROD_KUBECONFIG_PATH/GITHUB_ORG/GITHUB_REPO/GITHUB_REPO_SSH
+     (:13-16); prod-deploy/prod-github-env/prod-kubeconfig targets (:302-316) with
+     ## docs; make help lists all 3.
+  5. deploy/flux/git-repository.yaml — ssh://git@github.com/{{...}}.git (:8) +
+     active secretRef github-deploy-key (:11-12); interval/ref unchanged.
+  6. deploy/overlays/prod/namespace.yaml — Namespace production w/ part-of label.
+  7. deploy/infrastructure/gha-runner/rbac.yaml.liquid (183 lines: 1 SA, 2 Roles,
+     2 RoleBindings, subjects ns=actions-runner-system, conditional image CRs) +
+     helmrelease.yaml:55 serviceAccountName + kustomization.yaml rbac.yaml listed
+     before helmrelease.yaml.
+  8. .github/workflows/deploy.yaml.liquid — 76 lines, all MH-6 keys verified.
+  9. .gitignore:47 — .kubeconfig-prod present.
+  10. docs/DEPLOYMENT.md:520 '## Production Deployment' (prod-deploy=9, prod-
+      github-env=2, 'deploy key' ci=3, TODO/FIXME/PLACEHOLDER=0) + README.md.liquid
+      pointer (2 matches).
+
+DEFINITION OF DONE 6/6 (auditor re-executed)
+  [1] Harness full matrix exit 0, 8/8 combos — RAN: PASSED banner + "All 8 combo(s)
+      passed", MATRIX_EXIT:0.
+  [2] bash -n clean (3 scripts) + make -n prod-deploy/prod-github-env/prod-kubeconfig
+      exit 0 — RAN: all PASS (prod-kubeconfig echoes export line w/ .kubeconfig-prod).
+  [3] kustomize build prod overlay contains namespace: production; gha-runner
+      contains SA + RoleBindings — VERIFIED via harness assertions (green run) +
+      harness code has explicit residue (line 220) and yaml.safe_load (line 355) checks.
+  [4] Zero {% residue in rendered output — VERIFIED: harness residue assertion in
+      8/8 green run (line 220 fail path never triggered).
+  [5] Dev flow unaffected — VERIFIED: git log 6dea175..HEAD -- scripts/dev/ +
+      test-template-e2e-local.sh → 0 commits; Makefile diff add-only w/ 0 dev- lines.
+  [6] Idempotency — VERIFIED by code read: secret-existence guard (:418), server-side
+      applies (:641,:659), re-entrant kubectl waits; first-run-fails-by-design path
+      (:400-410) prints existing pubkey instead of recreating.
+
+VERDICT SUMMARY LINE
+Must Have [6/6] | Must NOT Have [10/10] | Tasks [8/8] | Deliverables [10/10] | VERDICT: APPROVE
+
+NOTES (non-blocking)
+  - G-5: apply form deviates from plan literal (kubectl kustomize | apply -f -
+    instead of apply -k) — documented in-code (:653-657) + notepad; empirically
+    required; guardrail intent (Flux-config-only) fully preserved.
+  - Flagger pre-flight treats Forbidden/403 as warn+continue for RBAC-restricted
+    identities (deploy.sh:347-351) — NotFound still fail-fasts; never installs.
+  - cargo-generate.toml +1 line (harness ignore-list) = Task 1 companion, already
+    accounted for in Task 8 report (attributable deviation, functionally required).

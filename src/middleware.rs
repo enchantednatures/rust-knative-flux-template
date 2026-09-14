@@ -26,7 +26,7 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 /// use axum::Router;
 /// use {{ crate_name }}::middleware::request_id_middleware;
 ///
-/// let app = Router::new()
+/// let app: Router = Router::new()
 ///     .layer(axum::middleware::from_fn(request_id_middleware));
 /// ```
 pub async fn request_id_middleware(req: Request<Body>, next: Next) -> Response {
@@ -98,7 +98,7 @@ pub async fn request_id_middleware(req: Request<Body>, next: Next) -> Response {
 /// use axum::Router;
 /// use {{ crate_name }}::middleware::security_headers_middleware;
 ///
-/// let app = Router::new()
+/// let app: Router = Router::new()
 ///     .layer(axum::middleware::from_fn(security_headers_middleware));
 /// ```
 pub async fn security_headers_middleware(req: Request<Body>, next: Next) -> Response {
@@ -159,7 +159,7 @@ pub async fn security_headers_middleware(req: Request<Body>, next: Next) -> Resp
 /// use axum::Router;
 /// use {{ crate_name }}::middleware::common_middleware;
 ///
-/// let app = Router::new()
+/// let app: Router = Router::new()
 ///     .layer(axum::middleware::from_fn(common_middleware));
 /// ```
 pub async fn common_middleware(req: Request<Body>, next: Next) -> Response {

@@ -1,5 +1,7 @@
 mod common;
 
+use std::net::SocketAddr;
+
 use axum_test::TestServer;
 
 use {{ crate_name }}::routes;
@@ -13,7 +15,10 @@ async fn test_liveness_endpoint() {
     let app = routes::create_router(state);
 
     // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     // Test liveness endpoint
     let response = server.get("/health/live").await;
@@ -33,7 +38,10 @@ async fn test_readiness_endpoint() {
     let app = routes::create_router(state);
 
     // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     // Test readiness endpoint
     let response = server.get("/health/ready").await;
@@ -59,7 +67,10 @@ async fn test_api_v1_hello_endpoint() {
     let app = routes::create_router(state);
 
     // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     // Test hello endpoint without query
     let response = server.get("/api/v1/hello").await;
@@ -86,7 +97,10 @@ async fn test_metrics_endpoint() {
     let app = routes::create_router(state);
 
     // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = TestServer::builder()
+        .http_transport()
+        .build(app.into_make_service_with_connect_info::<SocketAddr>())
+        .expect("Failed to create test server");
 
     // Make several requests to generate metrics
     // These should increment the http_requests_total counter

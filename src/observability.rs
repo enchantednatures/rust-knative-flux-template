@@ -9,6 +9,7 @@ use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::{global, trace::TracerProvider};
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_zipkin::Propagator as B3Propagator;
+use std::sync::{Mutex, OnceLock};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::TelemetryConfig;
@@ -29,6 +30,22 @@ use crate::config::TelemetryConfig;
 /// - error_type: Type of error (broker_unreachable, publish_failed, etc.)
 {%- endif %}
 pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
+    // Idempotent: the global metrics recorder can only be installed once per
+    // process (parallel tests re-run this fn and would otherwise panic), so
+    // subsequent callers receive a clone of the existing handle.
+    static HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+
+    if let Some(handle) = HANDLE.get() {
+        return Ok(handle.clone());
+    }
+    let _init_guard = INIT_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("metrics init lock poisoned"))?;
+    if let Some(handle) = HANDLE.get() {
+        return Ok(handle.clone());
+    }
+
     // Initialize the metrics-exporter-prometheus and get the handle for rendering
     let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
         .add_global_label("service", env!("CARGO_PKG_NAME"))
@@ -58,6 +75,7 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     app_info.increment(1);
 
     tracing::info!("Prometheus metrics exporter initialized");
+    let _ = HANDLE.set(handle.clone());
     Ok(handle)
 }
 

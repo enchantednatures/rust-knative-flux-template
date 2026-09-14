@@ -1,0 +1,62 @@
+
+===================================================================
+GitHub Environment Setup: 'production'
+===================================================================
+
+[1;33m⚠[0m GITHUB_ORG/GITHUB_REPO not set — showing placeholders
+[0;34m→[0m Preview resolved values via: GITHUB_ORG=<org> GITHUB_REPO=<repo> create-github-env.sh --dry-run
+
+[0;34m→[0m Dry-run mode — printing planned gh api calls (nothing will execute)
+
+  [1;33mTarget repository:[0m <org>/<repo>
+
+  [1;33m[1/4][0m Check environment exists (GET — skip creation on 200):
+      gh api /repos/<org>/<repo>/environments/production
+
+  [1;33m[2/4][0m Create environment (POST — only when missing):
+      gh api -X POST /repos/<org>/<repo>/environments/production \
+          -f deployment_branch_policy[protected_branches]=false \
+          -F deployment_branch_policy[custom_branch_policies]=true
+
+  [1;33m[3/4][0m List deployment branch policies (GET — for idempotency):
+      gh api /repos/<org>/<repo>/environments/production/deployment-branch-policies
+
+  [1;33m[4/4][0m Add branch policies (POST — only when missing):
+      gh api -X POST /repos/<org>/<repo>/environments/production/deployment-branch-policies -f name=main
+      gh api -X POST /repos/<org>/<repo>/environments/production/deployment-branch-policies -f name='v*'
+
+[0;34m→[0m A rejected 'v*' pattern is non-fatal: manual-setup guidance is printed and setup continues
+
+[0;32m✓[0m Dry-run complete — zero network calls made
+
+### Resolved-values variant (GITHUB_ORG/GITHUB_REPO passed explicitly, as the Makefile does):
+
+
+===================================================================
+GitHub Environment Setup: 'production'
+===================================================================
+
+[0;34m→[0m Using repository from environment: enchantednatures/rust-knative-flux-template
+
+[0;34m→[0m Dry-run mode — printing planned gh api calls (nothing will execute)
+
+  [1;33mTarget repository:[0m enchantednatures/rust-knative-flux-template
+
+  [1;33m[1/4][0m Check environment exists (GET — skip creation on 200):
+      gh api /repos/enchantednatures/rust-knative-flux-template/environments/production
+
+  [1;33m[2/4][0m Create environment (POST — only when missing):
+      gh api -X POST /repos/enchantednatures/rust-knative-flux-template/environments/production \
+          -f deployment_branch_policy[protected_branches]=false \
+          -F deployment_branch_policy[custom_branch_policies]=true
+
+  [1;33m[3/4][0m List deployment branch policies (GET — for idempotency):
+      gh api /repos/enchantednatures/rust-knative-flux-template/environments/production/deployment-branch-policies
+
+  [1;33m[4/4][0m Add branch policies (POST — only when missing):
+      gh api -X POST /repos/enchantednatures/rust-knative-flux-template/environments/production/deployment-branch-policies -f name=main
+      gh api -X POST /repos/enchantednatures/rust-knative-flux-template/environments/production/deployment-branch-policies -f name='v*'
+
+[0;34m→[0m A rejected 'v*' pattern is non-fatal: manual-setup guidance is printed and setup continues
+
+[0;32m✓[0m Dry-run complete — zero network calls made

@@ -42,6 +42,7 @@ When generating a project from this template, you'll be prompted for a `project_
 - [Manual Kubernetes Deployment](#manual-kubernetes-deployment)
 - [FluxCD GitOps Deployment](#fluxcd-gitops-deployment)
 - [Environment-Specific Deployment](#environment-specific-deployment)
+- [Production Deployment](#production-deployment)
 - [Rollback Procedures](#rollback-procedures)
 - [Traffic Splitting](#traffic-splitting)
 - [Monitoring Deployments](#monitoring-deployments)
@@ -257,6 +258,8 @@ spec:
 # Bootstrap Flux to track this repo + deploy to production
 make bootstrap production
 ```
+
+`make bootstrap` (with or without an environment) runs `scripts/prod/deploy-key.sh`: it applies the GitRepository, waits for it to become Ready, and — on the first run — creates the `github-deploy-key` secret and prints the **public key** plus instructions (it polls for ~5 minutes while you add the key and never rotates an existing secret).
 
 Or apply manually per environment:
 
@@ -513,6 +516,96 @@ secretGenerator:
   envs:
   - .env.production
 ```
+
+---
+
+## Production Deployment
+
+The template ships a one-command production deploy flow: `make prod-deploy` drives FluxCD end to end (GitRepository source, deploy-key auto-detection, prod Flux config, reconciliation waits, Knative service readiness, in-cluster health smoke suite). The same flow also runs from GitHub Actions on a protected `production` environment. This section covers that flow only; the sections above describe the underlying GitOps pieces in detail.
+
+> **Relationship to `flux bootstrap github`**: The [Install FluxCD](#install-fluxcd) section above shows `flux bootstrap github`, the alternative path for installing Flux on a cluster in the first place. The two complement each other: bootstrap installs Flux itself, while `make prod-deploy` deploys this service through an already-running Flux.
+
+### Prerequisites
+
+- A production cluster with **FluxCD** and **Knative Serving** installed cluster-wide (see [Install Knative Serving](#install-knative-serving) and [Install FluxCD](#install-fluxcd)). If Flagger is enabled, it must be installed cluster-wide too; `prod-deploy` fails fast if its canary dependency is missing and never installs operators itself.
+- Local tooling: `kubectl`, the `flux` CLI, and `gh` (GitHub CLI, only needed for the one-time `make prod-github-env` setup).
+- Kubeconfig access to the production cluster, either via the `KUBECONFIG` environment variable or a `.kubeconfig-prod` file in the repo root (see [Kubeconfig Options](#kubeconfig-options)).
+
+### One-Time Setup
+
+1. **Create the GitHub `production` environment** (run locally; CI tokens cannot create environments):
+
+   ```bash
+   make prod-github-env
+   ```
+
+   This creates the `production` environment with deployment branch policies for `main` and `v*` tags, using `gh api`. It is idempotent (existing environment and policies are left as-is) and supports `--dry-run` via `./scripts/prod/create-github-env.sh --dry-run`.
+
+2. **Run the deploy key flow** (standalone alternative: `make deploy-key` provisions just the GitRepository + key, without deploying):
+
+   ```bash
+   make prod-deploy
+   ```
+
+   The **first run fails by design**. It applies the GitRepository (SSH URL, `secretRef: github-deploy-key`), detects the resulting auth failure, creates the `github-deploy-key` SSH secret in `flux-system` (`flux create secret git`), and prints the **public key** plus exact instructions:
+
+   - Add the key on GitHub: **Repo → Settings → Deploy keys → Add deploy key**.
+   - Check **"Allow write access"** only if the project was generated with `enable_image_updates`. ImageUpdateAutomation commits image tag bumps back to the repo, so it needs write access; plain deploys work with a read-only deploy key (the default).
+   - The script polls non-interactively (up to ~5 minutes) while you add the key, then exits non-zero if the GitRepository is still not Ready.
+
+   Run `make prod-deploy` a second time and it succeeds: the secret already exists, the script prints its existing public key instead of recreating it, and reconciliation proceeds. The script **never rotates** an existing `github-deploy-key` secret, so re-runs are always safe.
+
+### Usage
+
+**Local deploy** (kubeconfig required, see below):
+
+```bash
+make prod-deploy                       # full deploy + in-cluster smoke suite
+make deploy-key                        # provision GitRepository + deploy key only (no deploy)
+./scripts/prod/deploy.sh --dry-run     # print the full 9-step plan, touch nothing
+```
+
+**GitHub Actions deploy** (after the one-time setup above):
+
+- Push a `v*` tag: `git tag v1.0.0 && git push origin v1.0.0`, or
+- Use **workflow_dispatch** from the Actions UI ("Deploy Production" → Run workflow).
+
+The job runs in the protected `production` environment, gated by the `main` + `v*` branch policies created during setup.
+
+> **Deploy semantics: a tag does NOT pin the deployed ref.** Flux tracks the default branch (`deploy/flux/git-repository.yaml` sets `ref.branch` to the default branch). A `v*` tag push triggers the workflow, but what gets deployed is the current default-branch ref plus whatever image tag the ImagePolicy has selected. Tags decide *when* to deploy, not *which ref* to deploy.
+
+### Kubeconfig Options
+
+| Path | How | Used by |
+|------|-----|---------|
+| `KUBECONFIG` env var | `export KUBECONFIG=$PWD/.kubeconfig-prod` (see `make prod-kubeconfig`) | local runs, non-ARC GHA path |
+| `.kubeconfig-prod` file | place at repo root (gitignored); resolved when `KUBECONFIG` is unset | local runs |
+| In-cluster ServiceAccount | nothing to configure | ARC runner path (`feature_gha_runner` on) |
+
+The non-ARC workflow path (project generated without `feature_gha_runner`) needs the `PROD_KUBECONFIG` Actions secret set on the `production` environment; the workflow writes it to a 0600 file and exports `KUBECONFIG` before calling `make prod-deploy`. The ARC runner path needs neither the env var nor the file: the runner pod authenticates with its in-cluster ServiceAccount.
+
+### Runner RBAC Scope
+
+When `feature_gha_runner` is on, the ARC runner pod runs as a dedicated ServiceAccount (`{{ project_name | replace: "_", "-" }}-runner` in `actions-runner-system`) with namespace-scoped Roles only: `flux-system` (Flux reconciliation objects, plus read/create on the `github-deploy-key` secret for deploy-key auto-creation) and `production` (Knative service reads, smoke-test pod lifecycle, pod logs, events). There is no cluster-wide RBAC.
+
+> **Security note**: Because of that scope, the runner ServiceAccount can read the `github-deploy-key` secret in `flux-system`. For a per-repo runner whose only job is deploying this repo, this is the minimum access that makes CI-side deploy-key auto-creation work. Runner pods are short-lived (scale-to-zero), so the access exists only while a job runs.
+
+### Rollback
+
+Rollback is a git operation: revert the offending commit (or revert the image reference bump) on the default branch and push. Flux reconciles the reverted state and Knative creates a new revision from it; see [Rollback Procedures](#rollback-procedures) for manual traffic tricks. No rollback tooling is built into `prod-deploy`, and the script never mutates workloads directly (it applies only Flux config objects), so the cluster always converges to whatever git says.
+
+### Smoke Suite
+
+`make prod-deploy` ends with an in-cluster smoke suite: one detached `curlimages/curl` pod per check, so results do not depend on ingress reachability from your workstation. Each curl gets a 60-second max time to absorb a scale-to-zero cold start. The four checks:
+
+| Endpoint | Expected |
+|----------|----------|
+| `/health/live` | HTTP 200, body contains `{"status":"alive"}` |
+| `/health/ready` | HTTP 200, body contains `{"status":"ready"}` |
+| `/metrics` | HTTP 200, body contains `# HELP` |
+| `/api/v1/hello` | HTTP 200, body contains `message` |
+
+Any failed check prints the pod logs as diagnostics and makes the deploy exit non-zero.
 
 ---
 

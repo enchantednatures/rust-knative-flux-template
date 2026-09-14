@@ -1,0 +1,231 @@
+F2 — Code Quality Review (Final Verification Wave, prod-deploy-target)
+Reviewer: Sisyphus-Junior (F2)
+Scope: git diff 6dea175..HEAD (17 files, +2345/-202), commits 93c2287..b14495b
+Working dir: /home/hcasten/dev/rust-knative-flux-template
+
+=======================================================================
+RESULTS LINE
+=======================================================================
+Syntax [PASS] | Lint [N-A (shellcheck unavailable — manual equivalent performed)] | Files [17 clean / 0 blockers] | VERDICT: APPROVE
+
+=======================================================================
+1. SYNTAX (bash -n)
+=======================================================================
+[PASS] bash -n scripts/prod/deploy.sh            → exit 0
+[PASS] bash -n scripts/prod/create-github-env.sh → exit 0
+[PASS] bash -n scripts/test-prod-deploy-static.sh → exit 0
+
+=======================================================================
+2. LINT
+=======================================================================
+shellcheck NOT available in environment (command -v shellcheck → empty).
+Manual equivalent review performed on all 3 scripts (quoting, word-splitting,
+unset vars under set -u, error handling):
+
+[PASS] set -euo pipefail present in all 3 scripts.
+[PASS] All parameter expansions quoted where word-splitting matters
+       (for arg in "$@"; for pod in "${SMOKE_PODS[@]}"; arrays
+       "${KUSTOMIZE_BUILD[@]}" "${KUST_FLAGS[@]}" properly quoted).
+[PASS] set -u safety: every possibly-unset var guarded with ${VAR:-}
+       (KUBECONFIG, SERVICE_URL, GITHUB_ORG/REPO, KEEP_OUTPUT, etc.).
+       grep sweep of [[ ... ]] tests found only numeric rc comparisons
+       ([[ ${rc} -eq 0 ]] — arithmetic context, safe).
+[PASS] All kubectl / flux / gh / cargo calls guarded: if ! cmd, cmd || true,
+       out=$(cmd) && rc=0 || rc=$?, or captured with explicit exit paths.
+       Verified call-by-call in deploy.sh (lines 193,219,223,230,244,250,
+       255,256,342,366,392,407,418,424,440,449,453,579,581,591,603,623,641,
+       658,668,672,677,684,689,696,699,709,713,716,719,722,732),
+       create-github-env.sh (94,100,130,148,163,204,238),
+       harness (213,234,245,259,293,301,307,355,361).
+[PASS] harness `[[ X ]] && y=true` mid-function under set -e: safe (AND-list
+       exemption; not last statement of function).
+[PASS] No @latest / :latest / floating tags in any changed file.
+       kubectl v1.31.4 + flux v2.4.0 hard-pinned in deploy.yaml.liquid;
+       curlimages/curl:8.10.1 pinned; gha_runner_image_tag pinned via
+       placeholder (2.331.0). actions/checkout@v6 = major tag, consistent
+       with all existing repo workflows (ci.yaml.liquid, release.yaml.liquid
+       also @v6; infra workflows @v7). docker:27-dind major pin is a
+       PRE-EXISTING line, not part of this diff.
+
+=======================================================================
+3. PER-FILE REVIEW (all 17 changed files read in full)
+=======================================================================
+
+--- scripts/prod/deploy.sh (782 lines, new) ---
+Clean. Structured 9-step flow, coherent helpers, no unused vars (all config
+constants, colors, log fns, SMOKE_* globals used). Notable strengths:
+- pod_curl always returns 0, communicates via SMOKE_EXIT_CODE (set -e safe,
+  documented); detached-pod pattern documented re k8s#27264.
+- Fail-closed defaults: missing container exitCode → 1 (line 252).
+- RBAC-degraded pre-flights warn-and-continue with Forbidden detection
+  (deliberate design, matches inherited context).
+- LoadRestrictionsNone pipeline documented in-code (lines 653-657).
+- Dry-run makes zero cluster calls; adjacent-brace trick documented (141,165).
+- Deploy-key flow never rotates existing secret (guard at 418).
+MINOR  deploy.sh:166 — url extraction grep|head|awk pipeline: fine (|| true),
+       but head -1 before awk is fine; no issue. (no action)
+NIT    deploy.sh:135 — candidate trim via `echo | xargs`; xargs -r or shell
+       trim would be marginally safer; irrelevant for Makefile-sourced names.
+MINOR  deploy.sh:780 — `if [[ ! -t 0 ]]; then :; fi` deliberate no-op.
+       JUDGMENT: acceptable. Single line, self-documents the no-interactive-
+       prompts contract (comment says so); zero runtime cost; reads as an
+       intentional contract marker rather than slop. Would also be fine as a
+       bare comment. NOT a blocker.
+
+--- scripts/prod/create-github-env.sh (331 lines, new) ---
+Clean. Auth fail-fast, zero-network dry-run (documented), idempotent GET→
+create with 409/422 race handling, exact-match policy_exists via newline
+sandwich (correct), jq parses guarded with || true.
+MINOR  create-github-env.sh:212-220 — TAG_PATTERN rejection branch catches
+       ANY non-zero gh api result for the 'v*' POST, including a 409/422
+       duplicate race, reporting "GitHub rejected the pattern" + manual
+       instructions instead of the cleaner idempotent-success path (the
+       409/422 branch at 223 is unreachable for the tag pattern). Outcome is
+       still exit 0 / setup continues — cosmetic only in a rare race.
+NIT    4-space indent vs deploy.sh tabs (each script internally consistent).
+
+--- scripts/test-prod-deploy-static.sh (562 lines, new) ---
+Clean. Assertion functions coherent: fail() records per-combo counter;
+every assert returns 0/1 and call sites use || true; tally_combo + summary
+consistent; cleanup trap guarded (KEEP_OUTPUT, -n, -d). Template copied
+without .git/ (cargo-generate index-reading gotcha documented). cargo
+generate without --allow-commands + </dev/null documented.
+[PASS] No copy-paste drift: assertion bodies are distinct per artifact; the
+       kust_build/fail/output-print pattern is uniformly applied.
+[PASS] Assertions match real content: 1 SA + 2 RoleBindings == rbac.yaml.liquid;
+       RoleBinding subject namespace check (awk) correct incl. END handling;
+       dir-absence when feature_gha_runner=0 matches cargo-generate.toml
+       [conditional.'!feature_gha_runner'] ignore (lines 200-204);
+       grep assertions match deploy.yaml.liquid exactly (environment:
+       production, concurrency:, cancel-in-progress: false, permissions:,
+       timeout-minutes: 45, make prod-deploy, no @latest).
+MINOR  harness:373,381 — `! grep -q '^concurrency:' && ! grep -q
+       '^[[:space:]]*concurrency:'` — second pattern subsumes the first
+       (redundant disjunct). Harmless; same for permissions:.
+NIT    harness:492 comment "global COMBOS array" — actually local to main
+       (works via dynamic scoping). Doc precision only.
+
+--- deploy/overlays/{prod,staging,dev}/kustomization.yaml ---
+[PASS] Structural consistency across all three: identical target block
+       (kind: HelmRelease, name pattern), identical op style, identical
+       liquid guard style, identical MetricTemplate patch (prod/staging;
+       dev intentionally none — dev IS the fallback URL per comments).
+       Value differences are deliberate per-env (prod zstd/4 jobs/8 wal,
+       staging zstd/2/4 + delivery tuning in prod only; dev gzip/2 +
+       pooler ops + image override + operator component). No drift.
+[PASS] Liquid balanced: prod 5 if/endif + 6 inline if/else/endif; staging
+       4 + 6; dev 3 + 6 + nested feature_s3. All closed.
+[PASS] JSON6902 paths use /spec/values/services//... (empty-key services[""])
+       consistent with HelmRelease values structure.
+[PASS] Rendered YAML validity: liquid tag lines collapse to blanks inside
+       block scalars (valid); configMapGenerator block col-0 when rendered.
+NIT    prod:116 / staging:109 — ` {% if feature_s3 %}` 1-space indent vs 2
+       elsewhere; whitespace-only, no render effect.
+
+--- deploy/overlays/prod/namespace.yaml (new, 6 lines) ---
+[PASS] Valid: apiVersion v1 / kind Namespace / name production /
+       label value quoted. namespace: production matches overlay
+       `namespace: production`, deploy.sh PROD_NAMESPACE, and RoleBinding
+       namespace in rbac.yaml.liquid.
+
+--- deploy/flux/git-repository.yaml (modified) ---
+[PASS] https → ssh://git@github.com/... .git + secretRef: github-deploy-key
+       activated. Matches deploy.sh DEPLOY_KEY_SECRET, auth-failure flow,
+       harness SSH/secretRef greps, and docs deploy-key narrative.
+
+--- deploy/infrastructure/gha-runner/rbac.yaml.liquid (new, 183 lines) ---
+[PASS] Structure valid RBAC (rbac.authorization.k8s.io/v1; roleRef/subjects
+       well-formed; both bindings reference SA in actions-runner-system
+       with explicit subjects[].namespace). Liquid {% if %} balanced.
+       Namespace-scoped only — no ClusterRole/ClusterRoleBinding.
+[PASS] Least-privilege vs deploy.sh call-by-call: gitrepositories/kustomizations/
+       helmreleases get+create+update+patch (server-side apply), secrets
+       get/list/create/update/patch (flux create secret git), pods
+       create/get/list/delete + pods/log get (detached smoke pods), ksvc
+       get/list/watch (wait + URL extraction). Coherent.
+MINOR  rbac.yaml.liquid:161-166 — events grants [get] only, but deploy.sh:722
+       failure-path diagnostic `kubectl get events` is a LIST. Under the
+       runner SA the event dump silently yields nothing (call is
+       2>/dev/null | tail || true). Diagnostics-only degradation; deploy
+       failure path still exits 1 correctly. Fix would be adding `list` —
+       review-only, not fixed here.
+
+--- deploy/infrastructure/gha-runner/kustomization.yaml (+1 line) ---
+[PASS] - rbac.yaml added (liquid ext stripped at generation; file name
+       matches rbac.yaml.liquid output).
+
+--- deploy/infrastructure/gha-runner/helmrelease.yaml (+1 line) ---
+[PASS] serviceAccountName: {{ project_name | replace: "_", "-" }}-runner
+       matches ServiceAccount name in rbac.yaml.liquid exactly; inside
+       template.spec so both runner+listener pods use it appropriately.
+
+--- .github/workflows/deploy.yaml.liquid (new, 76 lines) ---
+[PASS] {% raw %} wrapping correct and balanced ×2 (${{ github.ref }},
+       ${{ secrets.PROD_KUBECONFIG }}) — GH expressions protected from
+       liquid. {% unless feature_gha_runner %}...{% endunless %} balanced;
+       runs-on if/else/endif balanced.
+[PASS] Pinned tools (KUBECTL_VERSION v1.31.4, FLUX_VERSION v2.4.0);
+       FLUX_VER="${FLUX_VERSION#v}" tarball name correct.
+[PASS] Kubeconfig handling: umask 077, 0600 file, GITHUB_ENV export, secret
+       never echoed, presence check with clear error. Path
+       $GITHUB_WORKSPACE/.kubeconfig-prod == deploy.sh default.
+[PASS] concurrency cancel-in-progress: false (deploys queue); permissions
+       contents: read; timeout-minutes: 45; environment: production;
+       runs-on conditional name matches runnerScaleSetName (*name +
+       "-runner"). Diagnostics step || true guarded.
+[PASS] Harness grep assertions all satisfied by this file (verified line
+       by line).
+
+--- Makefile (+26 lines) ---
+[PASS] PROD vars baked at generation; prod-github-env / prod-deploy targets
+       export exactly the vars the scripts expect; prod-kubeconfig hint
+       matches deploy.sh error text. Recipe lines tab-indented; targets
+       .PHONY-declared; failure guard `|| { echo ...; exit 1; }` matches
+       the existing Makefile echo style verbatim (lines 45/48/51/57).
+
+--- docs/DEPLOYMENT.md (+90 lines) ---
+[PASS] Anchor #production-deployment matches heading; TOC updated. Docs
+       accurately mirror script behavior: first-run-fails-by-design, key
+       never rotated, idempotency, ~5m poll, smoke table identical to
+       deploy.sh assertions, kubeconfig resolution table matches code,
+       RBAC scope matches rbac.yaml.liquid, tag-semantics caveat honest.
+
+--- README.md.liquid (+4 lines) ---
+[PASS] Two pointer lines to ./docs/DEPLOYMENT.md#production-deployment —
+       valid anchor, both placed sensibly (quick start + prod sections).
+
+--- cargo-generate.toml (+1 line) ---
+[PASS] scripts/test-prod-deploy-static.sh added to [template] ignore —
+       harness excluded from generated projects, consistent with siblings.
+
+--- .gitignore (+1 line) ---
+[PASS] .kubeconfig-prod ignored (security: prevents committing prod creds),
+       grouped with .kubeconfig-dev.
+
+=======================================================================
+4. ISSUE SUMMARY (severity / file:line)
+=======================================================================
+BLOCKERS: none.
+MAJOR:    none.
+MINOR (3):
+  M1. rbac.yaml.liquid:161-166 — events: [get] only vs deploy.sh:722 list
+      (kubectl get events). Silent diagnostic degradation under runner SA.
+  M2. create-github-env.sh:212-220 — tag-pattern POST failure branch
+      misreports 409/422 races as "GitHub rejected" (still idempotent
+      success; unreachable 409/422 branch for tag pattern).
+  M3. test-prod-deploy-static.sh:373,381 — redundant grep disjuncts
+      (^concurrency: subsumed by ^[[:space:]]*concurrency:).
+NITS (4):
+  N1. deploy.sh:780 — no-op judged ACCEPTABLE documentation (see §3).
+  N2. create-github-env.sh indentation style vs deploy.sh.
+  N3. deploy.sh:135 — echo|xargs trim.
+  N4. harness:492 — "global" comment vs main-local var.
+      (+ prod:116/staging:109 1-space liquid-tag indent)
+
+None of the minors affect runtime correctness of a real deploy: M1 and M2
+degrade diagnostics/messaging only; M3 is dead redundancy. Verdict is
+therefore APPROVE.
+
+=======================================================================
+VERDICT: APPROVE
+=======================================================================

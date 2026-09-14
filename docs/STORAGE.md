@@ -25,29 +25,19 @@ The `AppState` contains a pre-configured `opendal::Operator` that handles all ob
 
 ### Local Development (MinIO)
 
-MinIO is provided in `docker-compose.yaml` for development:
-
-```yaml
-services:
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web Console
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-```
+MinIO is provided by the dev environment as an in-cluster service
+(`deploy/dev/infrastructure/minio.yaml`):
 
 Start it with:
 ```bash
-docker-compose up -d minio minio-init
+make dev-up          # creates the Kind cluster with MinIO deployed
+make dev-forward     # exposes MinIO on localhost
 ```
 
 This automatically:
-1. Starts MinIO on http://localhost:9000
-2. Creates the `data` bucket via the `minio-init` service
-3. Makes web console available at http://localhost:9001
+1. Deploys MinIO into the dev cluster and exposes it on http://localhost:9000 (via `make dev-forward`)
+2. Creates the `data` bucket via the init job
+3. Makes web console available at http://localhost:9001 (minioadmin/minioadmin)
 
 ### Configuration Priority
 
@@ -165,8 +155,8 @@ async fn delete_handler(
 Integration tests are provided in `tests/storage_test.rs`:
 
 ```bash
-# Start MinIO
-docker-compose up -d minio minio-init
+# Start MinIO in the dev environment
+make dev-up && make dev-forward
 
 # Run tests
 cargo test --test storage_test -- --ignored --nocapture
@@ -331,9 +321,9 @@ configMapGenerator:
 **Problem**: `Connection refused` when connecting to MinIO
 
 **Solution**:
-1. Verify MinIO is running: `docker ps | grep minio`
-2. Check endpoint in config: should be `http://minio:9000` (Docker Compose) or `http://localhost:9000` (local)
-3. Wait for MinIO to fully start: `docker logs minio | grep "Status:"`
+1. Verify MinIO is running: `kubectl get pods -n minio` (requires `make dev-up`)
+2. Check endpoint in config: should be `http://minio:9000` (in-cluster) or `http://localhost:9000` (via `make dev-forward`)
+3. Wait for MinIO to fully start: `kubectl logs -n minio deploy/minio | grep "Status:"`
 
 ### Invalid credentials
 

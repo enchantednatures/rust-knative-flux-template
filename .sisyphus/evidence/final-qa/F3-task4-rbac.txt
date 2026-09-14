@@ -1,0 +1,101 @@
+### F3 Task4 Scenario: RBAC renders with SA + both RoleBindings (combo 1,0,0, KEEP_OUTPUT=1)
+### CMD: KEEP_OUTPUT=1 PROD_DEPLOY_MATRIX="1,0,0" ./scripts/test-prod-deploy-static.sh
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Prod Deploy Static Validation Harness (TDD red gate)[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;34m→[0m Template: /home/hcasten/dev/rust-knative-flux-template
+[0;34m→[0m Generated project name: prod-matrix-app
+[0;34m→[0m Checking tools...
+[0;32m✓[0m cargo-generate: /home/hcasten/.cargo/bin/cargo-generate
+[0;32m✓[0m kustomize: /usr/bin/kustomize
+[0;32m✓[0m python3 + PyYAML available (workflow YAML parse enabled)
+[0;34m→[0m Working directory: /tmp/tmp.ZBrDvW9Trh
+[0;34m→[0m (output will be preserved after the run)
+[0;34m→[0m Preparing template source copy (without .git/)...
+[0;32m✓[0m Template source ready: /tmp/tmp.ZBrDvW9Trh/template-source
+[0;34m→[0m Single-combo mode: PROD_DEPLOY_MATRIX=1,0,0
+
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Combo 1: gha_runner=1 image_updates=0 flagger=0  |  dir: /tmp/tmp.ZBrDvW9Trh/combo-1-0-0[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;34m→[0m Generating template...
+🔧   feature_gha_runner: "true" (value from CLI)
+🔧   enable_image_updates: "false" (value from CLI)
+🔧   feature_flagger: "false" (value from CLI)
+🔧   Destination: /tmp/tmp.ZBrDvW9Trh/combo-1-0-0/prod-matrix-app ...
+🔧   project-name: prod-matrix-app ...
+🔧   Generating template ...
+🔧   gha_runner_chart_version: "0.13.1" (default value from template)
+🔧   gha_runner_image_tag: "2.331.0" (default value from template)
+🔧   gha_runner_max: "4" (default value from template)
+🔧   gha_runner_storage_class: "openebs-hostpath" (default value from template)
+🔧   gha_runner_priority_class: "actions-runner-high-priority" (default value from template)
+🔧   gha_runner_storage_size: "50Gi" (default value from template)
+
+╔════════════════════════════════════════════════════════╗
+║          Project Generation Complete! ✓               ║
+╚════════════════════════════════════════════════════════╝
+
+Naming Convention Info:
+  ✓ Rust code uses underscores in crate names (Cargo.toml)
+  ✓ Kubernetes services use hyphens in resource names
+  ✓ Docker images use hyphens in tags
+  ✓ All names are automatically normalized during generation
+
+🔧 Running clippy --fix...
+⚠️  clippy --fix failed (non-blocking): Cannot prompt for system command confirmation in silent mode. Use --allow-commands if you want to allow the template to run system commands in silent mode.
+    Fix later with: cargo clippy --fix --allow-dirty --allow-staged --allow-no-vcs
+🔧 Running cargo fmt...
+⚠️  cargo fmt failed (non-blocking): Cannot prompt for system command confirmation in silent mode. Use --allow-commands if you want to allow the template to run system commands in silent mode.
+    Fix later with: cargo fmt --all
+
+⚠️  Post-generation lint/format finished with 2 warning(s).
+    The project was generated successfully — apply the fixes above manually.
+
+Next steps:
+  1. Review the generated code
+  2. Update config files with your settings
+  3. Run: make dev-up  (to start development environment)
+🔧   Moving generated files into: `/tmp/tmp.ZBrDvW9Trh/combo-1-0-0/prod-matrix-app`...
+🔧   Initializing a fresh Git repository
+✨   Done! New project created /tmp/tmp.ZBrDvW9Trh/combo-1-0-0/prod-matrix-app
+[0;32m✓[0m Generated: /tmp/tmp.ZBrDvW9Trh/combo-1-0-0/prod-matrix-app
+[0;34m→[0m Running assertions...
+[0;32m✓[0m   kustomize build deploy/flux/config/prod
+[0;32m✓[0m   kustomize build deploy/overlays/prod
+[0;32m✓[0m   kustomize build deploy/infrastructure/gha-runner
+[0;32m✓[0m Combo PASSED: gha_runner=1 image_updates=0 flagger=0
+
+
+[0;34m╔════════════════════════════════════════════════════════════╗[0m
+[0;34m║ Results: 1/1 combos passed[0m
+[0;34m╚════════════════════════════════════════════════════════════╝[0m
+
+[0;32m✓[0m All 1 combo(s) passed — prod deploy tooling is consistent.
+### EXIT_CODE=0 (expect 0)
+### F3 Task4 RBAC counts on rendered gha-runner (combo 1,0,0, image_updates=OFF)
+### kustomize build EXIT_CODE=0 (expect 0)
+### kind: ServiceAccount count (expect 1): 1
+### kind: Role count (expect 2): 2
+### kind: RoleBinding count (expect 2): 2
+### ClusterRole occurrences (expect 0): 0
+### subjects[].namespace=actions-runner-system count: 5
+### imageupdateautomations present (expect 0 for image_updates=OFF): 0
+### image.toolkit.fluxcd.io occurrences (expect 0): 0
+### liquid residue (expect 0): 0
+### serviceAccountName in helmrelease: 1
+### runner SA name rendered:   name: prod-matrix-app-runner
+  name: prod-matrix-app-runner
+
+### F3 Task6 workflow toggle checks (combo 1,0,0, gha_runner=ON)
+### secrets.PROD_KUBECONFIG count (expect 0): 0
+### PROD_KUBECONFIG any mention (expect 0): 0
+### runs-on line (expect prod-matrix-app-runner):
+24:    runs-on: prod-matrix-app-runner
+### yaml.safe_load:
+PARSE-OK rc=0
+### liquid residue (expect 0): 0
