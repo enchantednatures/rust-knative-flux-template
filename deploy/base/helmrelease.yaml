@@ -26,6 +26,10 @@ spec:
         image:
           repository: "{{ image_registry }}/{{ github_org }}/{{ project_name | replace: '_', '-' }}"
           tag: "latest"  # {"$imagepolicy": "flux-system:{{ project_name | replace: '_', '-' }}:tag"}
+          # ksvc >= 0.6.5: uncomment and create the dockerconfigjson secret
+          # to pull from a private registry.
+          # imagePullSecrets:
+          #   - name: {{ project_name | replace: '_', '-' }}-registry
         scaling:
           minScale: {% if use_default_scaling %}1{% else %}{{ base_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}10{% else %}{{ base_max_scale }}{% endif %}
