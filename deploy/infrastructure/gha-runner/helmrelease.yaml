@@ -59,11 +59,11 @@ spec:
               - /home/runner/run.sh
             resources:
               requests:
-                cpu: "2"
-                memory: 8Gi
+                cpu: "500m"
+                memory: 1Gi
               limits:
-                cpu: "2"
-                memory: 8Gi
+                cpu: "1"
+                memory: 2Gi
             env:
               - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
                 value: "false"
@@ -88,11 +88,11 @@ spec:
               privileged: true
             resources:
               requests:
-                cpu: "2"
-                memory: 8Gi
+                cpu: "500m"
+                memory: 1Gi
               limits:
-                cpu: "2"
-                memory: 8Gi
+                cpu: "1"
+                memory: 2Gi
             env:
               - name: DOCKER_TLS_CERTDIR
                 value: /certs

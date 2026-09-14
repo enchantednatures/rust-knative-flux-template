@@ -182,9 +182,9 @@ ignore = [
 # ARC runner scale set chart version (from ghcr.io/actions/actions-runner-controller-charts)
 gha_runner_chart_version = { prompt = "ARC runner chart version", type = "string", default = "0.14.2" } }
 # GitHub Actions runner image tag
-gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.331.0" }
+gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.337.0" }
 # Maximum concurrent runners (min is always 0 — scale-to-zero)
-gha_runner_max = { prompt = "Maximum concurrent runners", type = "string", default = "4" }
+gha_runner_max = { prompt = "Maximum concurrent runners", type = "string", default = "2" }
 # StorageClass for the runner work volume
 gha_runner_storage_class = { prompt = "StorageClass for runner work volume", type = "string", default = "openebs-hostpath" }
 # PriorityClass for runner pods
