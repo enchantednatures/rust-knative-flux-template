@@ -2,7 +2,7 @@
 
 This project uses [Flagger](https://flagger.app) for automated canary release promotion
 with Knative Serving. When a new image is deployed, Flagger gradually shifts traffic to
-the new revision while evaluating metric gates and running k6 load tests. If any gate
+the new revision while evaluating metric gates and running load tests. If any gate
 fails, the rollout is automatically rolled back.
 
 ## Prerequisites
@@ -19,9 +19,9 @@ fails, the rollout is automatically rolled back.
 
    | Variable | Used by | Default |
    |----------|---------|---------|
-   | `flagger_prometheus_url_staging` | staging overlay patch | `http://prometheus.observability.svc.cluster.local:9090` |
-   | `flagger_prometheus_url_prod` | prod overlay patch | same dev URL |
-   | `flagger_operator_metrics_server` | Flagger operator `metricsServer` (cluster-wide install) | same dev URL |
+   | `flagger_prometheus_url_staging` | staging overlay patch (custom metric gate) | `http://prometheus.observability.svc.cluster.local:9090` |
+   | `flagger_prometheus_url_prod` | prod overlay patch (custom metric gate) | same dev URL |
+   | `flagger_operator_metrics_server` | Flagger operator `metricsServer` — data source for the builtin success-rate/p99 gates | same dev URL |
 
    The default points at the **dev-only** observability stack (`deploy/dev/observability/`,
    installed by `make dev-observability`). Staging/prod clusters typically have no such
@@ -30,9 +30,11 @@ fails, the rollout is automatically rolled back.
    `deploy/overlays/{staging,prod}/kustomization.yaml` — that patch is the source of
    truth; the fallback address in `metric-templates.yaml` is overridden by it.
 
-3. **Prometheus must scrape Knative Serving revision metrics** (`revision_request_count`,
-   `revision_request_latencies_bucket`). The dev observability stack is wired for this;
-   for staging/prod, make sure your Prometheus scrapes Knative's metrics endpoints.
+3. **Prometheus must scrape the Kourier gateway.** Flagger's builtin Knative
+   gates query the gateway's Envoy stats, which it exposes under `prometheus.io/*`
+   annotations (port 9000, path `/stats/prometheus`). The dev observability stack
+   ships an annotation-based scrape job for this; any Prometheus scraping those
+   annotations works.
 
 ## How It Works
 
@@ -43,12 +45,11 @@ New image pushed
   → Flagger detects new revision → starts canary analysis
 
   Step 0 — Smoke test (pre-rollout):
-    → k6 smokeTest() hits /health/live on the canary revision
+    → hey hits /health/live on the service for 10s
     → Non-zero exit? → Abort immediately, no traffic shifted
 
   Step 1..N — Load test + metric gates (rollout, every 1 minute):
-    → k6 default() sends {{ k6_vus }} VUs to the canary revision
-    → k6 thresholds checked: p95 < 500ms, error rate < 1%
+    → hey generates traffic (Flagger applies the analysis weights)
     → Prometheus gates checked: success rate ≥ {{ canary_success_rate_threshold }}%,
       p99 latency ≤ {{ canary_latency_threshold_ms }}ms
     → All pass? → Advance traffic by 10% (10% → 20% → ... → 50%)
@@ -62,57 +63,37 @@ New image pushed
 No service mesh is required. Flagger uses Knative's native
 `spec.traffic` revision-based traffic splitting.
 
-## k6 Load Testing
+## Load Testing
 
-The canary analysis uses [k6](https://k6.io) for synthetic load testing via
-the `flagger-loadtester`. The k6 script is generated into a ConfigMap and mounted
-into the loadtester pod at `/scripts/canary-test.js`.
+The canary analysis uses [hey](https://github.com/rakyll/hey) — bundled in the
+stock `flagger-loadtester` image — to generate traffic via webhook commands.
+No script ConfigMap is mounted.
 
-### File locations
+### Webhook commands
 
-| File | Purpose |
-|------|---------|
-| `deploy/infrastructure/flagger/operator/k6-configmap.yaml` | ConfigMap containing the k6 script (flagger-system) |
-| `deploy/infrastructure/flagger/operator/loadtester-patch.yaml` | Patches the loadtester HelmRelease to mount the ConfigMap |
-| `deploy/components/flagger/canary.yaml` | Defines the two webhook stages |
-| `deploy/components/flagger/metric-templates.yaml` | Prometheus MetricTemplate CRDs (address patched per environment) |
+| Webhook | Stage | Command |
+|---------|-------|---------|
+| smoke-test | pre-rollout | `hey -z 10s -q 5 -c 2 http://<service>.<ns>.svc.cluster.local/health/live` |
+| load-test | rollout | `hey -z 1m -q 5 -c 2 http://<service>.<ns>.svc.cluster.local/` |
 
 ### Two-stage webhook workflow
 
 **Stage 1 — `pre-rollout` smoke test:**
-Runs before any traffic is shifted. Uses `k6 run --export-only smokeTest` to call
-the `/health/live` endpoint on the new canary revision. A single failure here aborts
-the entire rollout before any real users see the new version.
+Runs before any traffic is shifted. Verifies the service is reachable over the
+cluster-local FQDN; a failure aborts the entire rollout before any real users
+see the new version.
 
 **Stage 2 — `rollout` load test:**
-Runs on every 1-minute analysis interval. Uses `k6 run` (default export) to send
-`{{ k6_vus }}` virtual users to the canary revision for 60 seconds. k6 thresholds
-are evaluated; a breach causes a non-zero exit, which Flagger counts as a failed check.
+Runs on every analysis interval. Traffic goes through the Knative Service Flagger
+controls, so it lands on the canary/primary revisions per the current weights —
+which is what the Kourier gateway Envoy stats (the builtin metric gates) observe.
+If the hey run fails, Flagger counts it as a failed check.
 
-### Customizing the k6 script
+### Customizing the load test
 
-Edit `deploy/infrastructure/flagger/operator/k6-configmap.yaml`. The script targets:
-
-```
-http://{{ project_name | replace: "_", "-" }}-canary.{{ target_namespace }}.svc.cluster.local/
-```
-
-The URL uses the full cluster-local FQDN because the loadtester pod runs in the
-`flagger-system` namespace and makes cross-namespace requests.
-
-To change VUs, duration, or thresholds:
-
-```javascript
-export const options = {
-  vus: {{ k6_vus }},       // set via k6_vus at generation time
-  duration: '1m',           // match the canary analysis interval
-
-  thresholds: {
-    'http_req_duration': ['p(95)<500'],  // adjust latency threshold
-    'errors': ['rate<0.01'],             // adjust error rate
-  },
-};
-```
+Edit the `cmd` entries in `deploy/components/flagger/canary.yaml` (duration,
+concurrency, rate, paths). To use k6 or another tool, build a custom loadtester
+image — the stock image ships hey, wrk, and ghz, but not k6.
 
 ## Metric Gates
 
@@ -120,30 +101,33 @@ Each 1-minute analysis step must pass all Prometheus metric gates:
 
 | Gate | Threshold | Query source |
 |------|-----------|-------------|
-| HTTP success rate | ≥ {{ canary_success_rate_threshold }}% | `revision_request_count` success ratio |
-| p99 latency | ≤ {{ canary_latency_threshold_ms }}ms | `revision_request_latencies` histogram |
+| HTTP success rate | ≥ {{ canary_success_rate_threshold }}% | Builtin Flagger observer — Kourier gateway Envoy stats |
+| p99 latency | ≤ {{ canary_latency_threshold_ms }}ms | Builtin Flagger observer — Envoy upstream request time |
 | Custom app metric | ≥ 0 | Placeholder — fill in your own KPI |
 
 Thresholds are defined in `deploy/components/flagger/canary.yaml`.
-PromQL queries are defined in `deploy/components/flagger/metric-templates.yaml`.
 
-All three gates query the Prometheus address configured on each MetricTemplate's
-provider. That address is patched **per environment** in
-`deploy/overlays/{staging,prod}/kustomization.yaml` (JSON6902 patch targeting
-`kind: MetricTemplate`), so staging and prod can point at different Prometheus
-instances. See [Prerequisites](#prerequisites).
+Gates 1-2 use Flagger's **builtin observers** (no `templateRef`): for the Knative
+provider they query Kourier gateway Envoy stats through the operator's metrics
+server (`flagger_operator_metrics_server`). The gateway must be scraped via its
+`prometheus.io/*` annotations — the dev observability stack ships that scrape job.
 
-The MetricTemplates deploy into the **app namespace** (the overlay's namespace
-transformer applies), and the `templateRef` entries in `canary.yaml` intentionally
-omit `namespace` — Flagger resolves namespace-less templateRefs against the
-Canary's own namespace. Do not re-add `namespace: flagger-system` there: the
-templates do not live in that namespace, and Flagger resolves explicit namespaces
-strictly (no fallback to the Canary's namespace).
+The custom gate uses a MetricTemplate whose provider address is patched **per
+environment** in `deploy/overlays/{staging,prod}/kustomization.yaml` (JSON6902
+patch targeting `kind: MetricTemplate`), so staging and prod can point at
+different Prometheus instances. See [Prerequisites](#prerequisites).
+
+MetricTemplates deploy into the **app namespace** (the overlay's namespace
+transformer applies), and the `templateRef` in `canary.yaml` intentionally omits
+`namespace` — Flagger resolves namespace-less templateRefs against the Canary's
+own namespace. Do not re-add `namespace: flagger-system`: the templates do not
+live there, and Flagger resolves explicit namespaces strictly (no fallback).
 
 ## Installing the Flagger Operator
 
 Flagger is a cluster-wide controller. Install it **once per cluster** using the provided
-FluxCD Kustomization — not per application or namespace.
+FluxCD Kustomization — not per application or namespace. The chart floor is **1.41.0**:
+earlier releases predate the Knative provider.
 
 ```bash
 # Apply the Flagger operator Kustomization to your flux-system
@@ -169,7 +153,7 @@ kubectl describe canary {{ project_name | replace: "_", "-" }} -n <namespace>
 # Stream Flagger operator logs
 kubectl logs -n flagger-system deploy/flagger -f
 
-# Stream load tester logs (shows k6 output during analysis)
+# Stream load tester logs (shows load test output during analysis)
 kubectl logs -n flagger-system deploy/flagger-loadtester -f
 
 # List all canaries across namespaces
@@ -200,7 +184,7 @@ kubectl annotate canary/{{ project_name | replace: "_", "-" }} \
 
 ## Manual Rollback
 
-Flagger rolls back automatically when metric gates or k6 thresholds fail. To force an
+Flagger rolls back automatically when metric gates or load-test webhooks fail. To force an
 immediate rollback:
 
 ```bash
@@ -217,7 +201,7 @@ Edit `deploy/components/flagger/canary.yaml`:
 
 ```yaml
 analysis:
-  interval: 1m          # how often to evaluate metrics and run k6
+  interval: 1m          # how often to evaluate metrics and run the load test
   threshold: 5          # consecutive failures before rollback
   maxWeight: 50         # max % traffic to canary before promotion
   stepWeight: 10        # traffic increment per step
@@ -256,22 +240,24 @@ webhooks. See the [Flagger alerting docs](https://docs.flagger.app/usage/alertin
 
 ## Cross-Namespace Considerations
 
-The `flagger-loadtester` runs in `flagger-system`. The k6 script targets the canary
-revision using its full cluster-local FQDN:
+The `flagger-loadtester` runs in `flagger-system`. The load test targets the
+Knative Service under canary control via its full cluster-local FQDN:
 
 ```
-<service>-canary.<target_namespace>.svc.cluster.local
+<service>.<target_namespace>.svc.cluster.local
 ```
+
+For the Knative provider, Flagger shifts analysis weights on that service, so
+hey traffic reaches the canary/primary revisions per the current weights.
 
 If your staging and production overlays use different namespaces (e.g. `staging` and
-`production`), you'll need to patch the k6 script or the webhook `cmd` per overlay:
+`production`), you'll need to patch the webhook `cmd` per overlay:
 
 ```yaml
 # deploy/overlays/staging/canary-patch.yaml
 - op: replace
   path: /spec/analysis/webhooks/1/metadata/cmd
-  value: "k6 run /scripts/canary-test.js"
-  # and update the URL in k6-configmap.yaml for that namespace
+  value: "hey -z 1m -q 5 -c 2 http://<service>.<namespace>.svc.cluster.local/"
 ```
 
 Alternatively, update the `target_namespace` variable at generation time if you use

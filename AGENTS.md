@@ -811,7 +811,7 @@ Examples:
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
-- Flagger >=1.38.0 (optional, `flagger` feature flag), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
+- Flagger >=1.41.0 (optional, `flagger` feature flag — 1.41 introduced the Knative provider), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
 - GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
 
 ## Flagger Canary Release Promotion
@@ -826,15 +826,13 @@ FluxCD GitRepository
         └── deploy/infrastructure/flagger/operator/
               ├── namespace.yaml           # flagger-system namespace
               ├── helmrepository.yaml      # flagger.app Helm repo
-              ├── helmrelease.yaml         # Flagger operator + loadtester
-              ├── k6-configmap.yaml        # k6 rollout load test script (flagger-system)
-              └── loadtester-patch.yaml    # Mounts the k6 ConfigMap into the loadtester
+              └── helmrelease.yaml         # Flagger operator + loadtester
 
 FluxCD Kustomization (app) dependsOn (flagger)
   └── deploy/overlays/staging|prod/kustomization.yaml
         └── ../../components/flagger/      # Kustomize Component
               ├── canary.yaml              # Canary CRD (wraps KnativeService)
-              └── metric-templates.yaml    # Prometheus MetricTemplate CRDs (address patched per env)
+              └── metric-templates.yaml    # Custom app metric gate (address patched per env)
 ```
 
 ### How It Works
@@ -856,7 +854,6 @@ FluxCD Kustomization (app) dependsOn (flagger)
 |---|---|---|
 | `canary_success_rate_threshold` | `99` | Min HTTP success rate % |
 | `canary_latency_threshold_ms` | `500` | Max p99 latency in ms |
-| `k6_vus` | `10` | Number of k6 virtual users during the rollout load test |
 | `flagger_prometheus_url_staging` | dev observability URL | Prometheus queried by staging canary gates |
 | `flagger_prometheus_url_prod` | dev observability URL | Prometheus queried by prod canary gates |
 | `flagger_operator_metrics_server` | dev observability URL | Prometheus for the Flagger operator's built-in checks |
@@ -897,9 +894,11 @@ kubectl annotate canary/<service-name> flagger.app/canary.paused- -n <namespace>
 
 ### Customizing Metric Gates
 
-Edit `deploy/overlays/{staging,prod}/kustomization.yaml` to change the Prometheus address
-per environment (JSON6902 patch on `kind: MetricTemplate`; defaults come from the
-`flagger_prometheus_url_{staging,prod}` generate-time variables).
+Edit `deploy/overlays/{staging,prod}/kustomization.yaml` to change the custom-gate
+Prometheus address per environment (JSON6902 patch on `kind: MetricTemplate`; defaults
+come from the `flagger_prometheus_url_{staging,prod}` generate-time variables). The
+builtin success-rate/p99 gates query the operator's `metricsServer` instead
+(`flagger_operator_metrics_server`, data source: scraped Kourier gateway Envoy stats).
 
 Edit `deploy/components/flagger/metric-templates.yaml` to:
 - Update the custom metric PromQL query with your business KPI
@@ -918,15 +917,14 @@ deploy/
 ├── components/flagger/
 │   ├── kustomization.yaml       # Kustomize Component declaration
 │   ├── canary.yaml              # Flagger Canary CRD
-│   └── metric-templates.yaml    # Prometheus MetricTemplate CRDs
+│   └── metric-templates.yaml    # Custom app metric gate (MetricTemplate)
 ├── infrastructure/flagger/
 │   └── operator/
-│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease + k6 config
+│       ├── kustomization.yaml   # References namespace + helmrepository + helmrelease
 │       ├── namespace.yaml       # flagger-system namespace
 │       ├── helmrepository.yaml  # flagger.app Helm chart repository
 │       ├── helmrelease.yaml     # Flagger + loadtester HelmReleases
-│       ├── k6-configmap.yaml    # k6 rollout load test script (flagger-system)
-│       └── loadtester-patch.yaml  # Mounts the k6 ConfigMap into the loadtester
+│       └── helmrelease.yaml     # Flagger + loadtester HelmReleases
 └── flux/
     └── flagger-kustomization.yaml  # FluxCD Kustomization for the operator
 ```

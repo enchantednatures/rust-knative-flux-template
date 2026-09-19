@@ -22,6 +22,36 @@ data:
         static_configs:
           - targets: ['otel-collector.observability.svc.cluster.local:8888']
         metrics_path: '/metrics'
+
+      # Scrape pods carrying prometheus.io annotations. The kourier gateway
+      # ships prometheus.io/scrape=true (port 9000, path /stats/prometheus) and
+      # its Envoy cluster stats are the data source for Flagger's builtin
+      # Knative metric gates (see docs/FLAGGER.md "Metric Gates").
+      - job_name: kubernetes-pods
+        scrape_interval: 5s
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - action: keep
+            regex: true
+            source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          - action: replace
+            regex: (.+)
+            source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            target_label: __metrics_path__
+          - action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: '$1:$2'
+            source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - action: replace
+            source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - action: replace
+            source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod_name
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -101,3 +131,27 @@ kind: ServiceAccount
 metadata:
   name: prometheus
   namespace: observability
+---
+# kubernetes_sd pod discovery (knative-revisions scrape job) needs read
+# access to pod metadata.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-pod-discovery
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-pod-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-pod-discovery
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: observability

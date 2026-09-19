@@ -158,8 +158,6 @@ ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]
 canary_success_rate_threshold = { prompt = "Minimum HTTP success rate % for canary promotion", type = "string", default = "99" }
 # Maximum p99 latency in milliseconds to allow canary promotion (rollback if above this)
 canary_latency_threshold_ms = { prompt = "Maximum p99 latency in ms for canary promotion", type = "string", default = "500" }
-# Number of k6 virtual users during the rollout load test
-k6_vus = { prompt = "Number of k6 virtual users for canary load test", type = "string", default = "10" }
 # Prometheus URL queried by canary metric gates in staging (patched into the flagger component)
 flagger_prometheus_url_staging = { prompt = "Prometheus URL for staging canary metric gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
 # Prometheus URL queried by canary metric gates in prod (patched into the flagger component)
