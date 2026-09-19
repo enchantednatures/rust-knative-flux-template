@@ -35,27 +35,26 @@ spec:
     # Metric gates: all must pass on every interval or the failed-check counter increments
     metrics:
       # Gate 1: HTTP success rate — rollback if < {{ canary_success_rate_threshold }}% of requests succeed
+      # Builtin Flagger observer (no templateRef): for the Knative provider it
+      # queries Kourier gateway Envoy stats through the operator's metrics
+      # server — the gateway is scraped via prometheus.io annotations.
       - name: request-success-rate
-        # Namespace omitted on purpose: Flagger resolves the template in the
-        # Canary's own namespace — the overlay deploys MetricTemplates there,
-        # keeping each environment's Prometheus address isolated per app.
-        templateRef:
-          name: request-success-rate
         thresholdRange:
           min: {{ canary_success_rate_threshold }}
         interval: 1m
 
       # Gate 2: p99 latency — rollback if 99th-percentile latency > {{ canary_latency_threshold_ms }}ms
+      # Builtin observer: Envoy upstream request-time histogram, already in ms.
       - name: request-duration
-        templateRef:
-          name: request-duration
         thresholdRange:
           max: {{ canary_latency_threshold_ms }}
         interval: 1m
 
       # Gate 3: Custom app metric — replace the PromQL in metric-templates.yaml
       # with your own business KPI (e.g. error rate, queue depth, SLO burn rate)
-      # Remove this block if you don't need a custom metric gate
+      # Remove this block if you don't need a custom metric gate.
+      # This gate uses a MetricTemplate (namespace-less ref: resolved in the
+      # Canary's namespace; its provider address is patched per environment).
       - name: {{ project_name | replace: "_", "-" }}-custom-metric
         templateRef:
           name: custom-metric
@@ -64,38 +63,38 @@ spec:
         interval: 1m
 
     # Webhooks: executed by the flagger-loadtester at each analysis step.
-    # The loadtester pod runs the k6 script mounted from k6-configmap.yaml.
-    # See deploy/infrastructure/flagger/operator/k6-configmap.yaml for the script source.
+    # The stock loadtester image ships hey/wrk/ghz (no k6) — commands use hey
+    # to generate traffic against the Knative Service Flagger controls.
     webhooks:
       # Stage 1 — Smoke test (pre-rollout):
       # Runs BEFORE any traffic is shifted to the canary revision.
-      # Calls the k6 `smokeTest` export to verify the new revision is alive.
-      # A non-zero k6 exit code aborts the canary immediately (no traffic shifted).
+      # Verifies the service is reachable; a non-zero hey exit aborts the
+      # canary immediately (no traffic shifted).
       - name: smoke-test
         type: pre-rollout
-        url: http://flagger-loadtester.flagger-system/gate/halt
-        timeout: 30s
-        metadata:
-          # --export-only runs only the named exported function, not the default.
-          # /scripts/canary-test.js is mounted from k6-configmap.yaml.
-          cmd: "k6 run --export-only smokeTest /scripts/canary-test.js"
-
-      # Stage 2 — Load test (rollout):
-      # Runs on EACH analysis interval while traffic is being shifted.
-      # Calls the k6 default export which targets the canary stable URL.
-      # k6 thresholds (p95 < 500ms, error rate < 1%) act as a hard gate:
-      # a threshold breach causes a non-zero exit → Flagger increments the
-      # failure counter → rollback after `threshold` consecutive failures.
-      - name: load-test
-        type: rollout
-        url: http://flagger-loadtester.flagger-system/gate/halt
+        url: http://flagger-loadtester.flagger-system/
         timeout: 2m
         metadata:
-          # Knative creates a stable canary URL:
-          #   <service>-canary.<namespace>.svc.cluster.local
-          # The k6 script targets this FQDN (baked in at generation time).
-          # If staging/prod use different namespaces, patch this per overlay.
-          cmd: "k6 run /scripts/canary-test.js"
+          cmd: >-
+            hey -z 10s -q 5 -c 2
+            http://{{ project_name | replace: "_", "-" }}.{{ target_namespace }}.svc.cluster.local/health/live
+
+      # Stage 2 — Load test (rollout):
+      # Runs on EACH analysis interval while traffic is being shifted. Traffic
+      # lands on the canary/primary revisions per the analysis weights, which
+      # is what the Kourier gateway Envoy stats (the builtin metric gates)
+      # observe.
+      - name: load-test
+        type: rollout
+        # The loadtester's root endpoint executes the webhook command
+        # (flagger >= 1.41 / loadtester 0.32+: /gate/halt is a manual
+        # always-halt gate and must not be used for command webhooks).
+        url: http://flagger-loadtester.flagger-system/
+        timeout: 2m
+        metadata:
+          cmd: >-
+            hey -z 1m -q 5 -c 2
+            http://{{ project_name | replace: "_", "-" }}.{{ target_namespace }}.svc.cluster.local/
 
       # Post-promotion notification webhook (optional)
       # Uncomment to trigger a Slack/PagerDuty alert on successful promotion
