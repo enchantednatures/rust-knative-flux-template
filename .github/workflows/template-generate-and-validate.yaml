@@ -259,7 +259,7 @@ jobs:
 
           grep -q 'name: cnpg-operator' deploy/flux/kustomization-dev.yaml \
             || { echo "FAIL: app Kustomization missing cnpg-operator dependsOn"; exit 1; }
-          grep -qF 'deploy/infrastructure/cnpg-operator' \
+          grep -qF 'cnpg-operator-kustomization.yaml' \
             deploy/flux/config/dev/kustomization.yaml \
             || { echo "FAIL: cnpg-operator Kustomization not wired in flux config"; exit 1; }
 
