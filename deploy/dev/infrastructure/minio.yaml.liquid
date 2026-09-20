@@ -1,4 +1,4 @@
-{% if feature_s3 %}
+{% if feature_s3 or feature_postgres %}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -99,6 +99,28 @@ spec:
               echo "Waiting for MinIO..."
               sleep 2
             done
+            {%- if feature_s3 %}
             mc mb local/data --ignore-existing || true
+            {%- endif %}
+            {%- if feature_postgres %}
+            # Backup destination bucket for the CNPG ObjectStore: barman does
+            # not create buckets, so the dev init job must create it upfront.
+            mc mb "local/{{ project_name | replace: "_", "-" }}-postgres-backups" --ignore-existing || true
+            {%- endif %}
             echo "Bucket creation completed"
+{%- if feature_postgres %}
+---
+# Dev-only credentials for the CNPG barman-cloud ObjectStore. The
+# ObjectStore CR references this secret by name (keys ACCESS_KEY_ID /
+# ACCESS_SECRET_KEY). Rotate along with the minio creds when hardening dev.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-backup-storage
+  namespace: default
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: "minioadmin"
+  ACCESS_SECRET_KEY: "minioadmin"
+{%- endif %}
 {% endif %}

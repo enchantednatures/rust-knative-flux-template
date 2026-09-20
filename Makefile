@@ -47,7 +47,12 @@ dev-up: ## Start full development environment (cluster + all services)
 	@echo "${YELLOW}[4/6]${NC} Deploying observability stack (required)..."
 	@./scripts/dev/deploy-observability.sh || { echo "${RED}✗ Failed to deploy observability${NC}"; exit 1; }
 	@echo ""
-	@echo "${YELLOW}[5/6]${NC} Building and deploying application..."
+{%- if feature_postgres %}
+	@echo "${YELLOW}[5/6]${NC} Waiting for CNPG operator and deploying PostgreSQL..."
+	@./scripts/dev/deploy-postgres.sh || { echo "${RED}✗ Failed to deploy PostgreSQL${NC}"; exit 1; }
+	@echo ""
+{%- endif %}
+	@echo "${YELLOW}[6/6]${NC} Building and deploying application..."
 	@./scripts/dev/build-and-deploy.sh || { echo "${RED}✗ Failed to deploy application${NC}"; exit 1; }
 	@echo ""
 	@echo "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
@@ -221,6 +226,41 @@ kafka-dlq-logs: ## View Dead Letter Queue handler logs
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		kubectl logs -f -l serving.knative.dev/service="$(PROJECT_NAME)-dlq" -c user-container 2>/dev/null || \
 		echo "${RED}DLQ handler not running or no events failed${NC}"
+
+# ============================================================================
+# PostgreSQL Commands (conditional on feature_postgres; guards fail cleanly
+# in generated projects where the feature is off)
+# ============================================================================
+
+.PHONY: dev-postgres
+dev-postgres: ## Deploy PostgreSQL cluster (requires feature_postgres)
+	@if [ ! -f scripts/dev/deploy-postgres.sh ]; then \
+		echo "${RED}PostgreSQL feature is not enabled in this project${NC}"; exit 1; \
+	fi
+	@./scripts/dev/deploy-postgres.sh
+
+.PHONY: dev-postgres-status
+dev-postgres-status: ## Show CNPG Cluster status and ready instances
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && ./scripts/dev/check-postgres-status.sh
+
+.PHONY: dev-postgres-port-forward
+dev-postgres-port-forward: ## Port-forward <cluster>-rw to localhost:5432
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && ./scripts/dev/port-forward-postgres.sh
+
+.PHONY: dev-postgres-psql
+dev-postgres-psql: ## Shell into the primary pod's psql (db: app, user: app)
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		POD=$$(kubectl get pod -n default -o name -l cnpg.io/cluster='$(PROJECT_NAME)-postgres' -l cnpg.io/instanceRole=primary 2>/dev/null | head -1) && \
+		if [ -z "$$POD" ]; then \
+			echo "${RED}PostgreSQL cluster '$(PROJECT_NAME)-postgres' not found or not ready${NC}"; \
+			exit 1; \
+		fi && \
+		echo "${GREEN}Connecting to $$POD (db: app, user: app)...${NC}" && \
+		kubectl exec -it $$POD -n default -- psql -U app -d app
+
+.PHONY: validate-postgres
+validate-postgres: ## Validate PostgreSQL manifests (requires feature_postgres)
+	@./scripts/validate-postgres-manifests.sh
 
 # ============================================================================
 # Utility Commands

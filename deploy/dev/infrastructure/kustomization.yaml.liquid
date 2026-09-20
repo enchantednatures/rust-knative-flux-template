@@ -6,6 +6,6 @@ resources:
   {% if event_source_kafka %}
   - kafka.yaml
   {% endif %}
-  {% if feature_s3 %}
+  {% if feature_s3 or feature_postgres %}
   - minio.yaml
   {% endif %}
