@@ -249,6 +249,38 @@ jobs:
           cargo test --all-features --no-run
         shell: bash
 
+      - name: Validate PostgreSQL manifests
+        if: matrix.feature_postgres == 'true'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          ./scripts/validate-postgres-manifests.sh
+
+          grep -q 'name: cnpg-operator' deploy/flux/kustomization-dev.yaml \
+            || { echo "FAIL: app Kustomization missing cnpg-operator dependsOn"; exit 1; }
+          grep -qF 'deploy/infrastructure/cnpg-operator' \
+            deploy/flux/config/dev/kustomization.yaml \
+            || { echo "FAIL: cnpg-operator Kustomization not wired in flux config"; exit 1; }
+
+          du -sh "$GENERATED_DIR" > /dev/null
+        shell: bash
+
+      - name: Assert no postgres residue when disabled
+        if: matrix.feature_postgres == 'false'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          [ ! -d deploy/components/postgres ] || { echo "FAIL: postgres component present"; exit 1; }
+          [ ! -f src/handlers/items.rs ] || { echo "FAIL: items handlers present"; exit 1; }
+          [ ! -f build.rs ] || { echo "FAIL: build.rs present"; exit 1; }
+          [ ! -d migrations ] || { echo "FAIL: migrations dir present"; exit 1; }
+          ! grep -q 'tls-rustls-ring' Cargo.toml || { echo "FAIL: runtime sqlx present"; exit 1; }
+
+          echo "✓ no postgres residue"
+        shell: bash
+
       - name: Validate Flagger per-env metric gates
         if: matrix.feature_flagger == 'true'
         run: |
