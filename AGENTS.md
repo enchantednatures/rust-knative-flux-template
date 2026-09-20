@@ -670,12 +670,10 @@ deploy/
 │   ├── Chart.yaml               # ksvc 0.6.3 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
-│   ├── flagger/                 # Canary + metric templates (staging/prod)
-│   │   ├── kustomization.yaml
-│   │   ├── canary.yaml
-│   │   └── metric-templates.yaml
-│   └── operator/                # CloudNativePG operator + Barman plugin (LOCAL DEV ONLY)
-│       └── kustomization.yaml
+│   └── flagger/                 # Canary + metric templates (staging/prod)
+│       ├── kustomization.yaml
+│       ├── canary.yaml
+│       └── metric-templates.yaml
 ├── dev/                         # Local dev infrastructure (installed imperatively)
 │   ├── kind-config.yaml         # Kind cluster + local registry config
 │   ├── infrastructure/          # redis, minio, kafka (Knative eventing sources)
@@ -690,6 +688,7 @@ deploy/
 │   │   ├── staging/kustomization.yaml
 │   │   └── prod/kustomization.yaml
 │   ├── flagger-kustomization.yaml     # → deploy/infrastructure/flagger/operator
+│   ├── cnpg-operator-kustomization.yaml  # → deploy/infrastructure/cnpg-operator
 │   ├── gha-runner-kustomization.yaml  # → deploy/infrastructure/gha-runner
 │   ├── postgres-kustomization.yaml
 │   ├── image-policy.yaml        # Opt-in via enable_image_updates
@@ -697,9 +696,10 @@ deploy/
 │   └── image-update-automation.yaml
 ├── infrastructure/              # Cluster-wide operators (Flux-managed)
 │   ├── flagger/operator/        # namespace + helmrepository + helmrelease
+│   ├── cnpg-operator/           # CNPG operator + Barman plugin (remote manifests)
 │   └── gha-runner/              # oci-repository + helmrelease
 └── overlays/                    # Environment-specific HelmRelease patches
-    ├── dev/kustomization.yaml      # base + operator component + dev values patch
+    ├── dev/kustomization.yaml      # base + dev values patch
     ├── staging/kustomization.yaml  # base + flagger component + staging values patch
     └── prod/kustomization.yaml     # base + flagger component + prod values patch
 ```
@@ -708,7 +708,7 @@ deploy/
 
 **Key Benefits:**
 - **Modular**: Features are opt-in via Kustomize Components and feature-flagged Flux Kustomizations
-- **Environment-aware**: Dev installs the CNPG operator via component; prod/staging assume a pre-installed operator
+- **Cluster-wide operators**: The CNPG operator (+ Barman plugin) is installed once per cluster via Flux (gated by `feature_postgres`), mirroring the Flagger operator pattern
 - **GitOps-ready**: Overlays are referenced by FluxCD Kustomizations; feature wiring lives in `deploy/flux/config/{env}/`
 - **Single source of app config**: PostgreSQL/Kafka runtime settings flow through HelmRelease `spec.values` (patched per environment)
 
@@ -716,10 +716,7 @@ deploy/
 
 ```yaml
 # deploy/overlays/dev/kustomization.yaml (Local Development)
-components:
-  {% if feature_postgres %}
-  - ../../components/operator   # Install CNPG operator + Barman plugin for local dev
-  {% endif %}
+# No components — the CNPG operator is installed cluster-wide via Flux
 # Postgres/Kafka values are patched into the base HelmRelease per environment
 
 # deploy/overlays/staging/kustomization.yaml (Staging)
@@ -733,60 +730,25 @@ components:
   {% if feature_flagger %}
   - ../../components/flagger    # Canary + metric gates
   {% endif %}
-  # NO operator component - assumes cluster-wide operator pre-installed
+  # NO operator component - operator installed cluster-wide via Flux
 ```
 
-**Feature-flag wiring** happens in `deploy/flux/config/{dev,staging,prod}/kustomization.yaml`, which aggregates the app Kustomization (`deploy/flux/kustomization-{env}.yaml`) with the optional operator Kustomizations (flagger, gha-runner, postgres) and image-update resources, each gated by the corresponding feature flag.
+**Feature-flag wiring** happens in `deploy/flux/config/{dev,staging,prod}/kustomization.yaml`, which aggregates the app Kustomization (`deploy/flux/kustomization-{env}.yaml`) with the optional operator Kustomizations (flagger, cnpg-operator, gha-runner, postgres) and image-update resources, each gated by the corresponding feature flag.
 
 **Local infrastructure** (Kind cluster, local registry, redis, minio, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make dev-up`, etc.).
 
 ### CNPG Operator Installation
 
-**Critical**: Beyond local development, the CloudNativePG operator should be installed **cluster-wide** via your cluster management tooling (Flux, ArgoCD, Terraform, etc.), not per-application.
+**Critical**: The CloudNativePG operator is installed **cluster-wide** via FluxCD (mirroring the Flagger operator pattern), not per-application.
 
-- **Local dev (`dev` overlay)**: Includes `components/operator` to install CNPG operator + Barman cloud plugin
-- **Staging/Prod (`staging`/`prod` overlays)**: Assumes operator already installed; PostgreSQL itself is configured through the HelmRelease values (`spec.values.postgres`) patched per environment
+- **All environments (`dev`/`staging`/`prod`)**: `deploy/flux/cnpg-operator-kustomization.yaml` (Flux Kustomization `cnpg-operator` in `flux-system`) renders `deploy/infrastructure/cnpg-operator/` — the CNPG operator 1.28.0 + Barman cloud plugin v0.11.0 remote manifests, installed into the `cnpg-system` namespace. It is included from `deploy/flux/config/{env}/kustomization.yaml`, gated by the `feature_postgres` flag.
+- **Ordering**: `deploy/flux/postgres-kustomization.yaml` declares `dependsOn: [{name: cnpg-operator}]` so CNPG CRDs exist before Cluster/ScheduledBackup objects are applied. PostgreSQL itself is configured through the HelmRelease values (`spec.values.postgres`) patched per environment.
 
 This prevents:
 - Multiple operator installations (one per namespace)
 - Version conflicts between applications
 - Unnecessary resource duplication
 - Deployment failures when operator CRDs are missing
-
-**For production clusters**, install the operator separately:
-
-```yaml
-# Example: FluxCD HelmRelease for cluster-wide operator
-apiVersion: helm.toolkit.fluxcd.io/v2beta1
-kind: HelmRelease
-metadata:
-  name: cloudnative-pg
-  namespace: cnpg-system
-spec:
-  chart:
-    spec:
-      chart: cloudnative-pg
-      sourceRef:
-        kind: HelmRepository
-        name: cnpg
-```
-
-Or via Kustomization:
-
-```yaml
-# Example: FluxCD Kustomization for cluster-wide operator (in your cluster/infrastructure repo)
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: cnpg-operator
-  namespace: flux-system
-spec:
-  path: ./infrastructure/cloudnative-pg/operator
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-```
 
 ## Configuration
 
@@ -1002,6 +964,9 @@ deploy/
 ```
 
 ## Recent Changes
+- shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
+- shipped-postgres-runtime: sqlx 0.8.6 pool + embedded migrations run at startup (advisory locked); `PostgresConfig` (figment APP__POSTGRES__*), demo items upsert/get handlers, `AppError::Database`, DB SELECT 1 in `/health/ready` only, CA cert mounted at `/etc/secrets/pg-ca/ca.crt`, `APP__POSTGRES__URL` from the auto-generated `<cluster>-app` secret
+- cnpg-operator-cluster-wide: Moved CNPG operator 1.28.0 + Barman plugin v0.11.0 from dev-only Kustomize Component (`deploy/components/operator`, deleted) to cluster-wide FluxCD install (`deploy/infrastructure/cnpg-operator` + `deploy/flux/cnpg-operator-kustomization.yaml`), wired into all env flux configs gated by `feature_postgres`
 - 001-cloudnative-postgres-backups: Added Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen
 - flagger-canary: Added opt-in Flagger canary release promotion with Knative provider, Prometheus metric gates (success rate + p99 latency + custom), and FluxCD HelmRelease operator lifecycle management
 - gha-runner: Added opt-in per-repo GitHub Actions self-hosted runner (ARC gha-runner-scale-set) with Docker-in-Docker sidecar, scale-to-zero, and FluxCD lifecycle management

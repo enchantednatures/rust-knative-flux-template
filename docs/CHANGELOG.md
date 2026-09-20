@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (PostgreSQL feature, shipped core)
+
+- `feature_postgres` now deploys a complete CloudNativePG stack as a Kustomize Component (`deploy/components/postgres/`): a `Cluster` (operator-managed TLS certs, `hostssl` pg_hba enforcement, SCRAM-SHA-256, bootstrap db/owner `app`, checksummed data, plugin-based WAL archiving), a barman-cloud `ObjectStore` (`barmancloud.cnpg.io/v1`, gzip data and WAL, retention per environment), and a `ScheduledBackup` (`method: plugin`, `target: primary`, `{{ backup_schedule }}`).
+- The CNPG operator (+ Barman Cloud plugin v0.11.0) installs cluster-wide via `deploy/flux/cnpg-operator-kustomization.yaml`; the per-environment app Kustomizations (`deploy/flux/kustomization-{dev,staging,prod}.yaml`) gain `dependsOn: cnpg-operator`, Cluster healthChecks, and SOPS decryption when the feature is enabled. The old dangling `deploy/flux/postgres-kustomization.yaml` was removed.
+- Application runtime shipped with the same flag: sqlx 0.8.6 pool (lazy, small), embedded `sqlx::migrate!` migrations run at startup (`APP__POSTGRES__RUN_MIGRATIONS`, advisory locked), `PostgresConfig` in `src/config.rs`, demo `POST /api/v1/items` (upsert) and `GET /api/v1/items/{key}` handlers, `AppError::Database`, and DB readiness in `/health/ready` (never liveness).
+- App wiring: `APP__POSTGRES__URL` injected from the auto-generated `<cluster>-app` secret, CNPG CA cert mounted at `/etc/secrets/pg-ca/ca.crt`.
+
 ### Added
 - Initial release from template
 - Knative Serving support

@@ -31,13 +31,16 @@ kubectl apply -k deploy/overlays/dev/
 ### 2. Connect to PostgreSQL
 
 ```bash
+# Get the app password from the auto-generated CNPG secret
+kubectl get secret {{ project_name }}-postgres-app -o jsonpath='{.data.password}' | base64 -d
+
 # Port-forward from local machine
 ./scripts/dev/port-forward-postgres.sh
 
-# Connect with psql
-psql postgresql://app:PASSWORD@localhost:5432/app
+# Connect with psql (user + db both come from the same secret)
+psql "postgresql://app:PASSWORD@localhost:5432/app" -c '\dt'
 
-# Or via kubectl
+# Or via kubectl into the primary
 kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 ```
 
@@ -75,14 +78,17 @@ kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 | Environment | Cluster Size | Replication | Retention | Storage | Backups |
 |------------|-------------|-------------|-----------|---------|---------|
 | **dev** | 1 instance | async | 7 days | 20Gi | MinIO (gzip) |
-| **staging** | 2 instances | async | 14 days | 100Gi | S3 (zstd-3) |
-| **production** | 3 instances | quorum | 30 days | 200Gi | S3 (zstd-10, SSE-S3) |
+| **staging** | 2 instances (patched via JSON6902) | async | 14 days | 20Gi | S3 (gzip) |
+| **production** | 3 instances | async | 30 days | 20Gi | S3 (gzip) |
+
+Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env from the overlay if you need larger volumes.
 
 ### Deployment Steps
 
-1. **Set up infrastructure** (one-time):
+1. **Operator install** (one-time per cluster, Flux-managed):
    ```bash
-   kubectl apply -k deploy/infrastructure/cloudnative-pg/operator/
+   make bootstrap dev   # applies deploy/flux/config/dev incl. cnpg-operator
+   # Operator + Barman plugin land in the cnpg-system namespace
    ```
 
 2. **Prepare environment overlay**:
@@ -142,12 +148,12 @@ Patches in `deploy/overlays/*/` allow environment-specific customization:
 
 ### Storage Configuration
 
-By default, clusters use the default StorageClass. For production:
+By default, clusters ship 20Gi on the default StorageClass. For production, patch per env from the overlay (JSON6902 on the Cluster):
 
 ```yaml
-storage:
-  size: "200Gi"
-  storageClass: "fast-ssd"  # Use SSD for production
+- op: replace
+  path: /spec/storage/size
+  value: 200Gi
 ```
 
 ### Resource Limits
@@ -524,7 +530,7 @@ WAL archiving enables point-in-time recovery to any timestamp within the WAL ret
 
 1. **Asynchronous Replication**: Use in non-critical environments
 2. **Smaller Instances**: Use dev/staging overlays for non-production
-3. **Compression**: Enable zstd compression for backups (savings: 50-70%)
+3. **Compression**: backups use gzip in the shipped manifests
 4. **Tiered Storage**: Archive old backups to cheaper storage
 5. **Right-sizing**: Monitor resource usage and adjust requests/limits
 
@@ -535,6 +541,36 @@ WAL archiving enables point-in-time recovery to any timestamp within the WAL ret
 - [Kubernetes Documentation](https://kubernetes.io/docs/)
 - [Monitoring Guide](POSTGRES_MONITORING.md)
 - [Backup & Restore Guide](POSTGRES_BACKUP_RESTORE.md)
+
+## Application Runtime Integration
+
+The demo endpoints written by this template exercise the full stack: Postgres upsert (`INSERT ... ON CONFLICT (key) DO UPDATE ... RETURNING`) plus get-by-key.
+
+```bash
+# Demo endpoints (upsert + query) against the port-forwarded app
+curl -X POST localhost:8080/api/v1/items -d '{"key":"alpha","value":"beta"}'
+curl localhost:8080/api/v1/items/alpha
+# {"id":1,"key":"alpha","value":"beta","updated_at":"..."}
+```
+
+Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning 503 when the database is unreachable — and `/health/live` never touches the database (Knative restarts healthy pods on a DB blip otherwise).
+
+**Configuration the app receives** (all via figment `APP__` env, matching `config/*.toml`):
+
+| Key | Source | Default |
+|-----|--------|---------|
+| `APP__POSTGRES__URL` | HelmRelease env: secretKeyRef `<cluster>-app` key `uri` | empty locally |
+| `postgres.ssl_mode` | TOML | `verify-full` |
+| `postgres.ssl_root_cert_path` | TOML, CA secret mounted at `/etc/secrets/pg-ca/ca.crt` | `/etc/secrets/pg-ca/ca.crt` |
+| `postgres.run_migrations` | TOML | `true` (advisory-locked, safe for concurrent replicas) |
+| `postgres.max_connections` | TOML | 5 |
+
+**TLS/cert story**: the operator generates a self-signed CA (secret `<cluster>-ca`, key `ca.crt`), signs server certs per node and mounts them server-side. TLS is *enforced* by the shipped pg_hba rule (`hostssl all all all scram-sha-256`). The CA cert is mounted into the Knative pod via the ksvc chart `volumes`/`volumeMounts` wiring, so sqlx connects with `sslmode=verify-full`; the operator rotates certs automatically (7d before expiry).
+
+**Known limitations**:
+- Repository issue #136: the empty-string `services.""` HelmRelease patch is rejected by kustomize >= 5.4 — overlay reconciliation is blocked until that patch format is fixed (pre-existing, unrelated to postgres resources).
+- Dev MinIO bucket `<project>-postgres-backups` is created by the dev MinIO init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
+- PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
 
 ## Support
 
