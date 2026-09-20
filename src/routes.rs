@@ -29,6 +29,10 @@ use crate::state::AppState;
         {%- if feature_s3 %}
         crate::handlers::storage::storage_example,
         {%- endif %}
+        {%- if feature_postgres %}
+        crate::handlers::items::upsert_item,
+        crate::handlers::items::get_item,
+        {%- endif %}
     ),
     components(
         schemas(
@@ -40,6 +44,10 @@ use crate::state::AppState;
             crate::handlers::storage::StorageTestData,
             crate::handlers::storage::StorageExampleResponse,
             {%- endif %}
+            {%- if feature_postgres %}
+            crate::handlers::items::DemoItem,
+            crate::handlers::items::UpsertItemRequest,
+            {%- endif %}
         )
     ),
     tags(
@@ -47,6 +55,9 @@ use crate::state::AppState;
         (name = "API", description = "Application endpoints"),
         {%- if feature_s3 %}
         (name = "Storage", description = "S3 storage examples"),
+        {%- endif %}
+        {%- if feature_postgres %}
+        (name = "Items", description = "PostgreSQL demo item CRUD"),
         {%- endif %}
     ),
     info(
@@ -101,12 +112,16 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 fn api_v1_routes() -> Router<AppState> {
-    {%- if feature_s3 %}
-    Router::new().route("/hello", get(api::hello)).route(
-        "/storage/example",
-        post(crate::handlers::storage::storage_example),
-    )
-    {%- else %}
-    Router::new().route("/hello", get(api::hello))
-    {%- endif %}
+    Router::new()
+        .route("/hello", get(api::hello))
+        {%- if feature_s3 %}
+        .route(
+            "/storage/example",
+            post(crate::handlers::storage::storage_example),
+        )
+        {%- endif %}
+        {%- if feature_postgres %}
+        .route("/items", post(crate::handlers::items::upsert_item))
+        .route("/items/{key}", get(crate::handlers::items::get_item))
+        {%- endif %}
 }

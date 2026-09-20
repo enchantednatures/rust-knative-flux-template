@@ -96,12 +96,14 @@ pub fn is_valid_email(email: &str) -> bool {
 /// assert!(!clean.contains('>'));
 /// ```
 pub fn sanitize_input(input: &str) -> String {
+    // `&` must be escaped first: escaping it last would re-escape the `&` of
+    // the entities introduced by the other replacements (double-escaping).
     input
+        .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
-        .replace('&', "&amp;")
 }
 
 #[cfg(test)]

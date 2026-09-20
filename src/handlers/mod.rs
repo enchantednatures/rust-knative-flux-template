@@ -1,6 +1,9 @@
 pub mod api;
 pub mod events;
 pub mod health;
+{%- if feature_postgres %}
+pub mod items;
+{%- endif %}
 {%- if feature_kafka %}
 pub mod kafka;
 {%- endif %}

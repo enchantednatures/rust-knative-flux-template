@@ -19,3 +19,13 @@ topic = "{{ kafka_topic }}"
 timeout_ms = 30000  # Longer timeout for prod reliability
 retries = 5
 {% endif %}
+
+{% if feature_postgres %}
+[postgres]
+url = ""                    # overridden by APP__POSTGRES__URL injected from CNPG secret
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+# sqlx migrate takes a pg advisory lock; concurrent pods wait, then reconcile and no-op
+run_migrations = true
+max_connections = 5
+{% endif %}

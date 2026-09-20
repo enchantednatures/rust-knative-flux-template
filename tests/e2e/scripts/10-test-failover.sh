@@ -20,17 +20,21 @@ fi
 echo "=== Testing PostgreSQL Failover (High Availability) ==="
 echo ""
 
+PROJECT_NAME="${PROJECT_NAME:-example-app}"
+CLUSTER_NAME="${PROJECT_NAME}-postgres"
+NAMESPACE="${NAMESPACE:-default}"
+
 # Verify cluster exists
-if ! kubectl get cluster postgres-test -n default &>/dev/null; then
-  echo "✗ Error: PostgreSQL cluster 'postgres-test' not found"
-  echo "Run 08-test-postgres-deployment.sh first"
-  exit 1
+if ! kubectl get cluster "${CLUSTER_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+  echo "PostgreSQL cluster '${CLUSTER_NAME}' not present - feature_postgres is disabled."
+  echo "Skipping failover test."
+  exit 0
 fi
 
 # Get initial cluster state
 echo "Getting initial cluster state..."
-INITIAL_PRIMARY=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.currentPrimary}')
-INSTANCES=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.instances}')
+INITIAL_PRIMARY=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.currentPrimary}')
+INSTANCES=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.instances}')
 
 if [[ "$INSTANCES" -lt 2 ]]; then
   echo "⚠ Warning: Cluster has only ${INSTANCES} instance(s). Failover test requires at least 2 instances."
@@ -42,7 +46,7 @@ echo "  Initial primary: ${INITIAL_PRIMARY}"
 echo "  Total instances: ${INSTANCES}"
 
 # Get initial data count
-INITIAL_DATA_COUNT=$(kubectl exec -n default "$INITIAL_PRIMARY" -- psql -U postgres -t -c "SELECT COUNT(*) FROM test_table;" 2>/dev/null || echo "0")
+INITIAL_DATA_COUNT=$(kubectl exec -n "${NAMESPACE}" "$INITIAL_PRIMARY" -- psql -U app -t -c "SELECT COUNT(*) FROM demo_items;" 2>/dev/null || echo "0")
 INITIAL_DATA_COUNT=$(echo "$INITIAL_DATA_COUNT" | tr -d ' ')
 echo "  Initial data count: ${INITIAL_DATA_COUNT} rows"
 
@@ -51,7 +55,7 @@ START_TIME=$(date +%s)
 
 echo ""
 echo "Simulating primary failure by deleting primary pod..."
-kubectl delete pod "$INITIAL_PRIMARY" -n default --wait=false
+kubectl delete pod "$INITIAL_PRIMARY" -n "${NAMESPACE}" --wait=false
 
 echo "Waiting for automatic failover (max 2 minutes)..."
 
@@ -62,9 +66,9 @@ NEW_PRIMARY=""
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
   # Check if cluster is still healthy
-  STATUS=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-  CURRENT_PRIMARY=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.currentPrimary}' 2>/dev/null || echo "")
-  READY=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
+  STATUS=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+  CURRENT_PRIMARY=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.currentPrimary}' 2>/dev/null || echo "")
+  READY=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
   
   echo "  Elapsed: ${ELAPSED}s | Status: ${STATUS} | Current primary: ${CURRENT_PRIMARY} | Ready: ${READY}/${INSTANCES}"
   
@@ -84,10 +88,10 @@ if [[ -z "$NEW_PRIMARY" ]]; then
   echo "✗ Error: Failover did not complete within ${TIMEOUT}s"
   echo ""
   echo "Cluster status:"
-  kubectl get cluster postgres-test -n default
+  kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}"
   echo ""
   echo "Pod status:"
-  kubectl get pods -l cnpg.io/cluster=postgres-test -n default
+  kubectl get pods -l cnpg.io/cluster=${CLUSTER_NAME} -n "${NAMESPACE}"
   exit 1
 fi
 
@@ -111,7 +115,7 @@ sleep 10
 TIMEOUT=60
 ELAPSED=0
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
-  READY=$(kubectl get cluster postgres-test -n default -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
+  READY=$(kubectl get cluster ${CLUSTER_NAME} -n "${NAMESPACE}" -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
   
   echo "  Ready instances: ${READY}/${INSTANCES}"
   
@@ -136,13 +140,13 @@ echo "Verifying zero data loss..."
 sleep 5
 
 # Try to connect to new primary
-if ! kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -c "SELECT 1;" &>/dev/null; then
+if ! kubectl exec -n "${NAMESPACE}" "$NEW_PRIMARY" -- psql -U app -c "SELECT 1;" &>/dev/null; then
   echo "✗ Error: Cannot connect to new primary"
   exit 1
 fi
 
 # Check data count
-FINAL_DATA_COUNT=$(kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -t -c "SELECT COUNT(*) FROM test_table;" 2>/dev/null || echo "0")
+FINAL_DATA_COUNT=$(kubectl exec -n "${NAMESPACE}" "$NEW_PRIMARY" -- psql -U app -t -c "SELECT COUNT(*) FROM demo_items;" 2>/dev/null || echo "0")
 FINAL_DATA_COUNT=$(echo "$FINAL_DATA_COUNT" | tr -d ' ')
 
 echo "  Initial data count: ${INITIAL_DATA_COUNT}"
@@ -157,14 +161,14 @@ echo "✓ Zero data loss - all ${FINAL_DATA_COUNT} rows preserved"
 # Insert new data to verify write capability
 echo ""
 echo "Testing write capability on new primary..."
-if kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -c "INSERT INTO test_table (data) VALUES ('post-failover-data');" &>/dev/null; then
+if kubectl exec -n "${NAMESPACE}" "$NEW_PRIMARY" -- psql -U app -c "INSERT INTO demo_items (key, value) VALUES ('post-failover', 'got-promoted') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;" &>/dev/null; then
   echo "✓ Insert command executed"
 else
   echo "✗ Error: Insert command failed"
   exit 1
 fi
 
-NEW_DATA_COUNT=$(kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -t -c "SELECT COUNT(*) FROM test_table;" 2>/dev/null || echo "$FINAL_DATA_COUNT")
+NEW_DATA_COUNT=$(kubectl exec -n "${NAMESPACE}" "$NEW_PRIMARY" -- psql -U app -t -c "SELECT COUNT(*) FROM demo_items;" 2>/dev/null || echo "$FINAL_DATA_COUNT")
 NEW_DATA_COUNT=$(echo "$NEW_DATA_COUNT" | tr -d ' ')
 
 if [[ "$NEW_DATA_COUNT" -le "$FINAL_DATA_COUNT" ]]; then
@@ -183,7 +187,7 @@ if [[ "$INSTANCES" -gt 1 ]]; then
   
   # Check replication status
   echo "Replication status:"
-  kubectl exec -n default "$NEW_PRIMARY" -- psql -U postgres -c "SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication;" || true
+  kubectl exec -n "${NAMESPACE}" "$NEW_PRIMARY" -- psql -U app -c "SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication;" || true
 fi
 
 echo ""

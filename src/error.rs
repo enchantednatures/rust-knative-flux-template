@@ -26,6 +26,16 @@ pub enum AppError {
     #[error("Rate limit exceeded")]
     RateLimit,
 
+    {%- if feature_postgres %}
+    // String payload (like `Redis`) because `sqlx::Error` is not `Clone` and
+    // `AppError` derives `Clone`; conversion happens in the `From` impl below.
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+    {%- endif %}
+
     {%- if feature_kafka %}
     #[error("Kafka error: {0}")]
     Kafka(#[from] KafkaError),
@@ -43,6 +53,14 @@ impl From<redis::RedisError> for AppError {
         AppError::Redis(err.to_string())
     }
 }
+
+{%- if feature_postgres %}
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        AppError::Database(err.to_string())
+    }
+}
+{%- endif %}
 
 impl From<ValidationErrors> for AppError {
     fn from(err: ValidationErrors) -> Self {
@@ -100,6 +118,20 @@ impl IntoResponse for AppError {
                     vec!["Too many requests. Please try again later.".to_string()],
                 )
             }
+            {%- if feature_postgres %}
+            AppError::Database(e) => {
+                tracing::error!(error = %e, error_type = "database", "Database error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error",
+                    vec![e.to_string()],
+                )
+            }
+            AppError::NotFound(e) => {
+                tracing::warn!(error = %e, error_type = "not_found", "Resource not found");
+                (StatusCode::NOT_FOUND, "Not found", vec![e.to_string()])
+            }
+            {%- endif %}
             {%- if feature_kafka %}
             AppError::Kafka(e) => {
                 tracing::error!(error = %e, error_type = "kafka", "Kafka error");

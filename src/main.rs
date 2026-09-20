@@ -2,7 +2,17 @@ use {{ crate_name }}::{config::Config, observability, routes, state::AppState};
 {%- if feature_kafka %}
 use std::sync::Arc;
 {%- endif %}
+{%- if feature_postgres %}
+use std::time::Duration;
+{%- endif %}
 use tokio::signal;
+
+{%- if feature_postgres %}
+/// Embedded SQL migrations compiled from ./migrations at build time.
+/// `Migrator::run` acquires a PostgreSQL advisory lock before applying
+/// migrations, so concurrently starting replicas serialize safely.
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
+{%- endif %}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -94,21 +104,122 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     {%- endif %}
+    {%- if feature_postgres %}
+
+    // =========================================================================
+    // 3d. Initialize PostgreSQL (lazy pool + optional startup migrations)
+    // =========================================================================
+    // Empty URL means "no database configured": skip pool creation and let
+    // /health/ready report not-ready instead of failing at startup.
+    let pg_pool_raw: Option<sqlx::PgPool> = if config.postgres.url.is_empty() {
+        tracing::info!("PostgreSQL URL not configured - connection pool disabled");
+        None
+    } else {
+        let mut opts = config
+            .postgres
+            .url
+            .parse::<sqlx::postgres::PgConnectOptions>()
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to parse PostgreSQL DSN - exiting (fail fast)");
+                anyhow::anyhow!("PostgreSQL DSN parse failed: {}", e)
+            })?;
+
+        opts = opts.ssl_mode(match config.postgres.ssl_mode.as_str() {
+            "disable" => sqlx::postgres::PgSslMode::Disable,
+            "require" => sqlx::postgres::PgSslMode::Require,
+            "verify-ca" => sqlx::postgres::PgSslMode::VerifyCa,
+            "verify-full" => sqlx::postgres::PgSslMode::VerifyFull,
+            other => {
+                tracing::error!(ssl_mode = %other, "Invalid postgres.ssl_mode - exiting (fail fast)");
+                return Err(anyhow::anyhow!("Invalid postgres.ssl_mode: {}", other));
+            }
+        });
+
+        if let Some(cert_path) = &config.postgres.ssl_root_cert_path {
+            let pem = tokio::fs::read(cert_path).await.map_err(|e| {
+                tracing::error!(error = %e, path = %cert_path, "Failed to read PostgreSQL SSL root certificate - exiting (fail fast)");
+                anyhow::anyhow!(
+                    "Failed to read PostgreSQL SSL root certificate at {}: {}",
+                    cert_path,
+                    e
+                )
+            })?;
+            opts = opts.ssl_root_cert_from_pem(pem);
+        }
+
+        // Lazy pool: no connection is attempted until the first acquire, so
+        // startup stays fast and cold-start latency is unaffected.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(config.postgres.max_connections)
+            .min_connections(0)
+            .acquire_timeout(Duration::from_secs(5))
+            .idle_timeout(Duration::from_secs(300))
+            .max_lifetime(Duration::from_secs(1800))
+            .connect_lazy_with(opts);
+
+        if config.postgres.run_migrations {
+            tracing::info!("Running PostgreSQL startup migrations");
+            MIGRATOR.run(&pool).await.map_err(|e| {
+                tracing::error!(error = %e, "PostgreSQL startup migrations failed - exiting (fail fast)");
+                anyhow::anyhow!("PostgreSQL startup migrations failed: {}", e)
+            })?;
+            tracing::info!("PostgreSQL startup migrations applied");
+        }
+
+        tracing::info!(
+            max_connections = config.postgres.max_connections,
+            ssl_mode = %config.postgres.ssl_mode,
+            "PostgreSQL connection pool initialized (lazy)"
+        );
+        Some(pool)
+    };
+    // PgPool::clone shares the underlying Arc (cheap); pg_pool_raw is kept
+    // for the graceful close in section 7.
+    let postgres_pool = pg_pool_raw.clone();
+    {%- endif %}
 
     // =========================================================================
     // 4. Build Application State
     // =========================================================================
     {%- if feature_s3 %}
     {%- if feature_kafka %}
-    let state = AppState::new(redis_conn, storage, kafka_publisher, metrics_handle);
+    let state = AppState::new(
+        redis_conn,
+        storage,
+        kafka_publisher,
+        {%- if feature_postgres %}
+        postgres_pool,
+        {%- endif %}
+        metrics_handle,
+    );
     {%- else %}
-    let state = AppState::new(redis_conn, storage, metrics_handle);
+    let state = AppState::new(
+        redis_conn,
+        storage,
+        {%- if feature_postgres %}
+        postgres_pool,
+        {%- endif %}
+        metrics_handle,
+    );
     {%- endif %}
     {%- else %}
     {%- if feature_kafka %}
-    let state = AppState::new(redis_conn, kafka_publisher, metrics_handle);
+    let state = AppState::new(
+        redis_conn,
+        kafka_publisher,
+        {%- if feature_postgres %}
+        postgres_pool,
+        {%- endif %}
+        metrics_handle,
+    );
     {%- else %}
-    let state = AppState::new(redis_conn, metrics_handle);
+    let state = AppState::new(
+        redis_conn,
+        {%- if feature_postgres %}
+        postgres_pool,
+        {%- endif %}
+        metrics_handle,
+    );
     {%- endif %}
     {%- endif %}
 
@@ -137,6 +248,17 @@ async fn main() -> anyhow::Result<()> {
     // 7. Graceful Shutdown
     // =========================================================================
     tracing::info!("Server shutting down");
+    {%- if feature_postgres %}
+    // Close the PostgreSQL pool: pending acquires fail immediately and idle
+    // connections are dropped; in-flight connections close as they are
+    // returned. With CNPG the server side also terminates connections when the
+    // pod exits, but closing here gives clean protocol-level disconnects
+    // during rolling updates.
+    if let Some(pool) = pg_pool_raw {
+        tracing::debug!("Closing PostgreSQL connection pool");
+        pool.close().await;
+    }
+    {%- endif %}
     observability::shutdown_telemetry(tracer_provider);
 
     Ok(())

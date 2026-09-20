@@ -39,10 +39,16 @@ pub async fn liveness() -> Json<HealthResponse> {
 /// Readiness probe - can the service handle traffic?
 ///
 /// Checks Redis connectivity with PING before returning 200 OK.
+/// {%- if feature_postgres %}
+/// Also runs `SELECT 1` against PostgreSQL when a pool is configured.
+/// {%- endif %}
 /// {%- if feature_kafka %}
 /// Also verifies Kafka broker connectivity if event publishing is enabled.
 /// {%- endif %}
 /// If Redis is unreachable, returns 503 Service Unavailable.
+/// {%- if feature_postgres %}
+/// If PostgreSQL is unreachable (or the check exceeds its 2s budget), returns 503.
+/// {%- endif %}
 /// {%- if feature_kafka %}
 /// If Kafka broker is unreachable and event publishing is enabled, returns 503.
 /// {%- endif %}
@@ -65,47 +71,64 @@ pub async fn readiness(
     // Clone the multiplexed connection (cheap operation)
     let mut conn = state.redis.clone();
 
-    match redis::cmd("PING").query_async::<_, String>(&mut conn).await {
-        {%- if feature_kafka %}
-        Ok(_) => {
-            // If Kafka publishing is enabled, also check broker connectivity
-            if let Some(publisher) = &state.kafka_publisher {
-                match publisher.health_check().await {
-                    Ok(_) => Ok(Json(HealthResponse {
-                        status: "ready".into(),
-                    })),
-                    Err(e) => {
-                        tracing::error!(error = %e, "Kafka health check failed");
-                        Err((
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            Json(HealthResponse {
-                                status: format!("kafka unavailable: {}", e),
-                            }),
-                        ))
-                    }
-                }
-            } else {
-                // Kafka not configured, Redis check is sufficient
-                Ok(Json(HealthResponse {
-                    status: "ready".into(),
-                }))
+    if let Err(e) = redis::cmd("PING").query_async::<_, String>(&mut conn).await {
+        tracing::error!(error = %e, "Redis health check failed");
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
+                status: format!("redis unavailable: {}", e),
+            }),
+        ));
+    }
+
+    {%- if feature_postgres %}
+    // A lazy pool may hide an unreachable database until first use; probe it
+    // here, bounded to 2s so a hung database cannot stall the probe past the
+    // kubelet's own timeout.
+    if let Some(pool) = &state.postgres {
+        let ping = sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(pool.as_ref());
+        match tokio::time::timeout(std::time::Duration::from_secs(2), ping).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::error!(error = %e, "PostgreSQL health check failed");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(HealthResponse {
+                        status: format!("postgres unavailable: {}", e),
+                    }),
+                ));
+            }
+            Err(_) => {
+                tracing::error!("PostgreSQL health check timed out");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(HealthResponse {
+                        status: "postgres unavailable: health check timed out".into(),
+                    }),
+                ));
             }
         }
-        {%- else %}
-        Ok(_) => Ok(Json(HealthResponse {
-            status: "ready".into(),
-        })),
-        {%- endif %}
-        Err(e) => {
-            tracing::error!(error = %e, "Redis health check failed");
-            Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(HealthResponse {
-                    status: format!("redis unavailable: {}", e),
-                }),
-            ))
-        }
     }
+    {%- endif %}
+
+    {%- if feature_kafka %}
+    // If Kafka publishing is enabled, also check broker connectivity
+    if let Some(publisher) = &state.kafka_publisher
+        && let Err(e) = publisher.health_check().await
+    {
+        tracing::error!(error = %e, "Kafka health check failed");
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
+                status: format!("kafka unavailable: {}", e),
+            }),
+        ));
+    }
+    {%- endif %}
+
+    Ok(Json(HealthResponse {
+        status: "ready".into(),
+    }))
 }
 
 /// Prometheus metrics endpoint

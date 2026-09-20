@@ -30,3 +30,12 @@ linger_ms = 5
 retries = 3
 timeout_ms = 10000
 {% endif %}
+
+{% if feature_postgres %}
+[postgres]
+url = ""                    # overridden by APP__POSTGRES__URL injected from CNPG secret
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+run_migrations = true
+max_connections = 5
+{% endif %}

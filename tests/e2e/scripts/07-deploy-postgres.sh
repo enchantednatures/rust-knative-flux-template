@@ -34,9 +34,30 @@ if ! kubectl wait --for=condition=Available deployment/cnpg-controller-manager \
   exit 1
 fi
 
-# Note: Barman Cloud Plugin is optional for basic backup functionality
-# CloudNativePG has built-in backup support that works without it
-# The plugin provides additional features but is not required for E2E tests
+# The template's ObjectStore/ScheduledBackup CRs are plugin-based (method:
+# plugin), not the deprecated built-in backup.barmanObjectStore.
+echo ""
+echo "Installing Barman Cloud Plugin..."
+kubectl apply --server-side \
+  -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.11.0/manifest.yaml
+
+echo ""
+echo "Waiting for Barman Cloud Plugin to be ready..."
+if ! kubectl wait --for=condition=Available deployment/plugin-barman-cloud \
+  -n cnpg-system --timeout=5m 2>/dev/null; then
+  echo "Warning: plugin-barman-cloud did not become Available in 5m (backups will fail; basic cluster tests can still run)"
+  kubectl get deployment -n cnpg-system || true
+fi
+
+# Create the minio backup bucket used by the e2e ObjectStore when MinIO is
+# present in the local dev cluster (barman does not create buckets).
+if kubectl get svc minio -n minio &>/dev/null; then
+  echo "Ensuring e2e backup bucket exists in MinIO..."
+  kubectl -n minio run mc-init --rm -i --image=minio/mc:latest --restart=Never \
+    --env=MC_HOST_local="http://minioadmin:minioadmin@minio.minio.svc.cluster.local:9000" \
+    -- /bin/sh -c 'until mc alias ls local >/dev/null 2>&1; do sleep 2; done; mc mb local/example-app-postgres-backups --ignore-existing' \
+    >/dev/null 2>&1 || echo "Warning: could not create backup bucket (continuing)"
+fi
 
 echo ""
 echo "✓ PostgreSQL operators deployed successfully"

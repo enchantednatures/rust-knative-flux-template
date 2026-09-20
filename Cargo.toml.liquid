@@ -70,6 +70,9 @@ rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
 chrono = { version = "0.4", features = ["serde"] }
 {% endif %}
 
+{% if feature_postgres %}sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "macros", "migrate", "chrono", "json"] }
+{% endif %}
+
 {% if feature_s3 %}
 # Object Storage (S3-compatible via OpenDAL)
 opendal = { version = "0.55", default-features = false, features = ["services-s3"] }

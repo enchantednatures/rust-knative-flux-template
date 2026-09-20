@@ -61,6 +61,38 @@ fn default_timeout_ms() -> u32 {
 }
 {%- endif %}
 
+{%- if feature_postgres %}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PostgresConfig {
+    /// libpq-style DSN. Injected at runtime via APP__POSTGRES__URL (defaults: empty string - set in k8s from CNPG secret)
+    pub url: String,
+    /// ssl mode: "disable" | "require" | "verify-ca" | "verify-full"
+    #[serde(default = "default_postgres_ssl_mode")]
+    pub ssl_mode: String,
+    /// Optional path to CA cert (CNPG server CA mounted secret). Empty when ssl_mode = disable/require
+    #[serde(default)]
+    pub ssl_root_cert_path: Option<String>,
+    /// Run embedded sqlx migrations at startup
+    #[serde(default = "default_true")]
+    pub run_migrations: bool,
+    #[serde(default = "default_postgres_max_connections")]
+    pub max_connections: u32,
+}
+
+fn default_postgres_ssl_mode() -> String {
+    "verify-full".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_postgres_max_connections() -> u32 {
+    5
+}
+{%- endif %}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
@@ -71,6 +103,9 @@ pub struct Config {
     {%- endif %}
     {%- if feature_kafka %}
     pub kafka: Option<KafkaConfig>,
+    {%- endif %}
+    {%- if feature_postgres %}
+    pub postgres: PostgresConfig,
     {%- endif %}
 }
 
@@ -122,6 +157,15 @@ impl Default for Config {
             {%- if feature_kafka %}
             kafka: None,
             {%- endif %}
+            {%- if feature_postgres %}
+            postgres: PostgresConfig {
+                url: String::new(),
+                ssl_mode: default_postgres_ssl_mode(),
+                ssl_root_cert_path: None,
+                run_migrations: true,
+                max_connections: default_postgres_max_connections(),
+            },
+            {%- endif %}
         }
     }
 }
@@ -140,6 +184,9 @@ impl Config {
     /// - APP__KAFKA__BROKER_URL=kafka.kafka.svc.cluster.local:9092
     /// - APP__KAFKA__TOPIC=events
     /// - APP__KAFKA__EVENT_NAME=com.example.service.event.published
+    {%- endif %}
+    {%- if feature_postgres %}
+    /// - APP__POSTGRES__URL=postgres://user:password@host:5432/dbname
     {%- endif %}
     #[allow(clippy::result_large_err)]
     pub fn load() -> Result<Self, figment::Error> {
@@ -194,6 +241,10 @@ impl Config {
         if let Some(kafka) = &self.kafka {
             kafka.validate()?;
         }
+        {%- endif %}
+
+        {%- if feature_postgres %}
+        self.postgres.validate()?;
         {%- endif %}
 
         Ok(())
@@ -263,6 +314,34 @@ impl KafkaConfig {
 }
 {%- endif %}
 
+{%- if feature_postgres %}
+impl PostgresConfig {
+    /// Validate PostgreSQL configuration
+    /// Ensures the DSN parses (when non-empty) and ssl_mode is a known value
+    #[allow(clippy::result_large_err)]
+    pub fn validate(&self) -> Result<(), figment::Error> {
+        if !self.url.is_empty() {
+            self.url
+                .parse::<sqlx::postgres::PgConnectOptions>()
+                .map_err(|e| {
+                    figment::Error::from(format!("postgres.url is not a valid libpq DSN: {e}"))
+                })?;
+        }
+
+        match self.ssl_mode.as_str() {
+            "disable" | "require" | "verify-ca" | "verify-full" => {}
+            _ => {
+                return Err(figment::Error::from(
+                    "postgres.ssl_mode must be one of: disable, require, verify-ca, verify-full",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+{%- endif %}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,4 +359,62 @@ mod tests {
         config.redis.url = String::new();
         assert!(config.validate().is_err());
     }
+
+    {%- if feature_postgres %}
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn test_postgres_config_env_mapping() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env(
+                "APP__POSTGRES__URL",
+                "postgres://user:secret@localhost:5432/testdb",
+            );
+            jail.set_env("APP__POSTGRES__SSL_MODE", "require");
+            jail.set_env("APP__POSTGRES__SSL_ROOT_CERT_PATH", "/tmp/ca.crt");
+            jail.set_env("APP__POSTGRES__RUN_MIGRATIONS", "false");
+            jail.set_env("APP__POSTGRES__MAX_CONNECTIONS", "10");
+
+            let config: Config = Figment::new()
+                .merge(Serialized::defaults(Config::default()))
+                .merge(Env::prefixed("APP__").split("__"))
+                .extract()?;
+
+            assert_eq!(
+                config.postgres.url,
+                "postgres://user:secret@localhost:5432/testdb"
+            );
+            assert_eq!(config.postgres.ssl_mode, "require");
+            assert_eq!(
+                config.postgres.ssl_root_cert_path.as_deref(),
+                Some("/tmp/ca.crt")
+            );
+            assert!(!config.postgres.run_migrations);
+            assert_eq!(config.postgres.max_connections, 10);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_postgres_validation_allows_empty_url() {
+        let config = Config::default();
+        assert!(config.postgres.url.is_empty());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_postgres_validation_fails_on_invalid_url() {
+        let mut config = Config::default();
+        config.postgres.url = "not a valid dsn".into();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_postgres_validation_fails_on_invalid_ssl_mode() {
+        let mut config = Config::default();
+        config.postgres.ssl_mode = "bogus".into();
+        assert!(config.validate().is_err());
+    }
+    {%- endif %}
 }

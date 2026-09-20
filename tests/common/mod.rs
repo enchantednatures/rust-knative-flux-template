@@ -21,14 +21,14 @@ pub async fn create_test_state() -> AppState {
 
 {%- if feature_s3 and feature_kafka %}
     let storage = create_test_storage();
-    AppState::new(conn, storage, None, metrics_handle)
+    AppState::new(conn, storage, None{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
 {%- elsif feature_s3 %}
     let storage = create_test_storage();
-    AppState::new(conn, storage, metrics_handle)
+    AppState::new(conn, storage{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
 {%- elsif feature_kafka %}
-    AppState::new(conn, None, metrics_handle)
+    AppState::new(conn, None{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
 {%- else %}
-    AppState::new(conn, metrics_handle)
+    AppState::new(conn{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
 {%- endif %}
 }
 {%- if feature_s3 %}

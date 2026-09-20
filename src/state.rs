@@ -1,4 +1,4 @@
-{%- if feature_kafka -%}
+{%- if feature_kafka or feature_postgres -%}
 use std::sync::Arc;
 
 {% endif -%}
@@ -27,6 +27,10 @@ pub struct AppState {
     /// Kafka publisher for event publishing
     pub kafka_publisher: Option<Arc<KafkaPublisher>>,
     {%- endif %}
+    {%- if feature_postgres %}
+    /// PostgreSQL connection pool (sqlx PgPool)
+    pub postgres: Option<Arc<sqlx::PgPool>>,
+    {%- endif %}
     /// Prometheus metrics handle for /metrics endpoint
     pub metrics_handle: PrometheusHandle,
 }
@@ -43,12 +47,29 @@ impl AppState {
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = Client::open("redis://localhost:6379")?;
     ///     let conn = client.get_multiplexed_async_connection().await?;
-    ///     let state = AppState::new(conn{%- if feature_s3 %}, storage{%- endif %}{%- if feature_kafka %}, kafka_publisher{%- endif %}, metrics_handle);
+    ///     let state = AppState::new(conn{%- if feature_s3 %}, storage{%- endif %}{%- if feature_kafka %}, kafka_publisher{%- endif %}{%- if feature_postgres %}, pool{%- endif %}, metrics_handle);
     ///     Ok(())
     /// }
     /// ```
     {%- if feature_s3 %}
     {%- if feature_kafka %}
+    {%- if feature_postgres %}
+    pub fn new(
+        redis: MultiplexedConnection,
+        storage: Operator,
+        kafka_publisher: Option<Arc<KafkaPublisher>>,
+        pool: Option<sqlx::PgPool>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            storage,
+            kafka_publisher,
+            postgres: pool.map(Arc::new),
+            metrics_handle,
+        }
+    }
+    {%- else %}
     pub fn new(
         redis: MultiplexedConnection,
         storage: Operator,
@@ -59,6 +80,22 @@ impl AppState {
             redis,
             storage,
             kafka_publisher,
+            metrics_handle,
+        }
+    }
+    {%- endif %}
+    {%- else %}
+    {%- if feature_postgres %}
+    pub fn new(
+        redis: MultiplexedConnection,
+        storage: Operator,
+        pool: Option<sqlx::PgPool>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            storage,
+            postgres: pool.map(Arc::new),
             metrics_handle,
         }
     }
@@ -75,8 +112,24 @@ impl AppState {
         }
     }
     {%- endif %}
+    {%- endif %}
     {%- else %}
     {%- if feature_kafka %}
+    {%- if feature_postgres %}
+    pub fn new(
+        redis: MultiplexedConnection,
+        kafka_publisher: Option<Arc<KafkaPublisher>>,
+        pool: Option<sqlx::PgPool>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            kafka_publisher,
+            postgres: pool.map(Arc::new),
+            metrics_handle,
+        }
+    }
+    {%- else %}
     pub fn new(
         redis: MultiplexedConnection,
         kafka_publisher: Option<Arc<KafkaPublisher>>,
@@ -88,6 +141,20 @@ impl AppState {
             metrics_handle,
         }
     }
+    {%- endif %}
+    {%- else %}
+    {%- if feature_postgres %}
+    pub fn new(
+        redis: MultiplexedConnection,
+        pool: Option<sqlx::PgPool>,
+        metrics_handle: PrometheusHandle,
+    ) -> Self {
+        Self {
+            redis,
+            postgres: pool.map(Arc::new),
+            metrics_handle,
+        }
+    }
     {%- else %}
     pub fn new(redis: MultiplexedConnection, metrics_handle: PrometheusHandle) -> Self {
         Self {
@@ -95,6 +162,7 @@ impl AppState {
             metrics_handle,
         }
     }
+    {%- endif %}
     {%- endif %}
     {%- endif %}
 }
