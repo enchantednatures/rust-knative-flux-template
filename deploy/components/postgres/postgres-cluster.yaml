@@ -1,0 +1,72 @@
+# CloudNativePG PostgreSQL Cluster for {{ project_name | replace: '_', '-' }}.
+#
+# Naming contract (consumed by scripts/dev/*.sh and the app HelmRelease):
+#   Cluster name:  <project>-postgres
+#   Services:      <project>-postgres-rw (primary) / -ro (replicas) / -r (any)
+#   App secret:    <project>-postgres-app (auto-generated, see bootstrap below)
+#   Database/user: app / app
+#
+# Per-environment tuning (instances, storage size, resources) is applied by
+# overlays via json6902/strategic-merge patches; this file carries sane
+# production-leaning defaults.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres"
+  # No namespace key: the consuming overlay/Flux wiring owns placement.
+spec:
+  # `-system-trixie` image variant (Debian trixie base with Barman plugin
+  # tooling). `postgres_version` placeholder defaults to "16".
+  imageName: ghcr.io/cloudnative-pg/postgresql:{{ postgres_version }}-system-trixie
+
+  # Base default; overlays patch per env (dev 1 / staging 2 / prod 3, from the
+  # postgres_instances_{dev,staging,prod} generate-time placeholders).
+  instances: 3   # overlays patch instances/size per env
+
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      # No `secret:` reference on purpose: the operator generates a random
+      # password and stores it in the `<cluster>-app` secret with keys
+      # username/password/host/port/dbname/uri/jdbc-uri. Dev scripts read
+      # `.data.password` from that secret (see scripts/dev/deploy-postgres.sh).
+      dataChecksums: true   # detect corruption early; negligible CPU cost
+
+  storage:
+    size: 20Gi   # dev-sized floor; overlays patch per env (staging/prod grow it)
+    # storageClass intentionally omitted: uses the cluster default
+    # StorageClass. Overlays may add one per env.
+
+  # Superuser (postgres) access disabled: apps use the `app` owner role only.
+  enableSuperuserAccess: false
+
+  monitoring:
+    # Operator emits a Prometheus PodMonitor per instance. Effective only
+    # where prometheus-operator CRDs exist; ignored harmlessly otherwise.
+    enablePodMonitor: true
+
+  postgresql:
+    pg_hba:
+      # TLS enforced server-side: only `hostssl` rules, so plaintext TCP
+      # connections are rejected. scram-sha-256 is the default
+      # password_encryption since PostgreSQL 14. The operator prepends its
+      # own replication/operator rules, so replication keeps working.
+      - "hostssl all all all scram-sha-256"
+    parameters:
+      # Floor at TLSv1.2; clients negotiate 1.2+ only.
+      ssl_min_protocol_version: "TLSv1.2"
+
+  # No spec.certificates block: certificates are operator-managed (default).
+  # The operator generates a CA plus server TLS certificate and rotates them.
+
+  # Barman Cloud Plugin attachment: REQUIRED for the backup stack.
+  # isWALArchiver streams WAL to the ObjectStore continuously (enables PITR);
+  # ScheduledBackup base backups also execute through this plugin.
+  # barmanObjectName must match the ObjectStore name in postgres-backup.yaml.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"

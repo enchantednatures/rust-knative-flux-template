@@ -1,0 +1,108 @@
+# Backup stack for {{ project_name | replace: '_', '-' }}-postgres
+# (Barman Cloud Plugin architecture, `method: plugin`).
+#
+# Three cooperating pieces:
+#   1. ObjectStore (this file)        — WHERE backups/WAL go and how long they live
+#   2. ScheduledBackup (this file)    — WHEN base backups are triggered
+#   3. Cluster spec.plugins           — WAL archiving attachment (postgres-cluster.yaml)
+#
+# Template variables used here (defined in cargo-generate.toml placeholders):
+#   project_name           — resource names, destination bucket
+#   backup_schedule        — cron expression (default "0 2 * * *", UTC)
+#   backup_retention_prod  — retention in days for the base default (default 30)
+#
+# Overlay patch points per environment:
+#   - ScheduledBackup spec.schedule            (e.g. more frequent in prod)
+#   - ObjectStore spec.retentionPolicy         (dev "{{ backup_retention_prod }}d" base; dev/staging lower)
+#   - ObjectStore spec.configuration.endpointURL / destinationPath
+#     (the MinIO endpoint below exists ONLY in the local dev cluster)
+#   - ScheduledBackup spec.suspend / spec.immediate (pause / first-backup-now)
+
+# =============================================================================
+# ObjectStore — backup storage backend
+# Schema: specs/001-cloudnative-postgres-backups/contracts/objectstore-crd-schema.md
+# CRD installed by barman-cloud plugin v0.11.0 (deploy/infrastructure/cnpg-operator).
+# CRD API group is `barmancloud.cnpg.io`; `barman-cloud.cloudnative-pg.io` is
+# the plugin name referenced from Cluster/ScheduledBackup, not the API group.
+# =============================================================================
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"
+  # No namespace key: the consuming overlay/Flux wiring owns placement.
+spec:
+  configuration:
+    # Must be an s3:// URI ending with a trailing slash (CRD validation).
+    destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/"
+
+    # Dev-only default: MinIO installed imperatively by
+    # deploy/dev/infrastructure/minio.yaml.liquid (namespace `minio`), which
+    # exists only in the local dev cluster. Overlays MUST patch this per env
+    # for staging/prod (for AWS S3, remove endpointURL entirely and set
+    # s3Credentials.region instead).
+    endpointURL: "http://minio.minio.svc.cluster.local:9000"
+
+    # Static credentials from the `postgres-backup-storage` secret (keys
+    # ACCESS_KEY_ID / ACCESS_SECRET_KEY), matching
+    # deploy/base/object-storage-secret.yaml.example. SOPS-decrypted by the
+    # Flux kustomization (deploy/flux/postgres-kustomization.yaml).
+    s3Credentials:
+      accessKeyId:
+        name: postgres-backup-storage
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: postgres-backup-storage
+        key: ACCESS_SECRET_KEY
+
+    # WAL stream compression. CRD enum: bzip2|gzip|lz4|snappy|xz|zstd.
+    wal:
+      compression: gzip
+
+    # Base-backup compression. CRD enum: bzip2|gzip|snappy (no zstd here).
+    data:
+      compression: "gzip"
+
+  # Automatic deletion of old backups/WAL. Format ^[1-9][0-9]*[dwm]$.
+  # Base carries the prod value; overlays patch dev/staging down.
+  retentionPolicy: "{{ backup_retention_prod }}d"
+
+  # Sidecar tuning: keep the documented default retention check interval
+  # explicit; overlays may add sidecar resource limits per env.
+  instanceSidecarConfiguration:
+    retentionPolicyIntervalSeconds: 1800
+
+---
+# =============================================================================
+# ScheduledBackup — automated base-backup schedule
+# Schema: specs/001-cloudnative-postgres-backups/contracts/backup-crd-schema.md
+# =============================================================================
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-backup"
+  # No namespace key: the consuming overlay/Flux wiring owns placement.
+spec:
+  # Cron expression (robfig/cron format, optional seconds field), UTC.
+  schedule: "{{ backup_schedule }}"
+
+  # `plugin` is required for the Barman Cloud Plugin; the legacy in-tree
+  # `barmanObjectStore` method is deprecated since CNPG 1.26.
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      # Must match the ObjectStore metadata.name above.
+      barmanObjectName: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"
+
+  # Target cluster (reference is immutable after creation).
+  cluster:
+    name: "{{ project_name | replace: '_', '-' }}-postgres"
+
+  # Run backups on the primary: dev clusters are single-instance, so no
+  # standby may exist. Valid values: primary | prefer-standby.
+  target: primary
+
+  # backupOwnerReference omitted: CRD default is `none` (created Backup
+  # objects have no owner reference). Overlays may set `self` or `cluster`
+  # to tie Backup CR lifecycle to the schedule or the cluster.
+  # `suspend` / `immediate` omitted (default false); overlays may patch.

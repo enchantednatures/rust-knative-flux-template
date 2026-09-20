@@ -1,0 +1,21 @@
+# FluxCD Kustomization: installs the CloudNativePG operator cluster-wide.
+#
+# CloudNativePG is a cluster-wide controller (like Flagger) — install it once
+# per cluster via this Kustomization, not per application namespace.
+#
+# The postgres Kustomization (postgres-kustomization.yaml) declares dependsOn
+# this resource so CNPG CRDs are available before Cluster objects are applied.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cnpg-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./deploy/infrastructure/cnpg-operator
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: {{ project_name | replace: "_", "-" }}
+  wait: true
+  timeout: 15m

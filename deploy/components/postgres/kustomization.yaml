@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - postgres-cluster.yaml
+  - postgres-backup.yaml
+
+# CloudNativePG PostgreSQL component: Cluster + ObjectStore + ScheduledBackup.
+#
+# Consumed two ways:
+#   1. FluxCD: deploy/flux/postgres-kustomization.yaml points its source path
+#      directly at this directory (path: ./deploy/components/postgres) and
+#      reconciles it with SOPS decryption enabled.
+#   2. Kustomize overlays may additionally include it via `components:` to
+#      apply per-environment patches (namespace, instances, storage size,
+#      backup schedule/retention, ObjectStore endpoint).
+#
+# No namespace is set anywhere in this component on purpose: the consuming
+# overlay (or Flux targetNamespace wiring) owns namespace placement.
+
+labels:
+  - pairs:
+      component: postgres
+      # Liquid filter args use single quotes so the unrendered template stays
+      # valid YAML inside the surrounding double quotes; CI runs
+      # `kubectl kustomize` against the raw template.
+      app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
+    includeSelectors: false

@@ -96,84 +96,31 @@ spec:
             value: "http://otel-collector.observability.svc.cluster.local:4317"
           - name: APP__TELEMETRY__SERVICE_NAME
             value: "{{ project_name | replace: '_', '-' }}"
-
-    {% if feature_postgres %}
-    postgres:
-      enabled: true
-      version: "{{ postgres_version }}"
-      instances: 3
-      parameters:
-        ssl: "on"
-        ssl_min_protocol_version: "TLSv1.3"
-        ssl_max_protocol_version: "TLSv1.3"
-        shared_buffers: "2Gi"
-        max_connections: "300"
-        synchronous_commit: "remote_apply"
-        synchronous_standby_names: "ANY 1 (*)"
-        archive_timeout: "5min"
-        wal_compression: "on"
-      sharedPreloadLibraries:
-        - pg_stat_statements
-      postInitSQL:
-        - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-      resources:
-        requests:
-          cpu: "1"
-          memory: "2Gi"
-        limits:
-          cpu: "2"
-          memory: "4Gi"
-      storage:
-        size: "200Gi"
-        storageClassName: "{{ postgres_storage_class }}"
-      pooler:
-        enabled: true
-        instances: 3
-        type: rw
-        poolMode: transaction
-        parameters:
-          max_client_conn: "300"
-          default_pool_size: "25"
-          reserve_pool_size: "5"
-          reserve_pool_timeout: "5"
-          max_db_connections: "100"
-          server_lifetime: "3600"
-          server_idle_timeout: "600"
-          log_connections: "1"
-          log_disconnections: "1"
-          log_pooler_errors: "1"
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "256Mi"
-      backup:
-        enabled: true
-        schedule: "{{ backup_schedule }}"
-        target: prefer-standby
-        retentionPolicy: "30d"
-        objectStore:
-          destinationPath: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups/"
-          endpointURL: "http://minio.minio.svc.cluster.local:9000"
-          s3Credentials:
-            secretName: postgres-backup-storage
-            accessKeyIdKey: ACCESS_KEY_ID
-            secretAccessKeyKey: ACCESS_SECRET_KEY
-          data:
-            compression: zstd
-            jobs: 2
-          wal:
-            compression: gzip
-            maxParallel: 4
-      monitoring:
-        enabled: true
-        alerts:
-          replicationLagWarning: 10
-          replicationLagCritical: 60
-          highConnectionCount: 50
-    {% endif %}
+          {% if feature_postgres %}
+          # App DSN (postgresql://...) from the operator-generated
+          # <cluster>-app secret; consumed as APP__POSTGRES__URL.
+          - name: APP__POSTGRES__URL
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-postgres-app"
+                key: uri
+          {% endif %}
+        {% if feature_postgres %}
+        # PostgreSQL server CA certificate. Generated and rotated automatically
+        # by the CloudNativePG operator (secret <cluster>-ca, key ca.crt);
+        # mounted at the path config/*.toml expects (ssl_root_cert_path).
+        volumeMounts:
+          - name: postgres-ca
+            mountPath: /etc/secrets/pg-ca
+            readOnly: true
+        volumes:
+          - name: postgres-ca
+            secret:
+              secretName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        {% endif %}
 
     {% if event_source_kafka %}
     kafka:

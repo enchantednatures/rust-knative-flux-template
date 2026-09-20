@@ -12,7 +12,32 @@ spec:
     name: {{ project_name | replace: "_", "-" }}
   wait: true
   timeout: 5m
-  {% if feature_flagger %}
+  {% if feature_flagger or feature_postgres %}
   dependsOn:
+    {% if feature_flagger %}
     - name: flagger
+    {% endif %}
+    {% if feature_postgres %}
+    # CNPG operator (cluster-wide) must be ready before the overlay's postgres
+    # component (Cluster/ObjectStore/ScheduledBackup CRs) is applied.
+    - name: cnpg-operator
+    {% endif %}
+  {% endif %}
+  {% if feature_postgres %}
+  # The overlay renders the CloudNativePG Cluster via deploy/components/postgres;
+  # gate readiness on it. The namespace must match the overlay's `namespace:`
+  # field (kustomize overrides every resource namespace with it).
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: "{{ project_name | replace: '_', '-' }}-postgres"
+      namespace: staging
+  # SOPS decryption so the sops-encrypted `postgres-backup-storage` secret
+  # (deploy/base/object-storage-secret.yaml.example, added to the overlay by
+  # the user) can be committed encrypted. Requires an `sops-age` secret in the
+  # flux-system namespace on the target cluster.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   {% endif %}

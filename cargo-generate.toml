@@ -129,7 +129,9 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 
 [conditional.'!feature_postgres']
 ignore = [
-  "deploy/components/operator",
+  "deploy/components/postgres",
+  "deploy/infrastructure/cnpg-operator",
+  "deploy/flux/cnpg-operator-kustomization.yaml",
   "deploy/flux/postgres-kustomization.yaml",
   "scripts/dev/deploy-postgres.sh",
   "scripts/dev/check-postgres-status.sh",
@@ -143,6 +145,9 @@ ignore = [
   "docs/POSTGRES_BACKUP_RESTORE.md",
   "docs/POSTGRES_MONITORING.md",
   "specs/001-cloudnative-postgres-backups",
+  "src/handlers/items.rs",
+  "build.rs",
+  "migrations",
 ]
 
 [conditional.'feature_kafka'.placeholders]
