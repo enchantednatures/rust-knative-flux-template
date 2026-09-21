@@ -144,7 +144,25 @@ async fn main() -> anyhow::Result<()> {
                     e
                 )
             })?;
+            // Trust-store diagnostics: proves the root actually reached the
+            // verifier. If a failed handshake shows UnknownIssuer while an
+            // independent pod verifies fine with the same CA, these fields
+            // tell us whether the app consumed the wrong bytes (or none).
+            tracing::info!(
+                path = %cert_path,
+                ssl_mode = %config.postgres.ssl_mode,
+                pem_bytes = pem.len(),
+                pem_header = %String::from_utf8_lossy(
+                    pem.get(..16).unwrap_or(&[b' '])
+                ).trim_end(),
+                "PostgreSQL CA loaded from mounted secret"
+            );
             opts = opts.ssl_root_cert_from_pem(pem);
+        } else {
+            tracing::info!(
+                ssl_mode = %config.postgres.ssl_mode,
+                "No postgres.ssl_root_cert_path configured - relying on system/webpki root store"
+            );
         }
 
         // Lazy pool: no connection is attempted until the first acquire, so

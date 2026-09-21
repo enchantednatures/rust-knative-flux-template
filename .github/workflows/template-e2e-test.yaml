@@ -987,6 +987,12 @@ jobs:
                     psql --version &&
                     psql 'host=${SERVICE_NAME}-postgres-rw user=app dbname=app
                     sslmode=verify-full sslrootcert=/pg/ca.crt' -c 'SELECT 1'
+                env:
+                  - name: PGPASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${SERVICE_NAME}-postgres-app
+                        key: password
                 volumeMounts:
                   - name: pg-ca
                     mountPath: /pg
