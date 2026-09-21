@@ -770,12 +770,12 @@ jobs:
             | kubectl apply --server-side -f -
 
           for i in $(seq 1 60); do
-            kubectl -n cnpg-system get deployment/plugin-barman-cloud >/dev/null 2>&1 && break
+            kubectl -n cnpg-system get deployment/barman-cloud >/dev/null 2>&1 && break
             sleep 5
           done
-          kubectl rollout status deployment/plugin-barman-cloud \
+          kubectl rollout status deployment/barman-cloud \
             -n cnpg-system --timeout=180s \
-            || { echo "❌ barman plugin not Available in 3m"; kubectl -n cnpg-system get pods; kubectl -n cnpg-system logs deployment/plugin-barman-cloud --tail=50 || true; exit 1; }
+            || { echo "❌ barman plugin not Available in 3m"; kubectl -n cnpg-system get pods; kubectl -n cnpg-system logs deployment/barman-cloud --tail=50 || true; exit 1; }
 
       - name: Install Redis
         if: matrix.deploy == 'true'
@@ -864,7 +864,7 @@ jobs:
             echo "Checking CloudNativePG operator + barman plugin..."
             kubectl wait --for=condition=available deployment/cnpg-controller-manager \
               -n cnpg-system --timeout=60s || { echo "❌ CNPG operator not ready"; exit 1; }
-            kubectl wait --for=condition=available deployment/plugin-barman-cloud \
+            kubectl wait --for=condition=available deployment/barman-cloud \
               -n cnpg-system --timeout=60s \
               || echo "  ⚠ barman plugin not ready (cluster still deploys)"
             echo "  ✓ CNPG operator healthy"
