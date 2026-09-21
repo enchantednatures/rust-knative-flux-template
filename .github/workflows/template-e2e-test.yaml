@@ -14,7 +14,7 @@ jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     permissions:
       contents: read
@@ -53,6 +53,16 @@ jobs:
             feature_gha_runner: "false"
             event_source_kafka: "false"
             project_name: "test-app-with-flagger"
+            deploy: "true"
+
+          - scenario: with-postgres
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "true"
+            feature_flagger: "false"
+            feature_gha_runner: "false"
+            event_source_kafka: "false"
+            project_name: "test-app-with-postgres"
             deploy: "true"
 
     env:
@@ -225,6 +235,22 @@ jobs:
           flagger_prometheus_url_staging = "http://prometheus.observability.svc.cluster.local:9090"
           flagger_prometheus_url_prod = "http://prometheus.observability.svc.cluster.local:9090"
           flagger_operator_metrics_server = "http://prometheus.observability.svc.cluster.local:9090"
+          EOF
+          fi
+
+          # Postgres values (prompted when feature_postgres = true). Single
+          # instance and MinIO retention keep the CI run fast and stable.
+          if [ "${{ matrix.feature_postgres }}" = "true" ]; then
+            cat >> template-values.toml <<EOF
+          postgres_version = "16"
+          postgres_instances_dev = "1"
+          postgres_instances_staging = "2"
+          postgres_instances_prod = "3"
+          postgres_storage_class = "standard"
+          backup_schedule = "0 2 * * *"
+          backup_retention_dev = "7"
+          backup_retention_staging = "14"
+          backup_retention_prod = "30"
           EOF
           fi
 
@@ -715,6 +741,33 @@ jobs:
           kubectl rollout status deploy/flagger-loadtester -n flagger-system --timeout=120s
           echo "✓ Flagger operator + loadtester ready"
 
+      - name: Install CloudNativePG operator + Barman plugin
+        if: matrix.feature_postgres == 'true' && matrix.deploy == 'true'
+        run: |
+          # Same pinned versions the template ships via
+          # deploy/infrastructure/cnpg-operator (CNPG 1.28.0 + plugin v0.11.0);
+          # installed imperatively because this E2E reconciles a helm-rendered
+          # Knative Service, not the project's Flux Kustomizations.
+          curl -sSL \
+            "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.0.yaml" \
+            | kubectl apply --server-side -f -
+
+          curl -sSL \
+            "https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.11.0/manifest.yaml" \
+            | kubectl apply --server-side -f -
+
+          kubectl rollout status deployment/cnpg-controller-manager \
+            -n cnpg-system --timeout=300s \
+            || { echo "❌ CNPG operator not ready"; kubectl -n cnpg-system get pods; exit 1; }
+
+          for i in $(seq 1 60); do
+            kubectl -n cnpg-system get deployment/plugin-barman-cloud >/dev/null 2>&1 && break
+            sleep 5
+          done
+          kubectl rollout status deployment/plugin-barman-cloud \
+            -n cnpg-system --timeout=180s \
+            || echo "⚠ barman plugin not Available in 3m (backups will not be exercised)"
+
       - name: Install Redis
         if: matrix.deploy == 'true'
         run: |
@@ -728,7 +781,7 @@ jobs:
             --timeout 120s
 
       - name: Install MinIO (if needed)
-        if: matrix.feature_s3 == 'true' && matrix.deploy == 'true'
+        if: (matrix.feature_s3 == 'true' || matrix.feature_postgres == 'true') && matrix.deploy == 'true'
         run: |
           helm repo add minio https://charts.min.io/
           helm repo update
@@ -747,7 +800,8 @@ jobs:
           kubectl run minio-mc --rm -i --restart=Never --timeout=120s \
             --image=quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z \
             --command -- /bin/sh -c \
-            "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && mc mb -p minio/data"
+            "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && \
+             mc mb -p minio/data && mc mb -p minio/${SERVICE_NAME}-postgres-backups"
 
       - name: Validate cluster dependencies
         if: matrix.deploy == 'true'
@@ -796,6 +850,17 @@ jobs:
             echo "  ✓ Observability + Flagger healthy"
           fi
 
+          if [ "${{ matrix.feature_postgres }}" = "true" ]; then
+            echo ""
+            echo "Checking CloudNativePG operator + barman plugin..."
+            kubectl wait --for=condition=available deployment/cnpg-controller-manager \
+              -n cnpg-system --timeout=60s || { echo "❌ CNPG operator not ready"; exit 1; }
+            kubectl wait --for=condition=available deployment/plugin-barman-cloud \
+              -n cnpg-system --timeout=60s \
+              || echo "  ⚠ barman plugin not ready (cluster still deploys)"
+            echo "  ✓ CNPG operator healthy"
+          fi
+
           echo "✅ Checkpoint 4 passed: All cluster dependencies healthy"
 
       - name: Create application secrets
@@ -812,6 +877,83 @@ jobs:
               --from-literal=redis-url=redis://redis-master:6379 \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
+
+          if [ "${{ matrix.feature_postgres }}" = "true" ]; then
+            # Dev-grade barman credentials backing the ObjectStore CR the
+            # generated project applies (bucket created in the Install MinIO
+            # step, endpoint http://minio.default.svc.cluster.local:9000).
+            kubectl create secret generic postgres-backup-storage \
+              --from-literal=ACCESS_KEY_ID=minioadmin \
+              --from-literal=ACCESS_SECRET_KEY=minioadmin \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
+
+      - name: Deploy PostgreSQL cluster
+        if: matrix.feature_postgres == 'true' && matrix.deploy == 'true'
+        run: |
+          set -euo pipefail
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          # Render the shipped postgres component exactly as the dev overlay
+          # applies it: component + namespace "default" + the per-env
+          # JSON6902 instance/retention patches pulled verbatim from the
+          # generated overlay. (This E2E reconciles a helm-rendered Knative
+          # Service, so the overlay itself is never applied here.)
+          PG_TMP="${GENERATED_DIR}/deploy/overlays/.pg-e2e"
+          rm -rf "$PG_TMP" && mkdir -p "$PG_TMP"
+          {
+            echo "apiVersion: kustomize.config.k8s.io/v1beta1"
+            echo "kind: Kustomization"
+            echo "namespace: default"
+            echo "components:"
+            echo "  - ../../components/postgres"
+            echo "patches:"
+            yq eval '.patches | map(select(.target.kind == "Cluster" or .target.kind == "ObjectStore"))' \
+              "${GENERATED_DIR}/deploy/overlays/dev/kustomization.yaml" | sed 's/^/  /'
+          } > "$PG_TMP/kustomization.yaml"
+          kustomize build "$PG_TMP" > /tmp/pg-rendered.yaml
+          grep -E '^kind:' /tmp/pg-rendered.yaml | head -5 || true
+          kubectl apply --server-side -f /tmp/pg-rendered.yaml
+          rm -rf "$PG_TMP"
+
+          # Cluster bootstrap is slow (pulls the postgres image, runs initdb,
+          # elects primary). Allow up to 15m so the operator fully reaches
+          # healthy state before we release the application.
+          echo "Waiting for PostgreSQL cluster to become healthy..."
+          STATUS=""
+          ELAPSED=0
+          while [ $ELAPSED -lt 900 ]; do
+            STATUS=$(kubectl get cluster ${SERVICE_NAME}-postgres \
+              -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            READY=$(kubectl get cluster ${SERVICE_NAME}-postgres \
+              -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
+            echo "  phase=${STATUS} ready=${READY}"
+            if [ "$STATUS" = "Cluster in healthy state" ]; then break; fi
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+          [ "$STATUS" = "Cluster in healthy state" ] || {
+            echo "❌ PostgreSQL cluster did not become healthy in 15m"
+            kubectl describe cluster ${SERVICE_NAME}-postgres || true
+            kubectl get pods -l cnpg.io/cluster=${SERVICE_NAME}-postgres || true
+            kubectl logs -n cnpg-system deploy/cnpg-controller-manager --tail=100 || true
+            exit 1
+          }
+
+          # The app pod mounts the operator-issued CA and reads
+          # APP__POSTGRES__URL from this secret's `uri` key. Both must exist
+          # before the Knative Service starts, otherwise the first rollout
+          # crash-loops against a missing secret/volume.
+          for key in "${SERVICE_NAME}-postgres-app" "${SERVICE_NAME}-postgres-ca"; do
+            for i in $(seq 1 60); do
+              kubectl get secret ${key} >/dev/null 2>&1 && break
+              sleep 5
+            done
+            kubectl get secret ${key} >/dev/null 2>&1 \
+              || { echo "❌ CNPG secret ${key} never appeared"; exit 1; }
+            echo "✓ CNPG secret ${key} present"
+          done
+          echo "✓ PostgreSQL ready (operator-managed CA, app + rw service)"
 
       - name: Create GHCR pull secret for Flux and default namespace
         if: matrix.deploy == 'true'
@@ -1227,6 +1369,56 @@ jobs:
             else
               echo "  ✗ S3 storage FAILED"
               echo "  Response: $RESPONSE"
+              ((FAILED++))
+            fi
+          fi
+
+          if [ "${{ matrix.feature_postgres }}" = "true" ]; then
+            echo ""
+            echo "Test: Postgres upsert (ON CONFLICT)..."
+            ITEM_BODY=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/items" \
+              -H 'Content-Type: application/json' \
+              -d '{"key":"e2e","value":"beta"}')
+            echo "  Response: ${ITEM_BODY}"
+            if echo "$ITEM_BODY" | grep -q '"key":"e2e"' \
+               && echo "$ITEM_BODY" | grep -q '"value":"beta"'; then
+              echo "  ✓ Postgres upsert PASSED"
+            else
+              echo "  ✗ Postgres upsert FAILED"
+              ((FAILED++))
+            fi
+
+            echo ""
+            echo "Test: Postgres upsert replaces (same key, new value)..."
+            ITEM_BODY2=$(kubectl_curl -f -s -X POST "${SERVICE_URL}/api/v1/items" \
+              -H 'Content-Type: application/json' \
+              -d '{"key":"e2e","value":"gamma"}')
+            ITEM_GET=$(kubectl_curl -f -s "${SERVICE_URL}/api/v1/items/e2e")
+            if echo "$ITEM_GET" | grep -q '"value":"gamma"'; then
+              echo "  ✓ Postgres upsert with replace PASSED (${ITEM_GET})"
+            else
+              echo "  ✗ Postgres upsert with replace FAILED (expected gamma, got ${ITEM_GET})"
+              ((FAILED++))
+            fi
+
+            echo ""
+            echo "Test: Postgres get missing item returns 404..."
+            HTTP_CODE=$(kubectl_curl -s -o /dev/null -w '%{http_code}' \
+              "${SERVICE_URL}/api/v1/items/does-not-exist")
+            echo "  status=${HTTP_CODE}"
+            if [ "$HTTP_CODE" = "404" ]; then
+              echo "  ✓ Postgres 404 (missing item) PASSED"
+            else
+              echo "  ✗ Postgres 404 (missing item) FAILED (status ${HTTP_CODE})"
+              ((FAILED++))
+            fi
+
+            echo ""
+            echo "Test: Postgres readiness gate..."
+            if kubectl_curl -f -s "${SERVICE_URL}/health/ready" > /dev/null 2>&1; then
+              echo "  ✓ Readiness (SELECT 1 through DB pool) PASSED"
+            else
+              echo "  ✗ Readiness (SELECT 1 through DB pool) FAILED"
               ((FAILED++))
             fi
           fi
