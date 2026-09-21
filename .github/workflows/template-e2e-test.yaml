@@ -962,6 +962,48 @@ jobs:
               || { echo "❌ CNPG secret ${key} never appeared"; exit 1; }
             echo "✓ CNPG secret ${key} present"
           done
+
+          # Trust bisect: verify the server chain EXACTLY the way the app
+          # does (verify-full against the mounted ca.crt) from a clean pod.
+          # If this fails the Cluster/mount pair is wrong; if it passes, any
+          # later app failure is app-side (e.g. stale CA in the process).
+          CA_FPR=$(kubectl get secret ${SERVICE_NAME}-postgres-ca \
+            -o jsonpath='{.data.ca\.crt}' | base64 -d \
+            | openssl x509 -noout -fingerprint -sha256 || true)
+          echo "  mounted CA fingerprint: ${CA_FPR}"
+          cat <<POD | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: pg-ca-verify
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: psql
+                image: ghcr.io/cloudnative-pg/postgresql:16-system-trixie
+                command: ["/bin/sh", "-c"]
+                args: >-
+                  psql --version &&
+                  psql 'host=${SERVICE_NAME}-postgres-rw user=app dbname=app
+                  sslmode=verify-full sslrootcert=/pg/ca.crt' -c 'SELECT 1'
+                volumeMounts:
+                  - name: pg-ca
+                    mountPath: /pg
+            volumes:
+              - name: pg-ca
+                secret:
+                  secretName: ${SERVICE_NAME}-postgres-ca
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+          POD
+          kubectl wait --for=condition=Succeeded pod/pg-ca-verify --timeout=120s \
+            || { echo "❌ verify-full against the mounted CA failed from a probe pod";
+                 kubectl logs pg-ca-verify || true
+                 kubectl delete pod pg-ca-verify --ignore-not-found --wait=false || true
+                 exit 1; }
+          kubectl delete pod pg-ca-verify --ignore-not-found --wait=false >/dev/null 2>&1 || true
+          echo "✓ verify-full with the mounted CA works from an independent pod"
           echo "✓ PostgreSQL ready (operator-managed CA, app + rw service)"
 
       - name: Create GHCR pull secret for Flux and default namespace
