@@ -982,10 +982,11 @@ jobs:
               - name: psql
                 image: ghcr.io/cloudnative-pg/postgresql:16-system-trixie
                 command: ["/bin/sh", "-c"]
-                args: >-
-                  psql --version &&
-                  psql 'host=${SERVICE_NAME}-postgres-rw user=app dbname=app
-                  sslmode=verify-full sslrootcert=/pg/ca.crt' -c 'SELECT 1'
+                args:
+                  - >-
+                    psql --version &&
+                    psql 'host=${SERVICE_NAME}-postgres-rw user=app dbname=app
+                    sslmode=verify-full sslrootcert=/pg/ca.crt' -c 'SELECT 1'
                 volumeMounts:
                   - name: pg-ca
                     mountPath: /pg
