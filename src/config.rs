@@ -195,8 +195,12 @@ impl Config {
         let config: Config = Figment::new()
             // 1. Start with defaults
             .merge(Serialized::defaults(Config::default()))
-            // 2. Merge environment-specific file
-            .merge(Toml::file(format!("config/{}.toml", env)).nested())
+            // 2. Merge the layered TOML files. No `.nested()`: with it, figment
+            //    treats each top-level `[section]` table as an alternate
+            //    PROFILE and drops the values entirely; without it the file's
+            //    top-level tables map onto Config's fields directly.
+            .merge(Toml::file("config/default.toml"))
+            .merge(Toml::file(format!("config/{}.toml", env)))
             // 3. Override with environment variables (highest priority)
             // APP__SERVER__PORT=9000 -> server.port = 9000
             .merge(Env::prefixed("APP__").split("__"))
@@ -361,6 +365,35 @@ mod tests {
     }
 
     {%- if feature_postgres %}
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn test_toml_layering_loads_postgres_defaults() {
+        // cargo test runs with CWD = crate root where config/*.toml live.
+        // Asserts the loader actually merges the env-specific file (the
+        // figment .nested() regression dropped all TOML sections because
+        // they were treated as figment profiles). No `Env` provider here, so
+        // ambient/parallel-test env leakage can't affect the assertions.
+        let cfg: Config = Figment::new()
+            .merge(Serialized::defaults(Config::default()))
+            .merge(Toml::file(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/config/default.toml"
+            )))
+            .merge(Toml::file(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/config/development.toml"
+            )))
+            .extract()
+            .expect("layered config should load cleanly");
+        assert_eq!(cfg.postgres.ssl_mode, "verify-full");
+        assert_eq!(
+            cfg.postgres.ssl_root_cert_path.as_deref(),
+            Some("/etc/secrets/pg-ca/ca.crt")
+        );
+        assert!(cfg.postgres.run_migrations);
+        assert_eq!(cfg.postgres.max_connections, 5);
+    }
 
     #[test]
     #[allow(clippy::result_large_err)]

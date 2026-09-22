@@ -153,7 +153,7 @@ async fn main() -> anyhow::Result<()> {
                 ssl_mode = %config.postgres.ssl_mode,
                 pem_bytes = pem.len(),
                 pem_header = %String::from_utf8_lossy(
-                    pem.get(..16).unwrap_or(&[b' '])
+                    pem.get(..16).unwrap_or(b" ")
                 ).trim_end(),
                 "PostgreSQL CA loaded from mounted secret"
             );
