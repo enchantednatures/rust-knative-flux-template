@@ -806,7 +806,7 @@ jobs:
             --set rootUser=minioadmin \
             --set rootPassword=minioadmin \
             --wait \
-            --timeout 180s
+            --timeout 480s
 
           # Ensure expected bucket exists for tests
           kubectl wait --for=condition=ready pod -l release=minio --timeout=120s
