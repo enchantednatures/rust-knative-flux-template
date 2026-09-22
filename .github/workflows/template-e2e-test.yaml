@@ -1004,12 +1004,14 @@ jobs:
                     - key: ca.crt
                       path: ca.crt
           POD
-          kubectl wait --for=condition=Succeeded pod/pg-ca-verify --timeout=120s \
-            || { echo "❌ verify-full against the mounted CA failed from a probe pod";
-                 kubectl logs pg-ca-verify || true
-                 kubectl delete pod pg-ca-verify --ignore-not-found --wait=false || true
-                 exit 1; }
-          kubectl delete pod pg-ca-verify --ignore-not-found --wait=false >/dev/null 2>&1 || true
+          kubectl wait --for=condition=Succeeded pod/pg-ca-verify --timeout=180s || true
+          PROBE_LOG=$(kubectl logs pg-ca-verify 2>/dev/null || true)
+          echo "${PROBE_LOG}"
+          kubectl delete pod pg-ca-verify --ignore-not-found --wait=false --timeout=60s >/dev/null 2>&1 || true
+          # Success is defined by the psql output ("(1 row)"), not the pod
+          # condition alone — the pod can finish after the wait window.
+          echo "${PROBE_LOG}" | grep -q '(1 row)' \
+            || { echo "❌ verify-full against the mounted CA failed from a probe pod"; exit 1; }
           echo "✓ verify-full with the mounted CA works from an independent pod"
           echo "✓ PostgreSQL ready (operator-managed CA, app + rw service)"
 
