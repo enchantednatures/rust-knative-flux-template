@@ -118,6 +118,10 @@ ignore = [
 
 [conditional.'feature_postgres'.placeholders]
 postgres_version = { prompt = "PostgreSQL version", type = "string", default = "16" }
+postgres_pooler = { prompt = "Enable PgBouncer connection pooler (CNPG Pooler)?", type = "bool", default = true }
+postgres_pooler_instances_dev = { prompt = "Dev PgBouncer pooler instances", type = "string", default = "1" }
+postgres_pooler_instances_staging = { prompt = "Staging PgBouncer pooler instances", type = "string", default = "2" }
+postgres_pooler_instances_prod = { prompt = "Prod PgBouncer pooler instances", type = "string", default = "4" }
 postgres_instances_dev = { prompt = "Dev PostgreSQL replicas", type = "string", default = "1" }
 postgres_instances_staging = { prompt = "Staging PostgreSQL replicas", type = "string", default = "2" }
 postgres_instances_prod = { prompt = "Prod PostgreSQL replicas", type = "string", default = "3" }
@@ -130,6 +134,7 @@ backup_retention_prod = { prompt = "Prod backup retention (days)", type = "strin
 [conditional.'!feature_postgres']
 ignore = [
   "deploy/components/postgres",
+  "deploy/components/postgres-pooler",
   "deploy/infrastructure/cnpg-operator",
   "deploy/flux/cnpg-operator-kustomization.yaml",
   "deploy/flux/postgres-kustomization.yaml",
@@ -203,4 +208,9 @@ ignore = [
 ignore = [
   "deploy/infrastructure/gha-runner",
   "deploy/flux/gha-runner-kustomization.yaml",
+]
+
+[conditional.'!postgres_pooler']
+ignore = [
+  "deploy/components/postgres-pooler",
 ]

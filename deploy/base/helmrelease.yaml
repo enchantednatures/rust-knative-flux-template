@@ -105,6 +105,15 @@ spec:
                 name: "{{ project_name | replace: '_', '-' }}-postgres-app"
                 key: uri
           {% endif %}
+          {%- if feature_postgres and postgres_pooler %}
+          # Route the sqlx pool through the PgBouncer Pooler service. The
+          # CNPG `uri` secret always points at <cluster>-rw, so the override
+          # swaps the host while keeping credentials from that same secret.
+          # The pooler hostname must be in the Cluster's
+          # spec.certificates.serverAltDNSNames for verify-full to pass.
+          - name: APP__POSTGRES__HOST
+            value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+          {% endif %}
         {% if feature_postgres %}
         # PostgreSQL server CA certificate. Generated and rotated automatically
         # by the CloudNativePG operator (secret <cluster>-ca, key ca.crt);

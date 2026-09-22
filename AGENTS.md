@@ -770,6 +770,31 @@ Examples:
   docs(readme): update deployment instructions
 ```
 
+## PgBouncer Pooler
+
+When `postgres_pooler` is enabled (default `true` when `feature_postgres` is on),
+the template adds a connection pooler sibling Kustomize Component
+(`deploy/components/postgres-pooler/`) next to the postgres component.
+
+- Pooler CR: `<project>-postgres-rw-pooler` (thin: `containers: []` override NOT
+  customized — operator defaults own the pgbouncer pod).
+- Type `rw`, `poolMode: transaction`, `client_tls_sslmode: required`,
+  `auth_type: scram-sha-256`, `max_prepared_statements: 200` (sqlx prepared
+  statements through pooled sessions), `default_pool_size: 20`.
+- Automated integration (no authQuery/authQuerySecret/serverTLSSecret set):
+  the operator wires `cnpg_pooler_pgbouncer` + `<cluster>-pooler` TLS auth
+  itself. DO NOT set the deprecated `authQuerySecret`; it is deprecated.
+- Routing: app DSN via APP__POSTGRES__HOST (postgres.host override in Rust).
+- SANs: the pooler service name is registered in the Cluster's
+  `spec.certificates.serverAltDNSNames` so the pooler's reused
+  `<cluster>-server` certificate passes `verify-full`. Without this entry the
+  app's TLS handshake fails with `UnknownIssuer`/hostname-mismatch symptoms.
+- App pool sizing: `max_connections` stays per-pod (5); `default_pool_size`
+  should cover `pooler_instances * max_scale * max_connections`.
+
+Per-env instance numbers are patched by overlays (1/2/4), and the CR is
+entirely absent when the prompt answers `false`.
+
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
@@ -964,6 +989,7 @@ deploy/
 ```
 
 ## Recent Changes
+- pgbouncer-pooler: Added opt-in PgBouncer via a sibling Pooler component (`deploy/components/postgres-pooler`, `postgres_pooler` prompt, per-env instances 1/2/4); Cluster registers the pooler service name in `spec.certificates.serverAltDNSNames` so `verify-full` works through the reused `<cluster>-server` cert; app routes through it via `APP__POSTGRES__HOST` (postgres.host override)
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
 - shipped-postgres-runtime: sqlx 0.8.6 pool + embedded migrations run at startup (advisory locked); `PostgresConfig` (figment APP__POSTGRES__*), demo items upsert/get handlers, `AppError::Database`, DB SELECT 1 in `/health/ready` only, CA cert mounted at `/etc/secrets/pg-ca/ca.crt`, `APP__POSTGRES__URL` from the auto-generated `<cluster>-app` secret
 - cnpg-operator-cluster-wide: Moved CNPG operator 1.28.0 + Barman plugin v0.11.0 from dev-only Kustomize Component (`deploy/components/operator`, deleted) to cluster-wide FluxCD install (`deploy/infrastructure/cnpg-operator` + `deploy/flux/cnpg-operator-kustomization.yaml`), wired into all env flux configs gated by `feature_postgres`

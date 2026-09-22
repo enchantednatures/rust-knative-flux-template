@@ -124,6 +124,14 @@ async fn main() -> anyhow::Result<()> {
                 anyhow::anyhow!("PostgreSQL DSN parse failed: {}", e)
             })?;
 
+        // Host override: when a PgBouncer Pooler fronts the cluster, the
+        // operator's generated `uri` secret still points at <cluster>-rw --
+        // rewrite the host so the pool connects through the pooler while
+        // keeping credentials and dbname from the same secret.
+        if let Some(pg_host) = &config.postgres.host {
+            opts = opts.host(pg_host);
+        }
+
         opts = opts.ssl_mode(match config.postgres.ssl_mode.as_str() {
             "disable" => sqlx::postgres::PgSslMode::Disable,
             "require" => sqlx::postgres::PgSslMode::Require,

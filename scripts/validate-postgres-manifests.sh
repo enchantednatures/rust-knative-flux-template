@@ -92,6 +92,30 @@ else
 fi
 
 echo ""
+echo "==> Checking PgBouncer pooler wiring"
+if grep -q 'serverAltDNSNames' deploy/components/postgres/postgres-cluster.yaml \
+   && grep -q 'postgres-rw-pooler' deploy/components/postgres/postgres-cluster.yaml; then
+  pass "pooler service name registered in Cluster serverAltDNSNames"
+else
+  fail "serverAltDNSNames missing the pooler service (verify-full would fail)"
+fi
+if [ -f deploy/components/postgres-pooler/postgres-pooler.yaml ]; then
+  kubectl kustomize deploy/components/postgres-pooler > /tmp/pooler-render.yaml \
+    && pass "pooler component renders" || fail "pooler component kustomize fails"
+  grep -q 'kind: Pooler' /tmp/pooler-render.yaml \
+    && pass "Pooler CR present in rendered component" || fail "Pooler CR missing from render"
+  grep -qF 'poolMode: transaction' deploy/components/postgres-pooler/postgres-pooler.yaml \
+    && pass "pooler uses transaction pooling" || fail "poolMode is not transaction"
+  grep -qF 'client_tls_sslmode: required' deploy/components/postgres-pooler/postgres-pooler.yaml \
+    && pass "pooler forces client TLS" || fail "client_tls_sslmode not required"
+  grep -q 'rw-pooler' deploy/base/helmrelease.yaml \
+    && pass "APP__POSTGRES__HOST routes the DSN through the pooler" \
+    || fail "APP__POSTGRES__HOST pooler wiring missing from helmrelease"
+else
+  pass "pooler disabled in this generation (postgres_pooler=false)"
+fi
+
+echo ""
 echo "==> Checking backup wiring"
 grep -q 'barmancloud.cnpg.io/v1' deploy/components/postgres/postgres-backup.yaml \
   && pass "ObjectStore apiVersion barmancloud.cnpg.io/v1" || fail "wrong ObjectStore apiVersion"

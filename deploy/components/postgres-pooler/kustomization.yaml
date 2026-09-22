@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - postgres-pooler.yaml
+
+# PgBouncer Pooler component (gated by the `postgres_pooler` placeholder).
+# Sibling of `deploy/components/postgres` so projects can enable the
+# connection pooler independently of the rest of the CNPG stack. The pooler
+# is name-coupled to the Cluster (see postgres-cluster.yaml):
+#   - CR name:  <project>-postgres-rw-pooler
+#   - fronting: <project>-postgres (spec.cluster.name, immutable)
+# Its service name is registered on the Cluster's
+# spec.certificates.serverAltDNSNames so app-side verify-full works.
+ #
+# Labels mirror the postgres component's includeSelectors: false
+# pattern; comment hooks in postgres-pooler.yaml cover CRD specifics.
+
+labels:
+  - pairs:
+      component: postgres-pooler
+      app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
+    includeSelectors: false

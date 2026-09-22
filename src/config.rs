@@ -67,6 +67,11 @@ fn default_timeout_ms() -> u32 {
 pub struct PostgresConfig {
     /// libpq-style DSN. Injected at runtime via APP__POSTGRES__URL (defaults: empty string - set in k8s from CNPG secret)
     pub url: String,
+    /// Optional host override applied to the parsed DSN: points the pool at
+    /// a PgBouncer Pooler service (`APP__POSTGRES__HOST`) instead of the
+    /// `<cluster>-rw` service baked into the CNPG-generated `uri` secret.
+    #[serde(default)]
+    pub host: Option<String>,
     /// ssl mode: "disable" | "require" | "verify-ca" | "verify-full"
     #[serde(default = "default_postgres_ssl_mode")]
     pub ssl_mode: String,
@@ -160,6 +165,7 @@ impl Default for Config {
             {%- if feature_postgres %}
             postgres: PostgresConfig {
                 url: String::new(),
+                host: None,
                 ssl_mode: default_postgres_ssl_mode(),
                 ssl_root_cert_path: None,
                 run_migrations: true,

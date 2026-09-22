@@ -23,6 +23,9 @@ retries = 5
 {% if feature_postgres %}
 [postgres]
 url = ""                    # overridden by APP__POSTGRES__URL injected from CNPG secret
+# Set by APP__POSTGRES__HOST in k8s when the PgBouncer Pooler is enabled;
+# blank locally so the operator-generated uri's <cluster>-rw host applies.
+host = ""
 ssl_mode = "verify-full"
 ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
 # sqlx migrate takes a pg advisory lock; concurrent pods wait, then reconcile and no-op

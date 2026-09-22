@@ -58,8 +58,16 @@ spec:
       # Floor at TLSv1.2; clients negotiate 1.2+ only.
       ssl_min_protocol_version: "TLSv1.2"
 
-  # No spec.certificates block: certificates are operator-managed (default).
-  # The operator generates a CA plus server TLS certificate and rotates them.
+  # No spec.certificates CA/secret keys: certificates are operator-managed
+  # (default). The operator generates a CA plus server TLS certificate and
+  # rotates them. serverAltDNSNames exists ONLY to make the pgBouncer Pooler
+  # work with `verify-full`: the pooler fronting this cluster reuses the
+  # cluster's server certificate, whose SANs otherwise cover only the
+  # -rw/-ro/-r service names, and whose pooler service therefore needs its
+  # own name registered here. Harmless when the pooler is disabled.
+  certificates:
+    serverAltDNSNames:
+      - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
 
   # Barman Cloud Plugin attachment: REQUIRED for the backup stack.
   # isWALArchiver streams WAL to the ObjectStore continuously (enables PITR);

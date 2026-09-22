@@ -1,0 +1,60 @@
+# PgBouncer connection Pooler for {{ project_name | replace: '_', '-' }}.
+#
+# Gated by the `postgres_pooler` generate-time placeholder:
+# liquid in the component's kustomization.yaml only includes this file when
+# the prompt accepts the pooler, so the CR is absent in pooler-less projects.
+#
+# Lifecycle notes (CNPG 1.28):
+#   - `spec.cluster.name` is IMMUTABLE after creation (webhook-enforced).
+#   - Automated integration (no authQuery/authQuerySecret/serverTLSSecret
+#     set): the operator creates the `cnpg_pooler_pgbouncer` role with a
+#     SECURITY DEFINER auth-query and issues its client TLS cert in the
+#     `<cluster>-pooler` secret; pgbouncer fronting postgres uses
+#     client-cert auth over TLS (satisfies the hostssl pg_hba rules).
+#   - The pooler PRESENTS the cluster's `<cluster>-server` certificate to
+#     app clients, so `<pooler>` service name is registered in the
+#     Cluster's `spec.certificates.serverAltDNSNames` (see postgres-cluster.yaml)
+#     for `verify-full` to pass hostname validation.
+#   - Service: `<pooler-name>` (plain, no `-rw` suffix), port 5432.
+#   - `monitoring.enablePodMonitor` is deprecated in CNPG 1.28: Percy
+#     scrape config goes through a manual PodMonitor (deliberately NOT
+#     shipped here so environments without prometheus-operator CRDs still
+#     reconcile cleanly); see docs/POSTGRES_MONITORING.md.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+  # No namespace key: the consuming overlay/Flux wiring owns placement.
+spec:
+  cluster:
+    name: "{{ project_name | replace: '_', '-' }}-postgres"
+  type: rw   # pool the primary (rw); read-only pools would use `ro`
+  # Base default; overlays patch per env (dev 1 / staging 2 / prod 4, from
+  # the postgres_pooler_instances_{dev,staging,prod} placeholders).
+  instances: 2
+
+  template:
+    spec:
+      # `containers` is a mandatory key in the Pooler CRD; empty list defers
+      # container spec (resources, affinity, versions) to operator defaults.
+      containers: []
+
+  pgbouncer:
+    # transaction pooling is the right default for a stateless web service;
+    # `max_prepared_statements` keeps sqlx's prepared statements self-
+    # consistent through pooled sessions.
+    poolMode: transaction
+    parameters:
+      # SCRAM end-to-end: app passwords are SCRAM-stored since pg 14+ and the
+      # auth_query (`public.user_search`) serves their SCRAM verifiers from
+      # pg_shadow, so clients authenticate directly without plaintext md5.
+      auth_type: scram-sha-256
+      # Force TLS from clients (verify-full still validates the cert chain +
+      # hostname on the app side via the mounted CNPG CA).
+      client_tls_sslmode: required
+      max_client_conn: "1000"
+      # Sized for 5 connections-per-pod app scaling: max_instances * 5 = 20.
+      default_pool_size: "20"
+      max_prepared_statements: "200"
+    # serverTLSSecret / authQuery deliberately unset: automated integration.

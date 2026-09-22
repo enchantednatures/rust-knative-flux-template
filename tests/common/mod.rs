@@ -1,6 +1,7 @@
 use {{ crate_name }}::observability;
 use {{ crate_name }}::state::AppState;
 {%- if feature_s3 %}
+
 use opendal::Operator;
 {%- endif %}
 

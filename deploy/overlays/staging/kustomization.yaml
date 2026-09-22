@@ -64,6 +64,17 @@ patches:
         path: /spec/retentionPolicy
         value: "{{ backup_retention_staging }}d"
   {% endif %}
+  {% if feature_postgres and postgres_pooler %}
+  # PgBouncer pooler instance count (see deploy/components/postgres/pooler).
+  - target:
+      kind: Pooler
+      name: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+    patch: |-
+      - op: replace
+        path: /spec/instances
+        value: {{ postgres_pooler_instances_staging }}
+  {% endif %}
+
 
   {% if feature_flagger %}
   # Canary metric gates must query THIS environment's Prometheus. The flagger

@@ -10,6 +10,9 @@ components:
   {% if feature_postgres %}
   - ../../components/postgres
   {% endif %}
+  {% if feature_postgres and postgres_pooler %}
+  - ../../components/postgres-pooler
+  {% endif %}
 
 patches:
   - target:
@@ -112,3 +115,14 @@ patches:
         path: /spec/retentionPolicy
         value: "{{ backup_retention_dev }}d"
   {% endif %}
+  {% if feature_postgres and postgres_pooler %}
+  # PgBouncer pooler instance count (see deploy/components/postgres/pooler).
+  - target:
+      kind: Pooler
+      name: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+    patch: |-
+      - op: replace
+        path: /spec/instances
+        value: {{ postgres_pooler_instances_dev }}
+  {% endif %}
+

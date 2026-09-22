@@ -34,6 +34,7 @@ timeout_ms = 10000
 {% if feature_postgres %}
 [postgres]
 url = ""                    # overridden by APP__POSTGRES__URL injected from CNPG secret
+host = ""                   # blank locally; APP__POSTGRES__HOST points to the pooler in k8s
 ssl_mode = "verify-full"
 ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
 run_migrations = true

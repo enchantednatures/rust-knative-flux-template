@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CNPG operator (+ Barman Cloud plugin v0.11.0) installs cluster-wide via `deploy/flux/cnpg-operator-kustomization.yaml`; the per-environment app Kustomizations (`deploy/flux/kustomization-{dev,staging,prod}.yaml`) gain `dependsOn: cnpg-operator`, Cluster healthChecks, and SOPS decryption when the feature is enabled. The old dangling `deploy/flux/postgres-kustomization.yaml` was removed.
 - Application runtime shipped with the same flag: sqlx 0.8.6 pool (lazy, small), embedded `sqlx::migrate!` migrations run at startup (`APP__POSTGRES__RUN_MIGRATIONS`, advisory locked), `PostgresConfig` in `src/config.rs`, demo `POST /api/v1/items` (upsert) and `GET /api/v1/items/{key}` handlers, `AppError::Database`, and DB readiness in `/health/ready` (never liveness).
 - App wiring: `APP__POSTGRES__URL` injected from the auto-generated `<cluster>-app` secret, CNPG CA cert mounted at `/etc/secrets/pg-ca/ca.crt`.
+- PgBouncer pooler (issue #142): `deploy/components/postgres-pooler/` Pooler CR (transaction mode, SCRAM, forced client TLS, per-env 1/2/4 instances) routed through `APP__POSTGRES__HOST`; the Cluster's `serverAltDNSNames` gains the pooler name so `verify-full` remains satisfied through the reused cluster server cert.
 
 ### Added
 - Initial release from template

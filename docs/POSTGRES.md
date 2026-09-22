@@ -11,6 +11,7 @@ Complete guide for deploying, managing, and troubleshooting CloudNativePG Postgr
 5. [Troubleshooting](#troubleshooting)
 6. [Advanced Topics](#advanced-topics)
 7. [Best Practices](#best-practices)
+8. [PgBouncer Pooler](#pgbouncer-pooler)
 
 ## Quick Start
 
@@ -571,6 +572,42 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 - Repository issue #136: the empty-string `services.""` HelmRelease patch is rejected by kustomize >= 5.4 — overlay reconciliation is blocked until that patch format is fixed (pre-existing, unrelated to postgres resources).
 - Dev MinIO bucket `<project>-postgres-backups` is created by the dev MinIO init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
 - PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
+
+## PgBouncer Pooler
+
+The optional connection pooler is a separate Kustomize Component at
+`deploy/components/postgres-pooler/`, gated by the `postgres_pooler`
+generate-time prompt (default: enabled) and with per-env instance counts
+(`postgres_pooler_instances_{dev,staging,prod}` = 1/2/4). Enabled projects
+route the sqlx pool through PgBouncer via `APP__POSTGRES__HOST`.
+
+```bash
+kubectl get pooler {{ project_name }}-postgres-rw-pooler
+kubectl logs deployment/{{ project_name }}-postgres-rw-pooler --tail=100
+```
+
+How it fits (CNPG 1.28 automated integration):
+
+- **Auth**: the operator creates the `cnpg_pooler_pgbouncer` role with a
+  SECURITY DEFINER auth query (`public.user_search`) and its client TLS cert
+  in the `<cluster>-pooler` secret; pgbouncer fronting postgres authenticates
+  via client certs over TLS, which satisfies the Cluster's `hostssl` pg_hba.
+  Your `app` password (from `<cluster>-app`) is verified against its SCRAM
+  verifier through the same auth query, so no extra secret is needed.
+- **TLS**: `client_tls_sslmode: required` in the shipped Pooler forces client
+  TLS; the pooler PRESENTS the Cluster's server certificate (`<cluster>-server`).
+  Because that cert's SANs cover only the `-rw/-ro/-r` service names, the
+  shipped Cluster registers the pooler's service name in
+  `spec.certificates.serverAltDNSNames`, and the app passes `verify-full`
+  against the same CNPG CA as before.
+- **App wiring**: `APP__POSTGRES__HOST` (in k8s) rewrites the `uri` from the
+  operator secret to point at `<project>-postgres-rw-pooler`; the pool
+  config (`max_connections`, timeouts) is unchanged. `pool_mode: transaction`
+  and `max_prepared_statements: 200` keep sqlx's prepared statements sane in
+  transaction pooling.
+- **Pooling off**: set `postgres_pooler=false` at generate time and the CR
+  (and the app env) is simply absent; the sqlx pool talks to `<cluster>-rw`
+  directly.
 
 ## Support
 
