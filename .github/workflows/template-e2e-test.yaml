@@ -246,6 +246,10 @@ jobs:
           postgres_instances_dev = "1"
           postgres_instances_staging = "2"
           postgres_instances_prod = "3"
+          postgres_pooler = "true"
+          postgres_pooler_instances_dev = "1"
+          postgres_pooler_instances_staging = "2"
+          postgres_pooler_instances_prod = "4"
           postgres_storage_class = "standard"
           backup_schedule = "0 2 * * *"
           backup_retention_dev = "7"
@@ -916,14 +920,29 @@ jobs:
             echo "namespace: default"
             echo "components:"
             echo "  - ../../components/postgres"
+            if [ "${{ matrix.feature_postgres }}" = "true" ] && [ "${{ matrix.postgres_pooler }}" != "false" ]; then
+              echo "  - ../../components/postgres-pooler"
+            fi
             echo "patches:"
-            yq eval '.patches | map(select(.target.kind == "Cluster" or .target.kind == "ObjectStore"))' \
+            yq eval '.patches | map(select(.target.kind == "Cluster" or .target.kind == "ObjectStore" or .target.kind == "Pooler"))' \
               "${GENERATED_DIR}/deploy/overlays/dev/kustomization.yaml" | sed 's/^/  /'
           } > "$PG_TMP/kustomization.yaml"
           kustomize build "$PG_TMP" > /tmp/pg-rendered.yaml
           grep -E '^kind:' /tmp/pg-rendered.yaml | head -5 || true
           kubectl apply --server-side -f /tmp/pg-rendered.yaml
           rm -rf "$PG_TMP"
+
+          if kubectl get pooler ${SERVICE_NAME}-postgres-rw-pooler >/dev/null 2>&1; then
+            echo "Waiting for the PgBouncer pooler deployment..."
+            for i in $(seq 1 60); do
+              kubectl get deployment/${SERVICE_NAME}-postgres-rw-pooler >/dev/null 2>&1 && break
+              sleep 5
+            done
+            kubectl rollout status deployment/${SERVICE_NAME}-postgres-rw-pooler \
+              --timeout=300s \
+              || { echo "❌ PgBouncer pooler not ready"; kubectl describe pooler ${SERVICE_NAME}-postgres-rw-pooler; kubectl logs -n cnpg-system deploy/cnpg-controller-manager --tail=60 || true; exit 1; }
+            echo "✓ PgBouncer pooler ready (pooler host: ${SERVICE_NAME}-postgres-rw-pooler)"
+          fi
 
           # Cluster bootstrap is slow (pulls the postgres image, runs initdb,
           # elects primary). Allow up to 15m so the operator fully reaches
