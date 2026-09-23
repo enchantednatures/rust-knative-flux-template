@@ -778,7 +778,7 @@ the template adds a connection pooler sibling Kustomize Component
 
 - Pooler CR: `<project>-postgres-rw-pooler` (thin: `containers: []` override NOT
   customized — operator defaults own the pgbouncer pod).
-- Type `rw`, `poolMode: transaction`, `client_tls_sslmode: required`,
+- Type `rw`, `poolMode: transaction`, `client_tls_sslmode: require`,
   `auth_type: scram-sha-256`, `max_prepared_statements: 200` (sqlx prepared
   statements through pooled sessions), `default_pool_size: 20`.
 - Automated integration (no authQuery/authQuerySecret/serverTLSSecret set):

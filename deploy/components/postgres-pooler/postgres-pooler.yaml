@@ -52,7 +52,7 @@ spec:
       auth_type: scram-sha-256
       # Force TLS from clients (verify-full still validates the cert chain +
       # hostname on the app side via the mounted CNPG CA).
-      client_tls_sslmode: required
+      client_tls_sslmode: require
       max_client_conn: "1000"
       # Sized for 5 connections-per-pod app scaling: max_instances * 5 = 20.
       default_pool_size: "20"

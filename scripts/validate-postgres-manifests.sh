@@ -106,7 +106,7 @@ if [ -f deploy/components/postgres-pooler/postgres-pooler.yaml ]; then
     && pass "Pooler CR present in rendered component" || fail "Pooler CR missing from render"
   grep -qF 'poolMode: transaction' deploy/components/postgres-pooler/postgres-pooler.yaml \
     && pass "pooler uses transaction pooling" || fail "poolMode is not transaction"
-  grep -qF 'client_tls_sslmode: required' deploy/components/postgres-pooler/postgres-pooler.yaml \
+  grep -qF 'client_tls_sslmode: require' deploy/components/postgres-pooler/postgres-pooler.yaml \
     && pass "pooler forces client TLS" || fail "client_tls_sslmode not required"
   grep -q 'rw-pooler' deploy/base/helmrelease.yaml \
     && pass "APP__POSTGRES__HOST routes the DSN through the pooler" \

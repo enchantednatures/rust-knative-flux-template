@@ -594,7 +594,7 @@ How it fits (CNPG 1.28 automated integration):
   via client certs over TLS, which satisfies the Cluster's `hostssl` pg_hba.
   Your `app` password (from `<cluster>-app`) is verified against its SCRAM
   verifier through the same auth query, so no extra secret is needed.
-- **TLS**: `client_tls_sslmode: required` in the shipped Pooler forces client
+- **TLS**: `client_tls_sslmode: require` in the shipped Pooler forces client
   TLS; the pooler PRESENTS the Cluster's server certificate (`<cluster>-server`).
   Because that cert's SANs cover only the `-rw/-ro/-r` service names, the
   shipped Cluster registers the pooler's service name in
