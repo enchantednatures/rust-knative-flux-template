@@ -251,6 +251,10 @@ jobs:
           postgres_pooler_instances_staging = "2"
           postgres_pooler_instances_prod = "4"
           postgres_storage_class = "standard"
+          # The e2e workflow installs the barman plugin itself (see the
+          # "Install CNPG operator" step), so the generated project must not
+          # include it in the operator kustomization.
+          barman_plugin_installed = "false"
           backup_schedule = "0 2 * * *"
           backup_retention_dev = "7"
           backup_retention_staging = "14"

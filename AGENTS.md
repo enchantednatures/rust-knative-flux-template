@@ -741,7 +741,7 @@ components:
 
 **Critical**: The CloudNativePG operator is installed **cluster-wide** via FluxCD (mirroring the Flagger operator pattern), not per-application.
 
-- **All environments (`dev`/`staging`/`prod`)**: `deploy/flux/cnpg-operator-kustomization.yaml` (Flux Kustomization `cnpg-operator` in `flux-system`) renders `deploy/infrastructure/cnpg-operator/` — the CNPG operator 1.28.0 + Barman cloud plugin v0.11.0 remote manifests, installed into the `cnpg-system` namespace. It is included from `deploy/flux/config/{env}/kustomization.yaml`, gated by the `feature_postgres` flag.
+- **All environments (`dev`/`staging`/`prod`)**: `deploy/flux/cnpg-operator-kustomization.yaml` (Flux Kustomization `cnpg-operator` in `flux-system`) renders `deploy/infrastructure/cnpg-operator/` — the CNPG operator 1.28.0 + Barman cloud plugin v0.11.0 remote manifests, installed into the `cnpg-system` namespace. The plugin manifest line is conditionally included: answering `yes` to the `barman_plugin_installed` prompt omits it (operator still installed; an existing plugin in `cnpg-system` is then a user prerequisite). It is included from `deploy/flux/config/{env}/kustomization.yaml`, gated by the `feature_postgres` flag.
 - **Ordering**: `deploy/flux/postgres-kustomization.yaml` declares `dependsOn: [{name: cnpg-operator}]` so CNPG CRDs exist before Cluster/ScheduledBackup objects are applied. PostgreSQL itself is configured through the HelmRelease values (`spec.values.postgres`) patched per environment.
 
 This prevents:
@@ -989,6 +989,7 @@ deploy/
 ```
 
 ## Recent Changes
+- barman-plugin-optional-install: Added `barman_plugin_installed` generate prompt (default false); when true the plugin-barman-cloud v0.11.0 manifest line is omitted from `deploy/infrastructure/cnpg-operator/kustomization.yaml` (CNPG operator still installed; existing plugin in `cnpg-system` is a user prerequisite). Cluster/ScheduledBackup plugin references (`barman-cloud.cloudnative-pg.io`) unchanged; Flux `prune: true` makes flag flips prune/re-install cleanly
 - pgbouncer-pooler: Added opt-in PgBouncer via a sibling Pooler component (`deploy/components/postgres-pooler`, `postgres_pooler` prompt, per-env instances 1/2/4); Cluster registers the pooler service name in `spec.certificates.serverAltDNSNames` so `verify-full` works through the reused `<cluster>-server` cert; app routes through it via `APP__POSTGRES__HOST` (postgres.host override)
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
 - shipped-postgres-runtime: sqlx 0.8.6 pool + embedded migrations run at startup (advisory locked); `PostgresConfig` (figment APP__POSTGRES__*), demo items upsert/get handlers, `AppError::Database`, DB SELECT 1 in `/health/ready` only, CA cert mounted at `/etc/secrets/pg-ca/ca.crt`, `APP__POSTGRES__URL` from the auto-generated `<cluster>-app` secret
