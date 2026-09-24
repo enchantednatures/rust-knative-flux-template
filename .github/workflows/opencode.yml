@@ -28,4 +28,4 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
-          model: opencode/claude-haiku-4-5
+          model: opencode-go/glm-5.3-flash
