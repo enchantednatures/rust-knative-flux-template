@@ -131,6 +131,36 @@ grep -q 'destinationPath.*-postgres-backups' deploy/components/postgres/postgres
   || fail "destinationPath bucket mismatch"
 
 # ---------------------------------------------------------------------------
+# 4b. Barman plugin install gating (content-based state detection)
+#
+# The barman plugin manifest URL in the cnpg-operator kustomization is the
+# source of truth: when it is absent the plugin was skipped at generation
+# time (barman_plugin_installed=false) and the backup manifests must still
+# reference the plugin DNS name; when present both must be wired.
+# NOTE: never grep the DNS name `barman-cloud.cloudnative-pg.io` against the
+# kustomization — it also appears in postgres-backup.yaml, which must remain
+# unchanged in both states.
+# ---------------------------------------------------------------------------
+KUSTOMIZATION="deploy/infrastructure/cnpg-operator/kustomization.yaml"
+if [ -f "$KUSTOMIZATION" ]; then
+  echo ""
+  echo "==> Checking barman plugin install gating"
+  if grep -q 'plugin-barman-cloud/releases' "$KUSTOMIZATION"; then
+    pass "barman plugin manifest URL present in cnpg-operator kustomization"
+  else
+    pass "barman plugin skipped in this generation (barman_plugin_installed=false)"
+    if ! grep -q 'plugin-barman-cloud' "$KUSTOMIZATION"; then
+      pass "no barman plugin residue in cnpg-operator kustomization"
+    else
+      fail "barman plugin residue in cnpg-operator kustomization despite skip"
+    fi
+    grep -q 'barman-cloud.cloudnative-pg.io' deploy/components/postgres/postgres-backup.yaml \
+      && pass "backup manifests still reference plugin name barman-cloud.cloudnative-pg.io" \
+      || fail "plugin name missing from postgres-backup.yaml after skip"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 5. App wiring (HelmRelease env + CA volume)
 # ---------------------------------------------------------------------------
 echo ""
