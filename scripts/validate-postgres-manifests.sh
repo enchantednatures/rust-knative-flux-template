@@ -145,6 +145,15 @@ KUSTOMIZATION="deploy/infrastructure/cnpg-operator/kustomization.yaml"
 if [ -f "$KUSTOMIZATION" ]; then
   echo ""
   echo "==> Checking barman plugin install gating"
+  if grep -q '{%' "$KUSTOMIZATION"; then
+    pass "cnpg-operator kustomization still contains liquid (template repo; render check skipped)"
+  elif ! kubectl kustomize deploy/infrastructure/cnpg-operator > /tmp/cnpg-operator-render.yaml 2>/tmp/cnpg-operator-render.err; then
+    fail "kubectl kustomize deploy/infrastructure/cnpg-operator"
+    echo "${YELLOW}--- stderr ---${NC}"
+    cat /tmp/cnpg-operator-render.err || true
+  else
+    pass "kubectl kustomize deploy/infrastructure/cnpg-operator"
+  fi
   if grep -q 'plugin-barman-cloud/releases' "$KUSTOMIZATION"; then
     pass "barman plugin manifest URL present in cnpg-operator kustomization"
   else

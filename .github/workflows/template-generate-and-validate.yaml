@@ -49,7 +49,7 @@ jobs:
             feature_flagger: "false"
             event_source_kafka: "false"
             enable_image_updates: "false"
-          # Postgres only, barman plugin installed
+          # Postgres only, barman plugin skipped — cluster already has it
           - scenario: postgres-only-barman
             feature_s3: "false"
             feature_kafka: "false"
@@ -280,7 +280,7 @@ jobs:
             deploy/flux/config/dev/kustomization.yaml \
             || { echo "FAIL: cnpg-operator Kustomization not wired in flux config"; exit 1; }
 
-          if [[ "${{ matrix.barman_plugin_installed || 'false' }}" == "true" ]]; then
+          if [[ "${{ matrix.barman_plugin_installed || 'false' }}" != "true" ]]; then
             grep -q 'plugin-barman-cloud/releases' \
               deploy/infrastructure/cnpg-operator/kustomization.yaml \
               || { echo "FAIL: barman plugin manifest URL missing from cnpg-operator kustomization"; exit 1; }
@@ -289,20 +289,20 @@ jobs:
           du -sh "$GENERATED_DIR" > /dev/null
         shell: bash
 
-      - name: Assert barman plugin skipped when disabled
-        if: matrix.feature_postgres == 'true' && (matrix.barman_plugin_installed || 'false') == 'false'
+      - name: Assert barman plugin skipped when pre-installed
+        if: matrix.feature_postgres == 'true' && (matrix.barman_plugin_installed || 'false') == 'true'
         run: |
           set -euo pipefail
           cd "$GENERATED_DIR"
 
           ! grep -q 'plugin-barman-cloud' \
             deploy/infrastructure/cnpg-operator/kustomization.yaml \
-            || { echo "FAIL: barman plugin manifest present despite barman_plugin_installed=false"; exit 1; }
+            || { echo "FAIL: barman plugin manifest present despite barman_plugin_installed=true"; exit 1; }
           grep -q 'barman-cloud.cloudnative-pg.io' \
             deploy/components/postgres/postgres-backup.yaml \
             || { echo "FAIL: plugin name missing from postgres-backup.yaml after skip"; exit 1; }
 
-          echo "✓ barman plugin skipped, backup manifests intact"
+          echo "✓ barman plugin skipped (pre-installed in cluster), backup manifests intact"
         shell: bash
 
       - name: Assert no postgres residue when disabled
