@@ -145,7 +145,10 @@ KUSTOMIZATION="deploy/infrastructure/cnpg-operator/kustomization.yaml"
 if [ -f "$KUSTOMIZATION" ]; then
   echo ""
   echo "==> Checking barman plugin install gating"
-  if grep -q '{%' "$KUSTOMIZATION"; then
+  # The char class below is deliberate: a literal open-brace-percent sequence
+  # in this file aborts generation with "invalid syntax" (Tera parses it on
+  # every generate), so the pattern must never spell one out.
+  if grep -q '{[%]' "$KUSTOMIZATION"; then
     pass "cnpg-operator kustomization still contains liquid (template repo; render check skipped)"
   elif ! kubectl kustomize deploy/infrastructure/cnpg-operator > /tmp/cnpg-operator-render.yaml 2>/tmp/cnpg-operator-render.err; then
     fail "kubectl kustomize deploy/infrastructure/cnpg-operator"
