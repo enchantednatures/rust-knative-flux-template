@@ -251,6 +251,10 @@ jobs:
           postgres_pooler_instances_staging = "2"
           postgres_pooler_instances_prod = "4"
           postgres_storage_class = "standard"
+          # The e2e workflow installs the barman plugin itself (see the
+          # "Install CNPG operator" step), so the generated project must not
+          # include it in the operator kustomization.
+          barman_plugin_installed = "false"
           backup_schedule = "0 2 * * *"
           backup_retention_dev = "7"
           backup_retention_staging = "14"
@@ -799,14 +803,39 @@ jobs:
           helm repo add minio https://charts.min.io/
           helm repo update
 
-          helm install minio minio/minio \
-            --set replicas=1 \
-            --set mode=standalone \
-            --set resources.requests.memory=256Mi \
-            --set rootUser=minioadmin \
-            --set rootPassword=minioadmin \
-            --wait \
-            --timeout 480s
+          # Pinned: floating to 5.4.0 coincided with persistent install timeouts
+          minio_install() {
+            helm install minio minio/minio --version 5.1.0 \
+              --set replicas=1 \
+              --set mode=standalone \
+              --set resources.requests.memory=256Mi \
+              --set rootUser=minioadmin \
+              --set rootPassword=minioadmin \
+              --wait \
+              --timeout 480s
+          }
+
+          # Retries absorb transient registry rate limits; each failed
+          # attempt dumps pod state/events so persistent failures leave evidence
+          for attempt in 1 2 3; do
+            echo "==> MinIO install attempt ${attempt}/3"
+            if minio_install; then
+              echo "✓ minio installed on attempt ${attempt}"
+              break
+            fi
+            if [[ "${attempt}" == "3" ]]; then
+              echo "❌ MinIO install failed after 3 attempts"
+              kubectl get pods -l release=minio -o wide || true
+              kubectl describe pods -l release=minio || true
+              kubectl get events --sort-by=.lastTimestamp | tail -30 || true
+              exit 1
+            fi
+            kubectl get pods -l release=minio -o wide || true
+            helm uninstall minio --wait --timeout 120s || true
+            kubectl delete pvc -l release=minio --ignore-not-found \
+              --wait --timeout 120s || true
+            sleep 30
+          done
 
           # Ensure expected bucket exists for tests
           kubectl wait --for=condition=ready pod -l release=minio --timeout=120s

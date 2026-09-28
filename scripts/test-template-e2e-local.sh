@@ -338,7 +338,8 @@ EOF
         helm repo add minio https://charts.min.io/ > /dev/null 2>&1 || true
         helm repo update > /dev/null 2>&1
         
-        helm install minio minio/minio \
+        # Mirrors the CI pin (template-e2e-test.yaml) — see that file
+        helm install minio minio/minio --version 5.1.0 \
             --set replicas=1 \
             --set mode=standalone \
             --set resources.requests.memory=256Mi \
