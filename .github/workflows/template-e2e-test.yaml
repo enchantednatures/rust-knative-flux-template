@@ -803,7 +803,8 @@ jobs:
           helm repo add minio https://charts.min.io/
           helm repo update
 
-          helm install minio minio/minio \
+          # Pinned: floating to 5.4.0 coincided with persistent install timeouts
+          helm install minio minio/minio --version 5.1.0 \
             --set replicas=1 \
             --set mode=standalone \
             --set resources.requests.memory=256Mi \
