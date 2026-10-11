@@ -375,7 +375,7 @@ kubectl apply -k deploy/overlays/dev -n {{ project_name }}-dev
 # Configuration:
 # - Min 1 replica (no scale-to-zero)
 # - Debug logging
-# - MinIO for storage
+# - RustFS for storage
 {% if feature_s3 %}# - Lower resource limits{% endif %}
 ```
 

@@ -128,7 +128,7 @@ jobs:
           echo "=== Infrastructure Status ==="
           kubectl get pods -n redis
           kubectl get pods -n kafka 2>/dev/null || true
-          kubectl get pods -n minio 2>/dev/null || true
+          kubectl get pods -n rustfs 2>/dev/null || true
           echo ""
           echo "=== Observability Status ==="
           kubectl get pods -n observability

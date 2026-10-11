@@ -193,7 +193,7 @@ docker network connect kind kind-registry-e2e
 ## Helm Install Timeout
 
 **Symptom:**
-Redis or MinIO installation times out
+Redis or RustFS installation times out
 
 **Debug:**
 ```bash
@@ -207,7 +207,7 @@ kubectl get events --sort-by='.lastTimestamp' | tail -20
 
 # View pod logs
 kubectl logs -l app.kubernetes.io/name=redis
-kubectl logs -l app=minio
+kubectl logs -l app=rustfs
 
 # Increase timeout and retry
 helm install redis bitnami/redis --wait --timeout 300s

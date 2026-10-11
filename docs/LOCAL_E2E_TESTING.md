@@ -67,7 +67,7 @@ The local E2E script performs the same steps as CI:
 8. **OCI Artifact Push**: Pushes manifests as OCI artifacts to local registry
 9. **Flux Installation**: Installs Flux controllers in the cluster
 10. **Knative Installation**: Deploys Knative Serving v1.20.0
-11. **Infrastructure Setup**: Installs Redis and MinIO (if S3 enabled)
+11. **Infrastructure Setup**: Installs Redis and RustFS (if S3 enabled)
 12. **Application Deployment**: Deploys the app via Flux GitOps
 13. **E2E Test Execution**: Runs health checks and API tests
 
@@ -83,7 +83,7 @@ Tests the minimal configuration without S3 storage:
 
 ### with-s3 Scenario
 
-Tests with S3/MinIO storage enabled:
+Tests with S3/RustFS storage enabled:
 - All tests from no-s3 scenario
 - S3 storage upload/download example endpoint
 
