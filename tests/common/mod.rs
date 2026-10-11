@@ -34,7 +34,7 @@ pub async fn create_test_state() -> AppState {
 }
 {%- if feature_s3 %}
 
-/// Create a test storage operator pointing to local MinIO
+/// Create a test storage operator pointing to local RustFS
 fn create_test_storage() -> Operator {
     let builder = opendal::services::S3::default()
         .endpoint("http://localhost:9000")

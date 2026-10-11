@@ -13,7 +13,7 @@ scripts/
 └── dev/                          # Development environment scripts
     ├── setup-kind.sh             # Create Kind cluster
     ├── install-knative.sh        # Install Knative Serving
-    ├── deploy-infrastructure.sh  # Deploy Redis, MinIO, etc.
+    ├── deploy-infrastructure.sh  # Deploy Redis, RustFS, etc.
     ├── deploy-observability.sh   # Deploy Jaeger, Prometheus, OTel
     ├── build-and-deploy.sh       # Build and deploy application
     └── port-forward.sh           # Port forward all services
@@ -83,7 +83,7 @@ Runs end-to-end tests for template generation locally. Mirrors the CI workflow i
 
 **Scenarios:**
 - `no-s3` - Test without S3 features
-- `with-s3` - Test with S3/MinIO features
+- `with-s3` - Test with S3/RustFS features
 - `all` - Test both scenarios (default)
 
 **Requirements:**
@@ -127,7 +127,7 @@ Creates a Kind cluster with local registry for development.
 Installs Knative Serving v1.20.0 with Kourier ingress.
 
 #### `dev/deploy-infrastructure.sh`
-Deploys Redis, MinIO, Kafka (optional) infrastructure services.
+Deploys Redis, RustFS, Kafka (optional) infrastructure services.
 
 #### `dev/deploy-observability.sh`
 Deploys Jaeger, Prometheus, and OpenTelemetry collector.
@@ -140,7 +140,7 @@ Port forwards all services for local access:
 - Application: http://localhost:8080
 - Jaeger: http://localhost:16686
 - Prometheus: http://localhost:9090
-- MinIO Console: http://localhost:9001
+- RustFS Console: http://localhost:9001
 
 ### Validation Scripts
 

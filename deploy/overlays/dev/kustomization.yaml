@@ -55,15 +55,15 @@ patches:
             value: "redis://redis.redis.svc.cluster.local:6379"
           {% if feature_s3 %}
           - name: APP__S3__ENDPOINT
-            value: "http://minio.minio.svc.cluster.local:9000"
+            value: "http://rustfs.rustfs.svc.cluster.local:9000"
           - name: APP__S3__BUCKET
             value: "data"
           - name: APP__S3__REGION
             value: "us-east-1"
           - name: AWS_ACCESS_KEY_ID
-            value: "minioadmin"
+            value: "rustfsadmin"
           - name: AWS_SECRET_ACCESS_KEY
-            value: "minioadmin"
+            value: "rustfsadmin"
           {% endif %}
           - name: APP__TELEMETRY__OTLP_ENDPOINT
             value: "http://otel-collector.observability.svc.cluster.local:4317"
