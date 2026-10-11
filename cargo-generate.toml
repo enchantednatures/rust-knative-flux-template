@@ -47,7 +47,7 @@ project_author = { prompt = "Project authors", type = "string", default = "Your 
 
 # Feature toggles (individual booleans — cargo-generate v0.23.x cannot evaluate
 # array variables in conditional expressions due to a bug in the Rhai on_var callback)
-feature_s3 = { prompt = "Enable S3/MinIO object storage?", type = "bool", default = false }
+feature_s3 = { prompt = "Enable S3-compatible object storage (RustFS)?", type = "bool", default = false }
 feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }

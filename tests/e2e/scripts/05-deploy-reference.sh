@@ -76,8 +76,8 @@ if [ "$if feature_s3" = "true" ]; then
   kubectl create secret generic rust-service-secrets \
     -n test-app \
     --from-literal=redis-url=redis://redis.services.svc.cluster.local:6379 \
-    --from-literal=aws-access-key-id=minioadmin \
-    --from-literal=aws-secret-access-key=minioadmin \
+    --from-literal=aws-access-key-id=rustfsadmin \
+    --from-literal=aws-secret-access-key=rustfsadmin \
     --dry-run=client -o yaml | kubectl apply -f -
 else
   kubectl create secret generic rust-service-secrets \
@@ -107,7 +107,7 @@ kustomize edit set namespace test-app
 
 # Build the kustomization, override service endpoints for E2E environment, and apply
 kubectl kustomize "${REFERENCE_DIR}/deploy/overlays/dev" | \
-  sed 's|http://minio:9000|http://minio.services.svc.cluster.local:9000|g' | \
+  sed 's|http://rustfs:9000|http://rustfs.services.svc.cluster.local:9000|g' | \
   kubectl apply -f -
 
 # Restore original kustomization.yaml

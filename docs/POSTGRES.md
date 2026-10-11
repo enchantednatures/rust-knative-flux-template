@@ -18,7 +18,7 @@ Complete guide for deploying, managing, and troubleshooting CloudNativePG Postgr
 ### 1. Deploy PostgreSQL Cluster
 
 ```bash
-# Deploy with dev configuration (1 instance, MinIO backups)
+# Deploy with dev configuration (1 instance, RustFS backups)
 make dev-up
 
 # Or manually
@@ -78,7 +78,7 @@ kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 
 | Environment | Cluster Size | Replication | Retention | Storage | Backups |
 |------------|-------------|-------------|-----------|---------|---------|
-| **dev** | 1 instance | async | 7 days | 20Gi | MinIO (gzip) |
+| **dev** | 1 instance | async | 7 days | 20Gi | RustFS (gzip) |
 | **staging** | 2 instances (patched via JSON6902) | async | 14 days | 20Gi | S3 (gzip) |
 | **production** | 3 instances | async | 30 days | 20Gi | S3 (gzip) |
 
@@ -95,7 +95,7 @@ Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env 
 
 2. **Prepare environment overlay**:
    ```bash
-   # Dev (already includes MinIO)
+   # Dev (already includes RustFS)
    kubectl apply -k deploy/overlays/dev/
    
    # Staging
@@ -387,7 +387,7 @@ watch -n 5 'kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "S
 kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | grep -i "backup\|error"
 
 # Check object storage connectivity
-# For MinIO:
+# For RustFS:
 kubectl exec {{ project_name }}-postgres-1 -- s3cmd ls s3://postgres-backups/
 
 # Check credentials secret
@@ -443,7 +443,7 @@ pooler:
 
 ### WAL Archiving and Streaming
 
-WAL archiving to S3/MinIO is configured via:
+WAL archiving to S3/RustFS is configured via:
 
 ```yaml
 plugins:
@@ -581,7 +581,7 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 
 **Known limitations**:
 - Repository issue #136: the empty-string `services.""` HelmRelease patch is rejected by kustomize >= 5.4 — overlay reconciliation is blocked until that patch format is fixed (pre-existing, unrelated to postgres resources).
-- Dev MinIO bucket `<project>-postgres-backups` is created by the dev MinIO init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
+- Dev RustFS bucket `<project>-postgres-backups` is created by the dev RustFS init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
 - PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
 
 ## PgBouncer Pooler

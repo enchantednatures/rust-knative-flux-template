@@ -2,37 +2,33 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: minio
+  name: rustfs
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: minio
-  namespace: minio
+  name: rustfs
+  namespace: rustfs
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: minio
+      app: rustfs
   template:
     metadata:
       labels:
-        app: minio
+        app: rustfs
     spec:
       containers:
-      - name: minio
-        image: minio/minio:latest
-        command:
-          - minio
-          - server
+      - name: rustfs
+        image: rustfs/rustfs:1.0.1
+        args:
           - /data
-          - --console-address
-          - ":9001"
         env:
-          - name: MINIO_ROOT_USER
-            value: "minioadmin"
-          - name: MINIO_ROOT_PASSWORD
-            value: "minioadmin"
+          - name: RUSTFS_ACCESS_KEY
+            value: "rustfsadmin"
+          - name: RUSTFS_SECRET_KEY
+            value: "rustfsadmin"
         ports:
           - name: api
             containerPort: 9000
@@ -47,13 +43,13 @@ spec:
             cpu: "500m"
         livenessProbe:
           httpGet:
-            path: /minio/health/live
+            path: /health/live
             port: 9000
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /minio/health/ready
+            path: /health/ready
             port: 9000
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -61,11 +57,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio
-  namespace: minio
+  name: rustfs
+  namespace: rustfs
 spec:
   selector:
-    app: minio
+    app: rustfs
   ports:
     - name: api
       port: 9000
@@ -78,41 +74,38 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: minio-init
-  namespace: minio
+  name: rustfs-init
+  namespace: rustfs
 spec:
   ttlSecondsAfterFinished: 60
   template:
     spec:
       restartPolicy: Never
       containers:
-      - name: mc
-        image: minio/mc:latest
-        env:
-          - name: MC_HOST_local
-            value: "http://minioadmin:minioadmin@minio.minio.svc.cluster.local:9000"
+      - name: rc
+        image: rustfs/rc:v0.1.36
         command:
           - /bin/sh
           - -c
           - |
-            until mc alias ls local; do
-              echo "Waiting for MinIO..."
+            until rc alias set local http://rustfs.rustfs.svc.cluster.local:9000 rustfsadmin rustfsadmin >/dev/null 2>&1; do
+              echo "Waiting for RustFS..."
               sleep 2
             done
             {%- if feature_s3 %}
-            mc mb local/data --ignore-existing || true
+            rc bucket create -p local/data
             {%- endif %}
             {%- if feature_postgres %}
             # Backup destination bucket for the CNPG ObjectStore: barman does
             # not create buckets, so the dev init job must create it upfront.
-            mc mb "local/{{ project_name | replace: "_", "-" }}-postgres-backups" --ignore-existing || true
+            rc bucket create -p "local/{{ project_name | replace: "_", "-" }}-postgres-backups"
             {%- endif %}
             echo "Bucket creation completed"
 {%- if feature_postgres %}
 ---
 # Dev-only credentials for the CNPG barman-cloud ObjectStore. The
 # ObjectStore CR references this secret by name (keys ACCESS_KEY_ID /
-# ACCESS_SECRET_KEY). Rotate along with the minio creds when hardening dev.
+# ACCESS_SECRET_KEY). Rotate along with the rustfs creds when hardening dev.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -120,7 +113,7 @@ metadata:
   namespace: default
 type: Opaque
 stringData:
-  ACCESS_KEY_ID: "minioadmin"
-  ACCESS_SECRET_KEY: "minioadmin"
+  ACCESS_KEY_ID: "rustfsadmin"
+  ACCESS_SECRET_KEY: "rustfsadmin"
 {%- endif %}
 {% endif %}
