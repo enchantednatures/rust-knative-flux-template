@@ -15,7 +15,7 @@ log_level = "info"
 
 {% if feature_s3 %}
 [s3]
-endpoint = "http://localhost:9000"  # MinIO endpoint
+endpoint = "http://localhost:9000"  # RustFS/S3-compatible endpoint
 bucket = "data"
 region = "us-east-1"
 {% endif %}

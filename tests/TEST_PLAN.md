@@ -17,7 +17,7 @@ This document describes the end-to-end testing approach for the cargo-generate t
 The CI/CD pipeline generates test projects on-the-fly using `cargo generate` for two scenarios:
 
 - **no-s3** - Generated with `if feature_s3=false` (basic service only)
-- **with-s3** - Generated with `if feature_s3=true` (includes S3/MinIO support)
+- **with-s3** - Generated with `if feature_s3=true` (includes S3/RustFS support)
 
 This approach ensures:
 - Tests always validate the latest template code
@@ -45,7 +45,7 @@ This approach ensures:
     ├─ Create Kind cluster (fast K8s in Docker)
     ├─ Install Knative Serving (minimal install)
     ├─ Install Flux CD (source + kustomize controllers)
-    └─ Deploy infrastructure (Redis + optional MinIO)
+    └─ Deploy infrastructure (Redis + optional RustFS)
 
 5. Deployment via Flux
     ├─ Create OCIRepository resource
@@ -84,7 +84,7 @@ Each E2E test run validates multiple checkpoints:
 1. **Template Generation**: Validates `cargo generate` produces expected structure
 2. **Image Build**: Validates Docker image builds successfully and is pushed to GHCR
 3. **OCI Artifact**: Validates manifests can be pushed and pulled as OCI artifacts
-4. **Cluster Dependencies**: Validates Flux, Knative, Redis, and MinIO are healthy
+4. **Cluster Dependencies**: Validates Flux, Knative, Redis, and RustFS are healthy
 5. **Application Deployment**: Validates the application is deployed via Flux
 6. **E2E Tests**: Validates all application endpoints work correctly
 
@@ -101,7 +101,7 @@ Tests the basic service functionality:
 
 Tests full service functionality including S3 storage:
 - All no-s3 tests
-- S3/MinIO storage operations (write and read)
+- S3/RustFS storage operations (write and read)
 
 ## Cluster Resources
 
@@ -113,7 +113,7 @@ The E2E tests deploy the following infrastructure:
 - **Redis**: Used for session/cache storage
 
 ### Optional (with-s3 only)
-- **MinIO**: S3-compatible object storage for testing storage operations
+- **RustFS**: S3-compatible object storage for testing storage operations
 
 ## Running Tests Locally
 

@@ -20,7 +20,7 @@
 - **Alerting**: Examples for Slack, PagerDuty
 
 ### Storage
-- **S3-Compatible** (Optional, OpenDAL): MinIO, AWS S3, GCS
+- **S3-Compatible** (Optional, OpenDAL): RustFS, AWS S3, GCS
 - **Redis** (Required): Caching, sessions, temporary data
 
 ### Database
@@ -63,7 +63,7 @@
 
 ### Development Environment
 ```bash
-make dev-up      # Start Kind + Knative + Redis + MinIO + Kafka + PostgreSQL
+make dev-up      # Start Kind + Knative + Redis + RustFS + Kafka + PostgreSQL
 make dev-logs    # Follow service logs
 cargo test       # Run all tests
 ```

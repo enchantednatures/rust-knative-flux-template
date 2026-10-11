@@ -144,9 +144,9 @@ BACKUP_PATH=$(kubectl get backup "$BACKUP_NAME" -n default -o jsonpath='{.status
 echo "Backup Size: $BACKUP_SIZE"
 echo "Backup Path: $BACKUP_PATH"
 
-# Verify backup exists in MinIO
-echo "Checking MinIO for backup files..."
-# This would require MinIO CLI or AWS CLI access from inside/outside the cluster
+# Verify backup exists in RustFS
+echo "Checking RustFS for backup files..."
+# This would require RustFS CLI or AWS CLI access from inside/outside the cluster
 # For now, we'll verify through the backup status
 if [ "$BACKUP_SIZE" != "unknown" ] && [ "$BACKUP_SIZE" != "0B" ]; then
     echo "✓ Backup verified in object storage"

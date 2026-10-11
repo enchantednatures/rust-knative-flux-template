@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3Config {
-    /// S3-compatible endpoint (required for MinIO)
+    /// S3-compatible endpoint (required for RustFS/S3-compatible storage)
     pub endpoint: String,
     /// Bucket name
     pub bucket: String,
-    /// AWS region (use "us-east-1" for MinIO)
+    /// AWS region (use "us-east-1" for RustFS)
     pub region: String,
     // Credentials via AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
 }

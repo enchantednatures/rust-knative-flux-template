@@ -77,27 +77,32 @@ jobs:
             {% raw %}${{ runner.os }}-cargo-{% endraw %}
 
       {% if feature_s3 %}
-      - name: Start MinIO
+      - name: Cache RustFS client
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/rc
+          key: rustfs-cli-0.1.36-{% raw %}${{ runner.os }}{% endraw %}
+
+      - name: Start RustFS
         run: |
-          # Upstream MinIO community images are no longer anonymously
-          # pullable; use the maintained community fork (pgsty/silo) and
-          # start it imperatively — GH service containers cannot pass the
-          # "server /data" command the image needs.
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            pgsty/silo:RELEASE.2026-09-16T00-00-00Z \
-            server /data --console-address :9001
-          for i in $(seq 1 30); do
-            curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1 && break
+          # S3-compatible object storage for the storage tests. Started
+          # imperatively because GH service containers cannot pass the
+          # "server /data" style command the image needs.
+          docker run -d --name rustfs -p 9000:9000 \
+            -e RUSTFS_ACCESS_KEY=rustfsadmin \
+            -e RUSTFS_SECRET_KEY=rustfsadmin \
+            rustfs/rustfs:1.0.1 /data
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:9000/health >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://localhost:9000/minio/health/live >/dev/null
+          curl -fsS http://localhost:9000/health >/dev/null
 
-      - name: Initialize MinIO bucket
+      - name: Initialize RustFS bucket
         run: |
-          docker exec minio /usr/bin/mc alias set local http://localhost:9000 minioadmin minioadmin
-          docker exec minio /usr/bin/mc mb local/data --ignore-existing
+          command -v rc >/dev/null 2>&1 || cargo install rustfs-cli --version 0.1.36
+          rc alias set local http://localhost:9000 rustfsadmin rustfsadmin
+          rc bucket create -p local/data
       {% endif %}
       - name: Run tests
         run: cargo test --all-features
@@ -107,8 +112,8 @@ jobs:
           APP__S3__ENDPOINT: http://localhost:9000
           APP__S3__BUCKET: data
           APP__S3__REGION: us-east-1
-          AWS_ACCESS_KEY_ID: minioadmin
-          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_ACCESS_KEY_ID: rustfsadmin
+          AWS_SECRET_ACCESS_KEY: rustfsadmin
           {% endif %}
 
   {% if feature_flagger %}

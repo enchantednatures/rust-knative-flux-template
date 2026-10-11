@@ -1,7 +1,7 @@
 {% if feature_s3 %}
-# S3/MinIO Integration Guide
+# S3/RustFS Integration Guide
 
-This template includes optional S3-compatible storage support via Apache OpenDAL, preconfigured with MinIO for local development.
+This template includes optional S3-compatible storage support via Apache OpenDAL, preconfigured with RustFS for local development.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ This template includes optional S3-compatible storage support via Apache OpenDAL
          │ (opendal::Operator)
          ▼
 ┌──────────────────┐         ┌──────────────────┐
-│   OpenDAL        │────────▶│  MinIO (local)   │
+│   OpenDAL        │────────▶│  RustFS (local)  │
 │   S3 Backend     │         │  or AWS S3       │
 └──────────────────┘         └──────────────────┘
 ```
@@ -23,31 +23,31 @@ The `AppState` contains a pre-configured `opendal::Operator` that handles all ob
 
 ## Configuration
 
-### Local Development (MinIO)
+### Local Development (RustFS)
 
-MinIO is provided in `docker-compose.yaml` for development:
+RustFS is provided in `docker-compose.yaml` for development:
 
 ```yaml
 services:
-  minio:
-    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
-    command: ["server", "/data", "--console-address", ":9001"]
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    command: ["/data"]
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web Console
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
 ```
 
 Start it with:
 ```bash
-docker-compose up -d minio minio-init
+docker-compose up -d rustfs rustfs-init
 ```
 
 This automatically:
-1. Starts MinIO on http://localhost:9000
-2. Creates the `data` bucket via the `minio-init` service
+1. Starts RustFS on http://localhost:9000
+2. Creates the `data` bucket via the `rustfs-init` service (using the `rc` CLI)
 3. Makes web console available at http://localhost:9001
 
 ### Configuration Priority
@@ -166,8 +166,8 @@ async fn delete_handler(
 Integration tests are provided in `tests/storage_test.rs`:
 
 ```bash
-# Start MinIO
-docker-compose up -d minio minio-init
+# Start RustFS
+docker-compose up -d rustfs rustfs-init
 
 # Run tests
 cargo test --test storage_test -- --ignored --nocapture
@@ -192,8 +192,8 @@ cd terraform
 # Create .tfvars
 cat > terraform.tfvars <<EOF
 minio_endpoint   = "http://localhost:9000"
-minio_access_key = "minioadmin"
-minio_secret_key = "minioadmin"
+minio_access_key = "rustfsadmin"
+minio_secret_key = "rustfsadmin"
 minio_use_ssl    = false
 EOF
 
@@ -207,14 +207,14 @@ The module creates:
 - `data-staging` bucket (with versioning)
 - `data-prod` bucket (with versioning)
 
-### Production MinIO (Kubernetes)
+### Production RustFS (Kubernetes)
 
-For production MinIO deployed on Kubernetes:
+For production RustFS deployed on Kubernetes:
 
 ```bash
 # Update tfvars for production
 cat > terraform.tfvars <<EOF
-minio_endpoint   = "https://minio.production.svc.cluster.local:9000"
+minio_endpoint   = "https://rustfs.production.svc.cluster.local:9000"
 minio_access_key = "PRODUCTION_KEY"
 minio_secret_key = "PRODUCTION_SECRET"
 minio_use_ssl    = true
@@ -225,7 +225,7 @@ terraform apply
 
 ### AWS S3
 
-To use AWS S3 instead of MinIO:
+To use AWS S3 instead of RustFS:
 
 ```toml
 # config/production.toml
@@ -281,33 +281,53 @@ spec:
         key: /prod/{{ project_name }}/aws-secret-access-key
 ```
 
-### MinIO in Kubernetes
+### RustFS in Kubernetes
 
-Deploy MinIO operator for production:
+Deploy RustFS on Kubernetes for production:
 
 ```bash
-# Install MinIO Operator
-helm repo add minio https://charts.min.io
-helm install minio-operator minio/minio-operator -n minio-operator --create-namespace
-
-# Create MinIO tenant
 kubectl apply -f - <<EOF
-apiVersion: minio.min.io/v2
-kind: Tenant
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: minio
-  namespace: minio
+  name: rustfs
+  namespace: rustfs
 spec:
-  image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
-  imagePullPolicy: IfNotPresent
-  credsSecret:
-    name: minio-secret
-  pools:
-    - servers: 4
-      volumesPerServer: 2
-      size: 10Gi
-  console:
-    image: minio/console:latest
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      containers:
+        - name: rustfs
+          image: rustfs/rustfs:1.0.1
+          args: ["/data"]
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-secret
+                  key: access-key
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-secret
+                  key: secret-key
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
 EOF
 ```
 
@@ -320,7 +340,7 @@ Environment-specific S3 configuration is managed via Kustomize ConfigMaps:
 configMapGenerator:
   - name: s3-config
     literals:
-      - S3_ENDPOINT=http://minio:9000
+      - S3_ENDPOINT=http://rustfs:9000
       - S3_BUCKET=data
       - S3_REGION=us-east-1
 ```
@@ -329,12 +349,12 @@ configMapGenerator:
 
 ### Connection refused error
 
-**Problem**: `Connection refused` when connecting to MinIO
+**Problem**: `Connection refused` when connecting to RustFS
 
 **Solution**:
-1. Verify MinIO is running: `docker ps | grep minio`
-2. Check endpoint in config: should be `http://minio:9000` (Docker Compose) or `http://localhost:9000` (local)
-3. Wait for MinIO to fully start: `docker logs minio | grep "Status:"`
+1. Verify RustFS is running: `docker ps | grep rustfs`
+2. Check endpoint in config: should be `http://rustfs:9000` (Docker Compose) or `http://localhost:9000` (local)
+3. Wait for RustFS to fully start: `docker logs rustfs`
 
 ### Invalid credentials
 
@@ -346,18 +366,18 @@ configMapGenerator:
    echo $AWS_ACCESS_KEY_ID
    echo $AWS_SECRET_ACCESS_KEY
    ```
-2. Default credentials for MinIO: `minioadmin / minioadmin`
-3. Check MinIO console at http://localhost:9001
+2. Default credentials for RustFS: `rustfsadmin / rustfsadmin`
+3. Check RustFS console at http://localhost:9001
 
 ### Bucket not found
 
 **Problem**: `NoSuchBucket` errors
 
 **Solution**:
-1. Verify bucket was created: `mc ls local/`
+1. Verify bucket was created: `rc ls local/`
 2. Manually create bucket:
    ```bash
-   docker exec minio-init mc mb local/data --ignore-existing
+   docker exec rustfs-init rc bucket create -p local/data
    ```
 3. Or use Terraform to create buckets
 
@@ -366,17 +386,17 @@ configMapGenerator:
 **Problem**: Integration tests hang or timeout
 
 **Solution**:
-1. Ensure MinIO is healthy: `docker ps`
-2. Check MinIO logs: `docker logs minio`
+1. Ensure RustFS is healthy: `docker ps`
+2. Check RustFS logs: `docker logs rustfs`
 3. Increase test timeout in CI: `cargo test -- --test-threads=1`
 
 ## Monitoring
 
-### MinIO Web Console
+### RustFS Web Console
 
-Access MinIO UI at http://localhost:9001:
-- Username: `minioadmin`
-- Password: `minioadmin`
+Access RustFS UI at http://localhost:9001:
+- Username: `rustfsadmin`
+- Password: `rustfsadmin`
 
 View bucket usage, object count, and metrics.
 
@@ -403,10 +423,10 @@ Traces appear in Jaeger with operation details.
 3. **Enable versioning**: For production buckets (automatic via Terraform)
 4. **Use environment-specific buckets**: `data-dev`, `data-staging`, `data-prod`
 5. **Monitor usage**: Set up bucket lifecycle policies for old objects
-6. **Test locally**: Always test with MinIO locally before production
+6. **Test locally**: Always test with RustFS locally before production
 
 {% else %}
-# S3/MinIO Integration (Not Enabled)
+# S3/RustFS Integration (Not Enabled)
 
 This template was generated without S3 storage support. To add it later:
 

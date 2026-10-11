@@ -46,10 +46,10 @@ echo ""
 echo -e "${YELLOW}→${NC} Creating infrastructure namespaces..."
 kubectl create namespace redis 2>/dev/null || true
 kubectl create namespace kafka 2>/dev/null || true
-kubectl create namespace minio 2>/dev/null || true
+kubectl create namespace rustfs 2>/dev/null || true
 
 # Deploy infrastructure
-echo -e "${YELLOW}→${NC} Deploying Redis, Kafka, and MinIO..."
+echo -e "${YELLOW}→${NC} Deploying Redis, Kafka, and RustFS..."
 kubectl apply -k deploy/dev/infrastructure || {
   echo -e "${RED}✗ Error: Failed to deploy infrastructure${NC}"
   exit 1
@@ -73,30 +73,30 @@ if ! wait_for_pods redis app=redis 180; then
   exit 1
 fi
 
-# Check for MinIO in the manifest
-if kubectl get statefulset minio -n minio 2>/dev/null || kubectl get deployment minio -n minio 2>/dev/null; then
-  echo -e "${YELLOW}→${NC} Waiting for MinIO to be ready..."
-  if ! wait_for_pods minio app=minio 300; then
-    echo -e "${RED}✗ Error: MinIO failed to become ready${NC}"
+# Check for RustFS in the manifest
+if kubectl get statefulset rustfs -n rustfs 2>/dev/null || kubectl get deployment rustfs -n rustfs 2>/dev/null; then
+  echo -e "${YELLOW}→${NC} Waiting for RustFS to be ready..."
+  if ! wait_for_pods rustfs app=rustfs 300; then
+    echo -e "${RED}✗ Error: RustFS failed to become ready${NC}"
     echo ""
     echo "=== Pod Status ==="
-    kubectl get pods -n minio -l app=minio
+    kubectl get pods -n rustfs -l app=rustfs
     echo ""
     echo "=== Pod Logs ==="
-    kubectl logs -l app=minio -n minio --tail=100 --all-containers=true 2>&1 || true
+    kubectl logs -l app=rustfs -n rustfs --tail=100 --all-containers=true 2>&1 || true
     echo ""
     echo "=== Pod Descriptions ==="
-    kubectl describe pods -l app=minio -n minio | head -100
+    kubectl describe pods -l app=rustfs -n rustfs | head -100
     echo ""
     echo "=== Events ==="
-    kubectl get events -n minio --sort-by='.lastTimestamp' | tail -20
+    kubectl get events -n rustfs --sort-by='.lastTimestamp' | tail -20
     exit 1
   fi
   
-  echo -e "${YELLOW}→${NC} Waiting for MinIO bucket initialization..."
-  if ! kubectl wait --for=condition=complete job/minio-init -n minio --timeout=2m 2>/dev/null; then
-    echo -e "${YELLOW}⚠${NC} MinIO bucket creation may be pending, checking job..."
-    kubectl logs -n minio job/minio-init 2>/dev/null || true
+  echo -e "${YELLOW}→${NC} Waiting for RustFS bucket initialization..."
+  if ! kubectl wait --for=condition=complete job/rustfs-init -n rustfs --timeout=2m 2>/dev/null; then
+    echo -e "${YELLOW}⚠${NC} RustFS bucket creation may be pending, checking job..."
+    kubectl logs -n rustfs job/rustfs-init 2>/dev/null || true
   fi
 fi
 
@@ -138,6 +138,6 @@ echo ""
 echo -e "${YELLOW}→${NC} Kafka:"
 kubectl get pods -n kafka 2>/dev/null || echo "  (Kafka not deployed)"
 echo ""
-echo -e "${YELLOW}→${NC} MinIO:"
-kubectl get pods -n minio 2>/dev/null || echo "  (MinIO not deployed)"
+echo -e "${YELLOW}→${NC} RustFS:"
+kubectl get pods -n rustfs 2>/dev/null || echo "  (RustFS not deployed)"
 echo ""
