@@ -59,7 +59,7 @@ grep -r "redis://" config/
 
 {% if feature_s3 %}
 
-### MinIO Connection Failed
+### RustFS Connection Failed
 
 **Symptoms**:
 ```
@@ -69,42 +69,42 @@ Error: S3 operation failed: Connection refused
 
 **Solutions**:
 
-1. Check if MinIO is running:
+1. Check if RustFS is running:
 ```bash
 make dev-status
-# Should show minio pod in "services" namespace
+# Should show rustfs pod in the rustfs namespace
 ```
 
-2. Restart MinIO (part of make dev-up):
+2. Restart RustFS (part of make dev-up):
 ```bash
 make dev-down
 make dev-up
 ```
 
-3. Check MinIO logs:
+3. Check RustFS logs:
 ```bash
 export KUBECONFIG=.kubeconfig-dev
-kubectl logs -n services -l app=minio
+kubectl logs -n rustfs -l app=rustfs
 ```
 
-4. Test MinIO health via port-forward (from another terminal):
+4. Test RustFS health via port-forward (from another terminal):
 ```bash
 make dev-forward
-curl http://localhost:9000/minio/health/live
+curl http://localhost:9000/health/live
 # Expected output: OK
 ```
 
-5. Verify MinIO credentials:
+5. Verify RustFS credentials:
 ```bash
 echo $AWS_ACCESS_KEY_ID
 echo $AWS_SECRET_ACCESS_KEY
-# Expected: minioadmin / minioadmin (default)
+# Expected: rustfsadmin / rustfsadmin (default)
 ```
 
-6. Check MinIO console:
+6. Check RustFS console:
 - Start port forwarding: `make dev-forward`
 - Navigate to: http://localhost:9001
-- Login with: minioadmin / minioadmin
+- Login with: rustfsadmin / rustfsadmin
 - Verify bucket exists
 
 ### S3 Bucket Not Found
@@ -117,17 +117,17 @@ Error: S3 operation failed: Bucket not found
 
 **Solutions**:
 
-1. Create bucket in MinIO:
+1. Create bucket in RustFS:
 ```bash
-docker exec -it minio bash
-mc alias set local http://localhost:9000 minioadmin minioadmin
-mc mb local/data --ignore-existing
+docker exec -it rustfs bash
+rc alias set local http://localhost:9000 rustfsadmin rustfsadmin
+rc bucket create -p local/data
 exit
 ```
 
 2. Verify bucket exists:
 ```bash
-docker exec -it minio mc ls local/
+docker exec -it rustfs rc ls local/
 ```
 
 3. Check bucket name in config:
