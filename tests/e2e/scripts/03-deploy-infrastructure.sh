@@ -75,32 +75,32 @@ if ! kubectl run redis-verify --rm -i --restart=Never --image=redis:7-alpine -n 
 fi
 
 if [ "$if feature_s3" = "true" ]; then
-  echo "Deploying MinIO..."
+  echo "Deploying RustFS..."
   cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: minio
+  name: rustfs
   namespace: services
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: minio
+      app: rustfs
   template:
     metadata:
       labels:
-        app: minio
+        app: rustfs
     spec:
       containers:
-      - name: minio
-        image: minio/minio:latest
-        args: ["server", "/data", "--console-address", ":9001"]
+      - name: rustfs
+        image: rustfs/rustfs:1.0.1
+        args: ["/data"]
         env:
-        - name: MINIO_ROOT_USER
-          value: "minioadmin"
-        - name: MINIO_ROOT_PASSWORD
-          value: "minioadmin"
+        - name: RUSTFS_ACCESS_KEY
+          value: "rustfsadmin"
+        - name: RUSTFS_SECRET_KEY
+          value: "rustfsadmin"
         ports:
         - containerPort: 9000
           name: api
@@ -110,11 +110,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio
+  name: rustfs
   namespace: services
 spec:
   selector:
-    app: minio
+    app: rustfs
   ports:
   - name: api
     port: 9000
@@ -124,19 +124,19 @@ spec:
     targetPort: 9001
 EOF
 
-  echo "Waiting for MinIO..."
-  kubectl wait --for=condition=Ready pod -l app=minio -n services --timeout=3m
+  echo "Waiting for RustFS..."
+  kubectl wait --for=condition=Ready pod -l app=rustfs -n services --timeout=3m
   
-  echo "Creating MinIO bucket..."
-  # Give MinIO a moment to fully start
+  echo "Creating RustFS bucket..."
+  # Give RustFS a moment to fully start
   sleep 5
   
   # Create bucket using a Job instead of run --rm to avoid TTY issues
-  cat <<'EOFMINIO' | kubectl apply -f -
+  cat <<'EOFRUSTFS' | kubectl apply -f -
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: minio-init
+  name: rustfs-init
   namespace: services
 spec:
   ttlSecondsAfterFinished: 60
@@ -144,24 +144,24 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-      - name: mc
-        image: minio/mc:latest
+      - name: rc
+        image: rustfs/rc:v0.1.36
         command:
         - /bin/sh
         - -c
         - |
-          mc alias set local http://minio.services.svc.cluster.local:9000 minioadmin minioadmin
-          mc mb local/data --ignore-existing || true
+          until rc alias set local http://rustfs.services.svc.cluster.local:9000 rustfsadmin rustfsadmin; do sleep 2; done
+          rc bucket create -p local/data
           echo "Bucket creation completed"
-EOFMINIO
+EOFRUSTFS
 
-  echo "Waiting for MinIO bucket creation..."
-  kubectl wait --for=condition=complete job/minio-init -n services --timeout=2m || echo "Warning: Bucket creation may have failed"
-  kubectl logs -n services job/minio-init || true
+  echo "Waiting for RustFS bucket creation..."
+  kubectl wait --for=condition=complete job/rustfs-init -n services --timeout=2m || echo "Warning: Bucket creation may have failed"
+  kubectl logs -n services job/rustfs-init || true
 
-  echo "✓ MinIO deployed and initialized"
+  echo "✓ RustFS deployed and initialized"
 else
-  echo "Skipping MinIO (S3 not enabled)"
+  echo "Skipping RustFS (S3 not enabled)"
 fi
 
 echo "✓ Infrastructure deployed"

@@ -186,13 +186,13 @@ cargo update
 **Old** (`config/development.toml`):
 ```toml
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://rustfs:9000"
 ```
 
 **New**:
 ```toml
 {% if feature_s3 %}[s3]
-endpoint = "http://minio:9000"
+endpoint = "http://rustfs:9000"
 region = "us-east-1"  # New required field
 {% endif %}
 ```

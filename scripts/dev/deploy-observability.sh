@@ -21,6 +21,24 @@ if [[ -z "${KUBECONFIG:-}" ]]; then
   export KUBECONFIG="$KUBECONFIG_PATH"
 fi
 
+# kubectl wait errors immediately ("no matching resources found") when a label
+# selector matches zero pods, but a freshly applied Deployment may need a
+# moment to create its first pod. Wait for a matching pod to exist before
+# waiting on its Ready condition.
+wait_for_pods() {
+  local namespace="$1" selector="$2" timeout="${3:-300}"
+  local waited=0
+  until [ -n "$(kubectl get pod -l "$selector" -n "$namespace" --no-headers 2>/dev/null)" ]; do
+    if [ "$waited" -ge 120 ]; then
+      echo "✗ timed out waiting for a pod matching '${selector}' in ${namespace}" >&2
+      return 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  kubectl wait --for=condition=Ready pod -l "$selector" -n "$namespace" --timeout="${timeout}s"
+}
+
 echo "Deploying observability stack (required)..."
 echo ""
 
@@ -37,7 +55,7 @@ kubectl apply -k deploy/dev/observability || {
 
 # Validate Jaeger
 echo -e "${YELLOW}→${NC} Waiting for Jaeger to be ready..."
-if ! kubectl wait --for=condition=Ready pod -l app=jaeger -n observability --timeout=5m; then
+if ! wait_for_pods observability app=jaeger 300; then
   echo -e "${RED}✗ Error: Jaeger failed to become ready${NC}"
   echo ""
   echo "=== Pod Status ==="
@@ -56,7 +74,7 @@ fi
 
 # Validate OTel Collector - more lenient timeout
 echo -e "${YELLOW}→${NC} Waiting for OpenTelemetry Collector to be ready..."
-if ! kubectl wait --for=condition=Ready pod -l app=otel-collector -n observability --timeout=10m; then
+if ! wait_for_pods observability app=otel-collector 600; then
   echo -e "${RED}⚠ Warning: OTel Collector did not reach Ready state, but checking if it's running...${NC}"
   
   # Check if pod is actually running despite not being "Ready"
@@ -82,7 +100,7 @@ fi
 
 # Validate Prometheus
 echo -e "${YELLOW}→${NC} Waiting for Prometheus to be ready..."
-if ! kubectl wait --for=condition=Ready pod -l app=prometheus -n observability --timeout=5m; then
+if ! wait_for_pods observability app=prometheus 300; then
   echo -e "${RED}✗ Error: Prometheus failed to become ready${NC}"
   echo ""
   echo "=== Pod Status ==="

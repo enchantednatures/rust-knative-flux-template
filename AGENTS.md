@@ -676,7 +676,7 @@ deploy/
 │       └── metric-templates.yaml
 ├── dev/                         # Local dev infrastructure (installed imperatively)
 │   ├── kind-config.yaml         # Kind cluster + local registry config
-│   ├── infrastructure/          # redis, minio, kafka (Knative eventing sources)
+│   ├── infrastructure/          # redis, rustfs, kafka (Knative eventing sources)
 │   └── observability/           # jaeger, otel-collector, prometheus
 ├── flux/                        # FluxCD Kustomizations (app + infra lifecycle)
 │   ├── git-repository.yaml      # GitRepository source
@@ -735,7 +735,7 @@ components:
 
 **Feature-flag wiring** happens in `deploy/flux/config/{dev,staging,prod}/kustomization.yaml`, which aggregates the app Kustomization (`deploy/flux/kustomization-{env}.yaml`) with the optional operator Kustomizations (flagger, cnpg-operator, gha-runner, postgres) and image-update resources, each gated by the corresponding feature flag.
 
-**Local infrastructure** (Kind cluster, local registry, redis, minio, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make dev-up`, etc.).
+**Local infrastructure** (Kind cluster, local registry, redis, rustfs, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make dev-up`, etc.).
 
 ### CNPG Operator Installation
 
@@ -797,7 +797,7 @@ entirely absent when the prompt answers `false`.
 
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
-- PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (MinIO for dev, configurable for prod) (001-cloudnative-postgres-backups)
+- PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (RustFS for dev, configurable for prod) (001-cloudnative-postgres-backups)
 - Flagger >=1.41.0 (optional, `flagger` feature flag — 1.41 introduced the Knative provider), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
 - GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
 
@@ -989,6 +989,7 @@ deploy/
 ```
 
 ## Recent Changes
+- rustfs-dev-storage: Replaced the dev/CI MinIO deployment with RustFS (`rustfs/rustfs:1.0.1`) and the `mc` client with `rc` (`cargo install rustfs-cli`); dev namespace/service `rustfs`, credentials rustfsadmin/rustfsadmin, console :9001, endpoints updated in manifests, overlays, scripts and docs
 - pgbouncer-pooler: Added opt-in PgBouncer via a sibling Pooler component (`deploy/components/postgres-pooler`, `postgres_pooler` prompt, per-env instances 1/2/4); Cluster registers the pooler service name in `spec.certificates.serverAltDNSNames` so `verify-full` works through the reused `<cluster>-server` cert; app routes through it via `APP__POSTGRES__HOST` (postgres.host override)
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
 - shipped-postgres-runtime: sqlx 0.8.6 pool + embedded migrations run at startup (advisory locked); `PostgresConfig` (figment APP__POSTGRES__*), demo items upsert/get handlers, `AppError::Database`, DB SELECT 1 in `/health/ready` only, CA cert mounted at `/etc/secrets/pg-ca/ca.crt`, `APP__POSTGRES__URL` from the auto-generated `<cluster>-app` secret

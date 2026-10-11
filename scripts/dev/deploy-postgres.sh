@@ -4,7 +4,7 @@
 #
 # This script handles complete PostgreSQL cluster deployment including:
 # - CloudNativePG operator installation (if not present)
-# - MinIO deployment for object storage (development only)
+# - RustFS deployment for object storage (development only)
 # - PostgreSQL cluster creation
 # - Database initialization
 # - Backup configuration
