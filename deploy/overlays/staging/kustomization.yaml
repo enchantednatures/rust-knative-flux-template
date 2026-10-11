@@ -93,7 +93,7 @@ configMapGenerator:
   - name: s3-config
     behavior: create
     literals:
-      - S3_ENDPOINT=https://minio.staging.svc.cluster.local:9000
+      - S3_ENDPOINT=https://rustfs.staging.svc.cluster.local:9000
       - S3_BUCKET=data-staging
       - S3_REGION=us-east-1
  {% endif %}

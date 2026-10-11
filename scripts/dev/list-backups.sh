@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Script: List PostgreSQL backups from object storage
-# Purpose: Query MinIO/S3 and list available backups with sizes
+# Purpose: Query RustFS/S3 and list available backups with sizes
 # Usage: ./list-backups.sh [endpoint] [bucket] [access-key] [secret-key]
 
-ENDPOINT="${1:-minio.minio.svc.cluster.local:9000}"
+ENDPOINT="${1:-rustfs.rustfs.svc.cluster.local:9000}"
 BUCKET="${2:-postgres-backups}"
-ACCESS_KEY="${3:-minioadmin}"
-SECRET_KEY="${4:-minioadmin}"
+ACCESS_KEY="${3:-rustfsadmin}"
+SECRET_KEY="${4:-rustfsadmin}"
 
 echo "Listing backups from: $ENDPOINT/$BUCKET"
 echo ""
@@ -20,9 +20,9 @@ if ! command -v aws &> /dev/null; then
     exit 1
 fi
 
-# Configure AWS CLI for MinIO (if not AWS S3)
+# Configure AWS CLI for RustFS (if not AWS S3)
 if [[ "$ENDPOINT" != *"amazonaws.com"* ]]; then
-    echo "Configuring for MinIO endpoint: $ENDPOINT"
+    echo "Configuring for RustFS endpoint: $ENDPOINT"
     
     # List backups with size
     aws --endpoint-url="http://$ENDPOINT" \

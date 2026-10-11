@@ -22,7 +22,7 @@ Common questions about {{ project_name }}.
 - **FluxCD**: GitOps deployment
 - **OpenTelemetry**: Observability stack
 {% if feature_s3 %}
-- **S3/MinIO**: Optional object storage
+- **S3/RustFS**: Optional object storage
 {% endif %}
 
 It provides a complete starting point for building cloud-native services.
@@ -74,8 +74,8 @@ make dev-forward
 - **Knative Serving** - Serverless framework
 - **Redis** (port 6379) - Caching/sessions
 {% if feature_s3 %}
-- **MinIO** (port 9000) - S3-compatible storage
-- **MinIO Console** (port 9001) - Web UI
+- **RustFS** (port 9000) - S3-compatible storage
+- **RustFS Console** (port 9001) - Web UI
 {% endif %}
 - **OpenTelemetry Collector** (port 4317) - Telemetry collection
 - **Jaeger** (port 16686) - Distributed tracing UI
@@ -328,13 +328,13 @@ Common causes:
 ### Why is {% if feature_s3 %}S3{% else %}Redis{% endif %} connection failing?
 
 {% if feature_s3 %}
-**Check MinIO**:
+**Check RustFS**:
 ```bash
-# Is MinIO running?
-docker ps | grep minio
+# Is RustFS running?
+docker ps | grep rustfs
 
 # Test connectivity
-curl http://localhost:9000/minio/health/live
+curl http://localhost:9000/health/live
 
 # Check credentials
 echo $AWS_ACCESS_KEY_ID
@@ -343,7 +343,7 @@ echo $AWS_SECRET_ACCESS_KEY
 
 **Check bucket exists**:
 ```bash
-docker exec -it minio mc ls local/
+docker exec -it rustfs rc ls local/
 ```
 
 {% else %}

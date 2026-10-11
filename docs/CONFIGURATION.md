@@ -60,23 +60,23 @@ export APP__REDIS__POOL_SIZE=10
 
 {% if feature_s3 %}
 
-### S3/MinIO Configuration
+### S3/RustFS Configuration
 
 ```bash
-# S3 endpoint (for MinIO or S3-compatible service)
-# Local dev: http://minio:9000 (Docker Compose) or http://localhost:9000
+# S3 endpoint (for RustFS or S3-compatible service)
+# Local dev: http://rustfs:9000 (Docker Compose) or http://localhost:9000
 # AWS S3: https://s3.amazonaws.com or https://s3.REGION.amazonaws.com
 export APP__S3__ENDPOINT=http://localhost:9000
 
 # S3 bucket name (must exist)
 export APP__S3__BUCKET=data
 
-# AWS region (required for AWS S3, can be arbitrary for MinIO)
+# AWS region (required for AWS S3, can be arbitrary for RustFS)
 export APP__S3__REGION=us-east-1
 
 # AWS credentials (standard AWS environment variables)
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin
+export AWS_ACCESS_KEY_ID=rustfsadmin
+export AWS_SECRET_ACCESS_KEY=rustfsadmin
 
 # AWS session token (optional, for temporary credentials)
 export AWS_SESSION_TOKEN=your-session-token
@@ -84,9 +84,9 @@ export AWS_SESSION_TOKEN=your-session-token
 # S3 timeout (default: 30s)
 export APP__S3__TIMEOUT_SECS=30
 
-# Use path-style URLs (required for MinIO local development)
-# true = http://minio:9000/bucket/key (MinIO)
-# false = http://bucket.minio:9000/key (S3 virtual-host style)
+# Use path-style URLs (required for RustFS local development)
+# true = http://rustfs:9000/bucket/key (RustFS)
+# false = http://bucket.rustfs:9000/key (S3 virtual-host style)
 export APP__S3__PATH_STYLE=true
 ```
 
@@ -151,7 +151,7 @@ timeout_secs = 5
 pool_size = 10
 
 {% if feature_s3 %}[s3]
-endpoint = "http://minio:9000"
+endpoint = "http://rustfs:9000"
 bucket = "data"
 region = "us-east-1"
 path_style = true
@@ -588,7 +588,7 @@ url = "redis://localhost:6379"
 
 ### Mistake 3: S3 Endpoint for Wrong Provider
 
-❌ Bad (MinIO local with AWS S3 endpoint):
+❌ Bad (RustFS local with AWS S3 endpoint):
 ```bash
 export APP__S3__ENDPOINT=https://s3.amazonaws.com
 export APP__S3__PATH_STYLE=false
