@@ -13,7 +13,7 @@ This document tracks the compatibility requirements for all components used in t
 | **Kind** | v0.31.0+ | Local cluster for testing |
 | **Kourier** | v1.20.0 | Knative ingress controller |
 | **Redis** | Latest (Bitnami) | Infrastructure dependency |
-| **MinIO** | Latest (Helm chart) | S3-compatible storage |
+| **RustFS** | 1.0.1 | S3-compatible storage (managed with the `rc` CLI) |
 | **PostgreSQL (CloudNativePG)** | 16 (default) | Optional database |
 
 ## Kubernetes → Knative Compatibility
@@ -81,7 +81,7 @@ The E2E tests use the latest Helm charts from stable repositories:
 | Chart | Repository | Notes |
 |-------|------------|-------|
 | **redis** | bitnami/redis | `--set auth.enabled=false` for testing |
-| **minio** | minio/minio | `--set mode=standalone` for testing |
+| **rustfs** | rustfs/rustfs | Deployed from `rustfs/rustfs:1.0.1`; buckets created/managed with the `rc` CLI (`cargo install rustfs-cli`) |
 | **cloudnative-pg** | cloudnative-pg/cloudnative-pg | PostgreSQL operator |
 
 ## CI vs Local Environment

@@ -148,7 +148,7 @@ Each overlay:
 
 | Environment | app Kustomization | Overlay namespace | Instances | Retention | Backup destination |
 |-------------|-------------------|-------------------|-----------|-----------|--------------------|
-| dev | `<project>-dev` | `default` | 1 | 7d | MinIO (`minio.minio.svc.cluster.local:9000`) |
+| dev | `<project>-dev` | `default` | 1 | 7d | RustFS (`rustfs.rustfs.svc.cluster.local:9000`) |
 | staging | `<project>-staging` | `staging` | 2 (patched) | 14d | real S3 (patch `ObjectStore /spec/configuration/endpointURL`) |
 | production | `<project>-prod` | `production` | 3 | 30d | real S3 (patch endpoint per env) |
 

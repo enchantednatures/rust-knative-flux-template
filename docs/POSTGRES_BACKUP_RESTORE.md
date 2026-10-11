@@ -52,7 +52,7 @@ retentionPolicy:
   base: 7      # 7 days
   wal: 3       # 3 days
 compressionAlgorithm: gzip
-endpoint: "minio.minio.svc.cluster.local:9000"
+endpoint: "rustfs.rustfs.svc.cluster.local:9000"
 ```
 
 #### Staging
@@ -80,14 +80,14 @@ encryptionType: sse-s3    # Server-side encryption
 
 ### Object Storage Configuration
 
-#### MinIO (Development)
+#### RustFS (Development)
 
 ```yaml
-endpointURL: "http://minio.minio.svc.cluster.local:9000"
+endpointURL: "http://rustfs.rustfs.svc.cluster.local:9000"
 region: "us-east-1"
 credentials:
-  accessKey: minioadmin
-  secretKey: minioadmin
+  accessKey: rustfsadmin
+  secretKey: rustfsadmin
 ```
 
 #### AWS S3 (Production)
@@ -160,7 +160,7 @@ kubectl describe backup {{ project_name }}-postgres-backup-before-upgrade
 ### List Backups in Object Storage
 
 ```bash
-# List backups in MinIO/S3
+# List backups in RustFS/S3
 ./scripts/dev/list-backups.sh
 
 # Or with AWS CLI
@@ -508,7 +508,7 @@ kubectl patch objectstore postgres-backup-store \
 # This is automatic - manual deletion not recommended
 
 # Add more storage to object store
-# For MinIO: Expand PVC or add new nodes
+# For RustFS: Expand PVC or add new nodes
 ```
 
 ## Best Practices

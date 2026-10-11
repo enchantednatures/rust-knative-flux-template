@@ -14,7 +14,7 @@ jobs:
   e2e:
     name: E2E (${{ matrix.scenario }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     permissions:
       contents: read
@@ -152,6 +152,13 @@ jobs:
       - name: Install cargo-generate
         run: cargo install cargo-generate --locked
 
+      - name: Cache RustFS client (rc)
+        if: (matrix.feature_s3 == 'true' || matrix.feature_postgres == 'true') && matrix.deploy == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/rc
+          key: rustfs-cli-0.1.36-${{ runner.os }}
+
       - name: Install Flux CLI
         uses: fluxcd/flux2/action@main
 
@@ -239,7 +246,7 @@ jobs:
           fi
 
           # Postgres values (prompted when feature_postgres = true). Single
-          # instance and MinIO retention keep the CI run fast and stable.
+          # instance and RustFS retention keep the CI run fast and stable.
           if [ "${{ matrix.feature_postgres }}" = "true" ]; then
             cat >> template-values.toml <<EOF
           postgres_version = "16"
@@ -793,28 +800,99 @@ jobs:
             --wait \
             --timeout 120s
 
-      - name: Install MinIO (if needed)
+      - name: Install RustFS (S3 API)
         if: (matrix.feature_s3 == 'true' || matrix.feature_postgres == 'true') && matrix.deploy == 'true'
         run: |
-          helm repo add minio https://charts.min.io/
-          helm repo update
+          # S3-compatible object storage for the storage example and the CNPG
+          # barman backup destination. Upstream MinIO community images are no
+          # longer publicly pullable (Docker Hub removed 2026-09-11, quay.io
+          # anonymous pulls disabled 2026-09-24), so the e2e uses RustFS.
+          cat <<'RUSTFS_EOF' | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: rustfs
+            namespace: default
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: rustfs
+            template:
+              metadata:
+                labels:
+                  app: rustfs
+              spec:
+                containers:
+                  - name: rustfs
+                    image: rustfs/rustfs:1.0.1
+                    args: ["/data"]
+                    env:
+                      - name: RUSTFS_ACCESS_KEY
+                        value: "rustfsadmin"
+                      - name: RUSTFS_SECRET_KEY
+                        value: "rustfsadmin"
+                    ports:
+                      - name: api
+                        containerPort: 9000
+                      - name: console
+                        containerPort: 9001
+                    readinessProbe:
+                      httpGet:
+                        path: /health/ready
+                        port: 9000
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+                    livenessProbe:
+                      httpGet:
+                        path: /health/live
+                        port: 9000
+                      initialDelaySeconds: 10
+                      periodSeconds: 10
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "1Gi"
+                        cpu: "500m"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: rustfs
+            namespace: default
+          spec:
+            selector:
+              app: rustfs
+            ports:
+              - name: api
+                port: 9000
+                targetPort: 9000
+              - name: console
+                port: 9001
+                targetPort: 9001
+          RUSTFS_EOF
 
-          helm install minio minio/minio \
-            --set replicas=1 \
-            --set mode=standalone \
-            --set resources.requests.memory=256Mi \
-            --set rootUser=minioadmin \
-            --set rootPassword=minioadmin \
-            --wait \
-            --timeout 480s
+          kubectl rollout status deployment/rustfs -n default --timeout=300s
 
-          # Ensure expected bucket exists for tests
-          kubectl wait --for=condition=ready pod -l release=minio --timeout=120s
-          kubectl run minio-mc --rm -i --restart=Never --timeout=120s \
-            --image=quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z \
-            --command -- /bin/sh -c \
-            "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && \
-             mc mb -p minio/data && mc mb -p minio/${SERVICE_NAME}-postgres-backups"
+          # Buckets are created with rc (the RustFS client), installed from
+          # source — the runner already has a Rust toolchain. The rc binary
+          # is cached by the "Cache RustFS client (rc)" step.
+          command -v rc >/dev/null 2>&1 || cargo install rustfs-cli --version 0.1.36
+
+          kubectl -n default port-forward svc/rustfs 9000:9000 >/tmp/rustfs-port-forward.log 2>&1 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:9000/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:9000/health >/dev/null
+
+          rc alias set e2e http://127.0.0.1:9000 rustfsadmin rustfsadmin
+          rc bucket create -p e2e/data
+          rc bucket create -p e2e/${SERVICE_NAME}-postgres-backups
 
       - name: Validate cluster dependencies
         if: matrix.deploy == 'true'
@@ -843,11 +921,11 @@ jobs:
 
           if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             echo ""
-            echo "Checking MinIO..."
+            echo "Checking RustFS..."
             kubectl wait --for=condition=ready pod \
-              -l app=minio \
-              --timeout=60s || { echo "❌ MinIO not ready"; exit 1; }
-            echo "  ✓ MinIO healthy"
+              -l app=rustfs \
+              --timeout=60s || { echo "❌ RustFS not ready"; exit 1; }
+            echo "  ✓ RustFS healthy"
           fi
 
           if [ "${{ matrix.feature_flagger }}" = "true" ]; then
@@ -882,8 +960,8 @@ jobs:
           if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             kubectl create secret generic ${SERVICE_NAME}-secrets \
               --from-literal=redis-url=redis://redis-master:6379 \
-              --from-literal=aws-access-key-id=minioadmin \
-              --from-literal=aws-secret-access-key=minioadmin \
+              --from-literal=aws-access-key-id=rustfsadmin \
+              --from-literal=aws-secret-access-key=rustfsadmin \
               --dry-run=client -o yaml | kubectl apply -f -
           else
             kubectl create secret generic ${SERVICE_NAME}-secrets \
@@ -893,11 +971,11 @@ jobs:
 
           if [ "${{ matrix.feature_postgres }}" = "true" ]; then
             # Dev-grade barman credentials backing the ObjectStore CR the
-            # generated project applies (bucket created in the Install MinIO
-            # step, endpoint http://minio.default.svc.cluster.local:9000).
+            # generated project applies (bucket created in the Install RustFS
+            # step, endpoint http://rustfs.default.svc.cluster.local:9000).
             kubectl create secret generic postgres-backup-storage \
-              --from-literal=ACCESS_KEY_ID=minioadmin \
-              --from-literal=ACCESS_SECRET_KEY=minioadmin \
+              --from-literal=ACCESS_KEY_ID=rustfsadmin \
+              --from-literal=ACCESS_SECRET_KEY=rustfsadmin \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
 

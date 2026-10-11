@@ -1,10 +1,7 @@
 {%- if feature_s3 -%}
 //! S3-compatible storage integration tests
 //!
-//! These tests require MinIO running locally:
-//! ```bash
-//! docker-compose up -d minio
-//! ```
+//! These tests require RustFS running locally on localhost:9000 (see deploy/dev/infrastructure):
 //!
 //! Run with:
 //! ```bash
@@ -19,7 +16,7 @@ async fn key_exists(op: &Operator, key: &str) -> bool {
     op.stat(key).await.is_ok()
 }
 
-/// Create a test operator pointing to local MinIO
+/// Create a test operator pointing to local RustFS
 ///
 /// Note: Each operator creates its own HTTP client. When running tests in parallel,
 /// there can be interference between tests. Run with --test-threads=1 for reliability.
@@ -28,14 +25,14 @@ fn create_test_operator() -> Operator {
         .endpoint("http://localhost:9000")
         .bucket("data")
         .region("us-east-1")
-        .access_key_id("minioadmin")
-        .secret_access_key("minioadmin");
+        .access_key_id("rustfsadmin")
+        .secret_access_key("rustfsadmin");
 
     Operator::new(builder).unwrap().finish()
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires RustFS running on localhost:9000"]
 async fn test_write_and_read() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());
@@ -48,7 +45,7 @@ async fn test_write_and_read() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires RustFS running on localhost:9000"]
 async fn test_stat() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());
@@ -60,7 +57,7 @@ async fn test_stat() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires RustFS running on localhost:9000"]
 async fn test_list() {
     let op = create_test_operator();
     let prefix = format!("test-list-{}/", Uuid::new_v4());
@@ -80,7 +77,7 @@ async fn test_list() {
 }
 
 #[tokio::test]
-#[ignore = "requires MinIO running (docker-compose up -d minio)"]
+#[ignore = "requires RustFS running on localhost:9000"]
 async fn test_delete() {
     let op = create_test_operator();
     let key = format!("test/{}.txt", Uuid::new_v4());

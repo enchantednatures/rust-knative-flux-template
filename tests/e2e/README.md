@@ -71,7 +71,7 @@ The E2E test suite validates:
 
 **Requirements**:
 - CloudNativePG operator with Barman Cloud Plugin
-- Object storage (MinIO or S3) configured and accessible
+- Object storage (RustFS or S3) configured and accessible
 - PostgreSQL backup credentials secret
 
 **Usage**:
@@ -80,10 +80,10 @@ The E2E test suite validates:
 ```
 
 **Environment Variables**:
-- `MINIO_ENDPOINT`: MinIO endpoint (default: http://minio:9000)
-- `MINIO_ACCESS_KEY`: MinIO access key (default: minioadmin)
-- `MINIO_SECRET_KEY`: MinIO secret key (default: minioadmin)
-- `BACKUP_BUCKET`: S3/MinIO bucket (default: postgres-backups)
+- `RUSTFS_ENDPOINT`: RustFS endpoint (default: http://rustfs:9000)
+- `RUSTFS_ACCESS_KEY`: RustFS access key (default: rustfsadmin)
+- `RUSTFS_SECRET_KEY`: RustFS secret key (default: rustfsadmin)
+- `BACKUP_BUCKET`: S3/RustFS bucket (default: postgres-backups)
 
 ### 10-test-failover.sh
 
@@ -193,7 +193,7 @@ Minimal CloudNativePG cluster for E2E testing:
 Backup configuration for E2E testing:
 - Daily backup schedule at 2 AM UTC
 - 7-day retention policy
-- MinIO/S3 integration
+- RustFS/S3 integration
 - Barman Cloud Plugin
 
 ### test-data.sql
@@ -261,7 +261,7 @@ kubectl logs -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg | tail -100
 
 # Verify object storage access
 kubectl exec -it [primary-pod] -n default -- \
-  s3cmd --access_key=minioadmin --secret_key=minioadmin \
+  s3cmd --access_key=rustfsadmin --secret_key=rustfsadmin \
   ls s3://postgres-backups/
 ```
 
@@ -321,7 +321,7 @@ kubectl apply -f tests/e2e/fixtures/postgres/test-cluster.yaml
 ### Running Tests with Different Scenarios
 
 ```bash
-# Run with S3 instead of MinIO
+# Run with S3 instead of RustFS
 BACKUP_ENDPOINT=https://s3.amazonaws.com ./09-test-backup-restore.sh
 
 # Run with custom namespace
