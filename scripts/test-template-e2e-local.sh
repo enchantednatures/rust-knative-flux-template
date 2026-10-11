@@ -338,7 +338,14 @@ EOF
         helm repo add minio https://charts.min.io/ > /dev/null 2>&1 || true
         helm repo update > /dev/null 2>&1
         
+        # Upstream MinIO community images are no longer anonymously pullable
+        # (quay.io anonymous pulls disabled 2026-09-24); use the maintained
+        # community fork pgsty/silo + pgsty/mc.
         helm install minio minio/minio \
+            --set image.repository=pgsty/silo \
+            --set image.tag=RELEASE.2026-09-16T00-00-00Z \
+            --set mcImage.repository=pgsty/mc \
+            --set mcImage.tag=RELEASE.2026-09-16T00-00-00Z \
             --set replicas=1 \
             --set mode=standalone \
             --set resources.requests.memory=256Mi \

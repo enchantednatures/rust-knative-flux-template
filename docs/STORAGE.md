@@ -30,7 +30,8 @@ MinIO is provided in `docker-compose.yaml` for development:
 ```yaml
 services:
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web Console
@@ -297,7 +298,7 @@ metadata:
   name: minio
   namespace: minio
 spec:
-  image: minio/minio:latest
+  image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
   imagePullPolicy: IfNotPresent
   credsSecret:
     name: minio-secret

@@ -36,7 +36,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:RELEASE.2024-01-01T16-36-33Z
+          image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
           args:
             - server
             - /data
@@ -109,7 +109,7 @@ spec:
           command: ['sh', '-c', 'until nc -z minio.minio.svc.cluster.local 9000; do echo waiting for minio; sleep 2; done']
       containers:
         - name: mc
-          image: minio/mc:RELEASE.2024-01-01T16-01-16Z
+          image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
           command:
             - /bin/sh
             - -c

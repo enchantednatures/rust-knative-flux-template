@@ -94,7 +94,7 @@ spec:
     spec:
       containers:
       - name: minio
-        image: minio/minio:latest
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
         args: ["server", "/data", "--console-address", ":9001"]
         env:
         - name: MINIO_ROOT_USER
@@ -145,7 +145,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: mc
-        image: minio/mc:latest
+        image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
         command:
         - /bin/sh
         - -c

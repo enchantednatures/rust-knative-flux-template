@@ -53,7 +53,7 @@ fi
 # present in the local dev cluster (barman does not create buckets).
 if kubectl get svc minio -n minio &>/dev/null; then
   echo "Ensuring e2e backup bucket exists in MinIO..."
-  kubectl -n minio run mc-init --rm -i --image=minio/mc:latest --restart=Never \
+  kubectl -n minio run mc-init --rm -i --image=pgsty/mc:RELEASE.2026-09-16T00-00-00Z --restart=Never \
     --env=MC_HOST_local="http://minioadmin:minioadmin@minio.minio.svc.cluster.local:9000" \
     -- /bin/sh -c 'until mc alias ls local >/dev/null 2>&1; do sleep 2; done; mc mb local/example-app-postgres-backups --ignore-existing' \
     >/dev/null 2>&1 || echo "Warning: could not create backup bucket (continuing)"

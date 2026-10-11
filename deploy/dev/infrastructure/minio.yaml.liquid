@@ -21,9 +21,9 @@ spec:
     spec:
       containers:
       - name: minio
-        image: minio/minio:latest
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
         command:
-          - minio
+          - silo
           - server
           - /data
           - --console-address
@@ -87,7 +87,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: mc
-        image: minio/mc:latest
+        image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
         env:
           - name: MC_HOST_local
             value: "http://minioadmin:minioadmin@minio.minio.svc.cluster.local:9000"

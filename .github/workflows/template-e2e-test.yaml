@@ -799,7 +799,18 @@ jobs:
           helm repo add minio https://charts.min.io/
           helm repo update
 
+          # Upstream MinIO community images are no longer anonymously
+          # pullable (quay.io anonymous pulls were disabled 2026-09-24;
+          # Docker Hub images were removed earlier). Use the maintained
+          # community fork: pgsty/silo for the server, pgsty/mc for the
+          # chart post-install job. Silo's entrypoint translates the
+          # chart's legacy "/usr/bin/docker-entrypoint.sh minio server ..."
+          # argv, so the upstream chart runs unchanged.
           helm install minio minio/minio \
+            --set image.repository=pgsty/silo \
+            --set image.tag=RELEASE.2026-09-16T00-00-00Z \
+            --set mcImage.repository=pgsty/mc \
+            --set mcImage.tag=RELEASE.2026-09-16T00-00-00Z \
             --set replicas=1 \
             --set mode=standalone \
             --set resources.requests.memory=256Mi \
@@ -811,7 +822,7 @@ jobs:
           # Ensure expected bucket exists for tests
           kubectl wait --for=condition=ready pod -l release=minio --timeout=120s
           kubectl run minio-mc --rm -i --restart=Never --timeout=120s \
-            --image=quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z \
+            --image=pgsty/mc:RELEASE.2026-09-16T00-00-00Z \
             --command -- /bin/sh -c \
             "mc alias set minio http://minio.default.svc.cluster.local:9000 minioadmin minioadmin && \
              mc mb -p minio/data && mc mb -p minio/${SERVICE_NAME}-postgres-backups"

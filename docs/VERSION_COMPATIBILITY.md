@@ -81,7 +81,7 @@ The E2E tests use the latest Helm charts from stable repositories:
 | Chart | Repository | Notes |
 |-------|------------|-------|
 | **redis** | bitnami/redis | `--set auth.enabled=false` for testing |
-| **minio** | minio/minio | `--set mode=standalone` for testing |
+| **minio** | minio/minio | `--set mode=standalone` for testing; images overridden to the maintained fork `pgsty/silo` (upstream MinIO images are no longer anonymously pullable) |
 | **cloudnative-pg** | cloudnative-pg/cloudnative-pg | PostgreSQL operator |
 
 ## CI vs Local Environment

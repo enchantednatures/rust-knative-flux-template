@@ -540,14 +540,14 @@ jobs:
           - 6379:6379
 {% if feature_s3 %}
       minio:
-        image: minio/minio:latest
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
         ports:
           - 9000:9000
           - 9001:9001
         env:
           MINIO_ROOT_USER: minioadmin
           MINIO_ROOT_PASSWORD: minioadmin
-        command: server /data --console-address ":9001"
+        command: silo server /data --console-address ":9001"
 {% endif %}
     
     steps:
