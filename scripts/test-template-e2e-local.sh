@@ -319,7 +319,7 @@ EOF
     log_success "Knative Serving installed"
     
     # Step 8: Install infrastructure services
-    log_checkpoint "Step 8/9: Installing infrastructure (Redis, MinIO)"
+    log_checkpoint "Step 8/9: Installing infrastructure (Redis, RustFS)"
     
     # Redis
     helm repo add bitnami https://charts.bitnami.com/bitnami > /dev/null 2>&1 || true
@@ -333,29 +333,85 @@ EOF
     
     log_success "Redis installed"
     
-    # MinIO (if needed)
+    # RustFS (if needed)
     if [[ "${include_s3}" == "true" ]]; then
-        helm repo add minio https://charts.min.io/ > /dev/null 2>&1 || true
-        helm repo update > /dev/null 2>&1
-        
-        helm install minio minio/minio \
-            --set replicas=1 \
-            --set mode=standalone \
-            --set resources.requests.memory=256Mi \
-            --set rootUser=minioadmin \
-            --set rootPassword=minioadmin \
-            --wait \
-            --timeout 180s
-        
-        log_success "MinIO installed"
+        kubectl apply -f - <<'RUSTFS_EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      containers:
+      - name: rustfs
+        image: rustfs/rustfs:1.0.1
+        args: ["/data"]
+        env:
+        - name: RUSTFS_ACCESS_KEY
+          value: "rustfsadmin"
+        - name: RUSTFS_SECRET_KEY
+          value: "rustfsadmin"
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9000
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 9000
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+spec:
+  selector:
+    app: rustfs
+  ports:
+  - name: api
+    port: 9000
+    targetPort: 9000
+  - name: console
+    port: 9001
+    targetPort: 9001
+RUSTFS_EOF
+        kubectl rollout status deployment/rustfs --timeout=300s
+        command -v rc >/dev/null 2>&1 || cargo install rustfs-cli --version 0.1.36
+        kubectl port-forward svc/rustfs 9000:9000 >/tmp/rustfs-port-forward.log 2>&1 &
+        PF_PID=$!
+        for i in $(seq 1 60); do curl -fsS http://127.0.0.1:9000/health >/dev/null 2>&1 && break; sleep 2; done
+        rc alias set local http://127.0.0.1:9000 rustfsadmin rustfsadmin
+        rc bucket create -p local/data
+        kill ${PF_PID} 2>/dev/null || true
+        log_success "RustFS installed"
     fi
     
     # Create application secrets
     if [[ "${include_s3}" == "true" ]]; then
         kubectl create secret generic rust-service-secrets \
             --from-literal=redis-url=redis://redis-master:6379 \
-            --from-literal=aws-access-key-id=minioadmin \
-            --from-literal=aws-secret-access-key=minioadmin \
+            --from-literal=aws-access-key-id=rustfsadmin \
+            --from-literal=aws-secret-access-key=rustfsadmin \
             --dry-run=client -o yaml | kubectl apply -f -
     else
         kubectl create secret generic rust-service-secrets \

@@ -50,7 +50,7 @@ cargo --version
 ### Starting Local Development Environment
 
 ```bash
-# Start all services (Kind cluster with Knative, Redis{% if feature_s3 %}, MinIO{% endif %}, Jaeger, Prometheus, OTEL Collector)
+# Start all services (Kind cluster with Knative, Redis{% if feature_s3 %}, RustFS{% endif %}, Jaeger, Prometheus, OTEL Collector)
 make dev-up
 
 # Verify services are running
@@ -70,8 +70,8 @@ make dev-clean
 - Kind Kubernetes Cluster (local)
 - Knative Serving v1.20.0
 - Redis (port 6379) - Caching/sessions
-{% if feature_s3 %}- MinIO S3 API (port 9000) - Object storage
-- MinIO Console (port 9001) - Web UI at http://localhost:9001{% endif %}
+{% if feature_s3 %}- RustFS S3 API (port 9000) - Object storage
+- RustFS Console (port 9001) - Web UI at http://localhost:9001{% endif %}
 - OpenTelemetry Collector (port 4317) - Telemetry collection
 - Jaeger (port 16686) - Distributed tracing UI
 - Prometheus (port 9090) - Metrics UI

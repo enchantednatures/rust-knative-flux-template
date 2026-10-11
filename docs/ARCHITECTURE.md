@@ -69,7 +69,7 @@ This document explains the system architecture, design decisions, and component 
         │                     │
         ▼                     ▼
    ┌──────────┐          ┌──────────┐
-   │ MinIO    │          │ AWS S3   │
+   │ RustFS   │          │ AWS S3   │
    │ (Dev)    │          │ (Prod)   │
    └──────────┘          └──────────┘
 {% endif %}
@@ -145,11 +145,11 @@ All telemetry flows to OpenTelemetry Collector, which routes to:
 **Location**: `src/observability.rs`
 
 {% if feature_s3 %}
-### OpenDAL S3/MinIO Integration
+### OpenDAL S3/RustFS Integration
 
 **OpenDAL** provides a unified interface to multiple storage backends:
 
-- **Abstraction Layer**: Same code works with MinIO (local), AWS S3, Google Cloud Storage, etc.
+- **Abstraction Layer**: Same code works with RustFS (local), AWS S3, Google Cloud Storage, etc.
 - **Built-in Retry Logic**: Automatic retries on transient failures
 - **Connection Pooling**: Efficient HTTP connection management
 - **Operation Types**:
@@ -166,7 +166,7 @@ All telemetry flows to OpenTelemetry Collector, which routes to:
 3. Store in AppState for handler access
 4. All storage operations go through the operator
 
-**Testing**: MinIO for local development, AWS S3 for production
+**Testing**: RustFS for local development, AWS S3 for production
 
 **Location**: `src/main.rs` (initialization), handlers use via `State(state).storage`
 
@@ -226,7 +226,7 @@ All telemetry flows to OpenTelemetry Collector, which routes to:
 ### Why OpenDAL for Storage Abstraction?
 
 - **Provider Agnostic**: Same code works with any S3-compatible service
-- **Reduced Vendor Lock-in**: Easy migration from MinIO to AWS S3
+- **Reduced Vendor Lock-in**: Easy migration from RustFS to AWS S3
 - **Ergonomic API**: Rust futures-based, async/await friendly
 - **Retry Policies**: Built-in retry logic with exponential backoff
 - **Production Ready**: Used by Apache projects
@@ -306,7 +306,7 @@ services:
 | Kubernetes | Container orchestration | REQUIRED | Kind (tests) | EKS/GKE/etc |
 | Knative | Serverless runtime | REQUIRED | Included in Kind | Pre-installed |
 | Redis | Caching/sessions | REQUIRED | make dev-up | AWS ElastiCache/Redis Enterprise |
-| {% if feature_s3 %}MinIO/S3 | Object storage | REQUIRED | make dev-up | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |{% endif %} |
+| {% if feature_s3 %}RustFS/S3 | Object storage | REQUIRED | make dev-up | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |{% endif %} |
 | OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |
 | Jaeger | Distributed tracing | OPTIONAL | make dev-up | Cloud provider/self-hosted |
 | Prometheus | Metrics collection | OPTIONAL | make dev-up | Cloud provider/self-hosted |
@@ -346,7 +346,7 @@ Client: POST /api/upload
                ├─ OpenDAL S3 backend
                │
                ▼
-        MinIO/S3 HTTP API
+        RustFS/S3 HTTP API
                │
                ├─ PUT /docs/report.pdf
                │
@@ -525,7 +525,7 @@ Benefits:
 │                                                  │
 │  External Dependencies (Encrypted)              │
 │  - Redis: Optional TLS                          │
-│  - {% if feature_s3 %}S3: TLS to MinIO/AWS S3{% else %}OpenTelemetry: OTLP/gRPC{% endif %} |
+│  - {% if feature_s3 %}S3: TLS to RustFS/AWS S3{% else %}OpenTelemetry: OTLP/gRPC{% endif %} |
 └─────────────────────────────────────────────────┘
 ```
 
@@ -560,7 +560,7 @@ Unit Tests
 
 Integration Tests
   │
-  ├─ Docker services (Redis, {% if feature_s3 %}MinIO{% endif %})
+  ├─ Docker services (Redis, {% if feature_s3 %}RustFS{% endif %})
   └─ Full handler testing
 
 E2E Tests

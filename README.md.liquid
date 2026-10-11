@@ -1,13 +1,13 @@
 # {{ project_name }}
 
-A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (MinIO/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
+A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (RustFS/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
 {% if feature_s3 or feature_kafka or event_source_kafka or feature_flagger %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
 {% if feature_s3 %}
-- 📦 **S3-Compatible Storage**: Integrated OpenDAL for MinIO/AWS S3 object storage
+- 📦 **S3-Compatible Storage**: Integrated OpenDAL for RustFS/AWS S3 object storage
 {% endif %}
 {% if event_source_kafka %}
 - 📨 **Kafka Event Source**: Knative KafkaSource for consuming Kafka events
@@ -25,7 +25,7 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
 - 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
 - 🏗️ **Infrastructure as Code**: Terraform modules for resource management
-- 🧪 **Fully Tested**: Integration tests with Redis{% if feature_s3 %}, MinIO{% endif %}{% if feature_kafka %}, and Kafka{% endif %}
+- 🧪 **Fully Tested**: Integration tests with Redis{% if feature_s3 %}, RustFS{% endif %}{% if feature_kafka %}, and Kafka{% endif %}
 - 📝 **Type-Safe**: Rust with strict compiler checks
 - ⚡ **Fast**: Built on Tokio async runtime
 
@@ -45,8 +45,8 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 
    This starts:
    - Redis (port 6379)
-   - MinIO with S3-compatible API (port 9000)
-   - MinIO Web Console (port 9001)
+   - RustFS with S3-compatible API (port 9000)
+   - RustFS Web Console (port 9001)
    - Jaeger tracing (port 16686)
    - Prometheus metrics (port 9090)
    - OpenTelemetry Collector
@@ -66,7 +66,7 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
    # Write object
    curl -X POST http://localhost:8080/api/upload \
      -H "Content-Type: application/json" \
-     -d '{"key": "test.txt", "data": "Hello MinIO"}'
+     -d '{"key": "test.txt", "data": "Hello RustFS"}'
    
    # List objects
    curl http://localhost:8080/api/objects
@@ -78,7 +78,7 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 5. **View Traces & Metrics**
    - Jaeger: http://localhost:16686
    - Prometheus: http://localhost:9090
-   - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
+   - RustFS Console: http://localhost:9001 (rustfsadmin/rustfsadmin)
 
 ### Kubernetes Deployment
 
@@ -190,7 +190,7 @@ For production/staging, ensure external Kafka is configured:
 │
 ├── Cargo.toml            # Rust dependencies with conditional S3
 ├── Dockerfile            # Multi-stage Docker build
-├── docker-compose.yaml   # Local development services with MinIO
+├── docker-compose.yaml   # Local development services with RustFS
 └── README.md             # This file
 ```
 
@@ -205,8 +205,8 @@ For production/staging, ensure external Kafka is configured:
 **Redis:**
 - `APP__REDIS__URL`: Redis connection URL (default: redis://localhost:6379)
 
-**S3/MinIO:**
-- `APP__S3__ENDPOINT`: S3 endpoint (default: http://minio:9000)
+**S3/RustFS:**
+- `APP__S3__ENDPOINT`: S3 endpoint (default: http://rustfs:9000)
 - `APP__S3__BUCKET`: Bucket name (default: data)
 - `APP__S3__REGION`: AWS region (default: us-east-1)
 - `AWS_ACCESS_KEY_ID`: S3 access key
@@ -240,7 +240,7 @@ port = 8080
 url = "redis://localhost:6379"
 
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://rustfs:9000"
 bucket = "data"
 region = "us-east-1"
 
@@ -316,12 +316,12 @@ log_level = "debug"
 
 - `GET /metrics` - Prometheus metrics in OpenMetrics format
 
-## Storage Integration (S3/MinIO)
+## Storage Integration (S3/RustFS)
 
 {% if feature_s3 %}
-See [STORAGE.md](./STORAGE.md) for detailed S3/MinIO integration guide covering:
+See [STORAGE.md](./STORAGE.md) for detailed S3/RustFS integration guide covering:
 - Architecture and design patterns
-- Configuration for MinIO and AWS S3
+- Configuration for RustFS and AWS S3
 - Code examples for CRUD operations
 - Testing with integration tests
 - Terraform bucket management
@@ -460,7 +460,7 @@ The service is configured through the Flux HelmRelease values (rendered by `depl
 **dev/** - Development settings
 - 1-10 replicas
 - Debug logging
-- MinIO endpoint
+- RustFS endpoint
 
 **staging/** - Staging settings
 - 2-20 replicas
@@ -565,9 +565,9 @@ terraform apply
 
 Variables:
 ```hcl
-minio_endpoint = "http://minio:9000"
-minio_access_key = "minioadmin"
-minio_secret_key = "minioadmin"
+minio_endpoint = "http://rustfs:9000"
+minio_access_key = "rustfsadmin"
+minio_secret_key = "rustfsadmin"
 ```
 
 Output:
@@ -586,10 +586,10 @@ docker-compose ps redis
 redis-cli -h localhost ping
 ```
 
-### MinIO Access Issues
+### RustFS Access Issues
 ```bash
-# Check MinIO is healthy
-curl http://localhost:9000/minio/health/live
+# Check RustFS is healthy
+curl http://localhost:9000/health/live
 
 # Check credentials in environment
 echo $AWS_ACCESS_KEY_ID
@@ -613,8 +613,8 @@ kubectl logs -f deployment/<deployment-name>
 
 ### S3 Integration Tests Fail
 ```bash
-# Ensure MinIO is running and healthy
-docker-compose logs minio
+# Ensure RustFS is running and healthy
+docker-compose logs rustfs
 
 # Check test output
 cargo test --test '*' -- --nocapture --test-threads=1

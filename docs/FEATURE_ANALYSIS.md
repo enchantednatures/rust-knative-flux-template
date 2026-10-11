@@ -75,7 +75,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 #### Conditional Feature: S3-Compatible Storage (Optional)
 - **Technology**: OpenDAL (unified storage abstraction layer)
 - **Supported Backends**:
-  - MinIO (development/on-premises)
+  - RustFS (development/on-premises)
   - AWS S3 (production)
   - Google Cloud Storage
   - Any S3-compatible service
@@ -129,7 +129,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
   - Health check endpoints for cluster status
   
 - **Environment Configurations**:
-  - **Dev**: 1 instance, async replication, 7-day retention, MinIO backups, 20Gi storage
+  - **Dev**: 1 instance, async replication, 7-day retention, RustFS backups, 20Gi storage
   - **Staging**: 2 instances, async replication, 14-day retention, S3 backups, 100Gi storage
   - **Production**: 3 instances, quorum replication, 30-day retention, S3 backups (zstd-10), 200Gi storage
 
@@ -315,7 +315,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 - **Test Plan Documentation**: `tests/TEST_PLAN.md`
 
 #### Local Development Testing
-- **make dev-up**: Full environment (Kind, Knative, Redis, MinIO, Kafka, PostgreSQL, Observability)
+- **make dev-up**: Full environment (Kind, Knative, Redis, RustFS, Kafka, PostgreSQL, Observability)
 - **make dev-logs**: Follow service logs
 - **cargo test**: Run all tests
 - **cargo watch -x test**: Auto-rerun on changes
@@ -457,7 +457,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 - **Database**: PostgreSQL 14+ (managed via CloudNativePG)
 - **Message Queue**: Apache Kafka (optional, event-driven)
 - **In-Memory Store**: Redis (required for caching)
-- **Object Storage**: MinIO (dev), AWS S3 (production)
+- **Object Storage**: RustFS (dev), AWS S3 (production)
 - **Tracing Backend**: Jaeger
 - **Metrics Backend**: Prometheus
 - **Log Aggregation**: Loki/ELK (optional)

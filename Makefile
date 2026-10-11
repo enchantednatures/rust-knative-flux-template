@@ -69,8 +69,8 @@ dev-up: ## Start full development environment (cluster + all services)
 	@echo "     • Jaeger UI:     ${GREEN}http://localhost:16686${NC}"
 	@echo "     • Prometheus:    ${GREEN}http://localhost:9090${NC}"
 	@echo "     • Redis:         ${GREEN}localhost:6379${NC}"
-	@echo "     • MinIO Console: ${GREEN}http://localhost:9001${NC} (admin/minioadmin)"
-	@echo "     • MinIO API:     ${GREEN}http://localhost:9000${NC}"
+	@echo "     • RustFS Console: ${GREEN}http://localhost:9001${NC} (rustfsadmin/rustfsadmin)"
+	@echo "     • RustFS API:     ${GREEN}http://localhost:9000${NC}"
 	@echo "     • Kafka:         ${GREEN}kafka.kafka.svc.cluster.local:9092${NC} (if Kafka enabled)"
 	@echo ""
 	@echo "  3. Send test Kafka event (if Kafka enabled):"
@@ -156,7 +156,7 @@ dev-cluster: ## Create Kind cluster and registry only
 	@./scripts/dev/setup-kind.sh
 
 .PHONY: dev-infra
-dev-infra: ## Deploy infrastructure services (Redis, MinIO) only
+dev-infra: ## Deploy infrastructure services (Redis, RustFS) only
 	@./scripts/dev/deploy-infrastructure.sh
 
 .PHONY: dev-observability

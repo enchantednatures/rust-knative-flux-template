@@ -32,7 +32,7 @@ spec:
   configuration:
     destinationPath: s3://postgres-backups/test/
     s3:
-      endpointURL: http://minio.minio.svc.cluster.local:9000
+      endpointURL: http://rustfs.rustfs.svc.cluster.local:9000
       region: us-east-1
       s3Credentials:
         accessKeyId:
