@@ -538,17 +538,6 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
-{% if feature_s3 %}
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-          - 9001:9001
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        command: server /data --console-address ":9001"
-{% endif %}
     
     steps:
     - uses: actions/checkout@v4
@@ -576,6 +565,26 @@ jobs:
         path: target
         key: {% raw %}${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
     
+    {% if feature_s3 %}
+    - name: Start RustFS
+      run: |
+        docker run -d --name rustfs -p 9000:9000 -p 9001:9001 \
+          -e RUSTFS_ACCESS_KEY=rustfsadmin \
+          -e RUSTFS_SECRET_KEY=rustfsadmin \
+          rustfs/rustfs:1.0.1 /data
+        for i in $(seq 1 30); do
+          curl -fsS http://localhost:9000/health/live >/dev/null 2>&1 && break
+          sleep 1
+        done
+        curl -fsS http://localhost:9000/health/live >/dev/null
+
+    - name: Initialize RustFS bucket
+      run: |
+        cargo install rustfs-cli
+        rc alias set local http://localhost:9000 rustfsadmin rustfsadmin
+        rc bucket create -p local/data
+    {% endif %}
+
     - name: Run unit tests
       run: cargo test --verbose
     
@@ -586,8 +595,8 @@ jobs:
         {% if feature_s3 %}
         APP__S3__ENDPOINT: http://localhost:9000
         APP__S3__BUCKET: data
-        AWS_ACCESS_KEY_ID: minioadmin
-        AWS_SECRET_ACCESS_KEY: minioadmin
+        AWS_ACCESS_KEY_ID: rustfsadmin
+        AWS_SECRET_ACCESS_KEY: rustfsadmin
         {% endif %}
     
     - name: Run linting

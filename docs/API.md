@@ -46,7 +46,7 @@ curl http://localhost:8080/health/live
 
 **Checks**:
 - Redis connection
-{% if feature_s3 %}- S3/MinIO connectivity{% endif %}
+{% if feature_s3 %}- S3/RustFS connectivity{% endif %}
 
 **Response on Success**: 200 OK
 

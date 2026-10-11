@@ -20,7 +20,7 @@ pub struct AppState {
     /// No need for Arc<RwLock<>> - MultiplexedConnection is already designed for this
     pub redis: MultiplexedConnection,
     {%- if feature_s3 %}
-    /// S3-compatible storage operator (MinIO/S3 via OpenDAL)
+    /// S3-compatible storage operator (RustFS/S3 via OpenDAL)
     pub storage: Operator,
     {%- endif %}
     {%- if feature_kafka %}
