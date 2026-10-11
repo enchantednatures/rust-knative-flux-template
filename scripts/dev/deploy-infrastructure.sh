@@ -21,6 +21,24 @@ if [[ -z "${KUBECONFIG:-}" ]]; then
   export KUBECONFIG="$KUBECONFIG_PATH"
 fi
 
+# kubectl wait errors immediately ("no matching resources found") when a label
+# selector matches zero pods, but a freshly applied Deployment may need a
+# moment to create its first pod. Wait for a matching pod to exist before
+# waiting on its Ready condition.
+wait_for_pods() {
+  local namespace="$1" selector="$2" timeout="${3:-300}"
+  local waited=0
+  until [ -n "$(kubectl get pod -l "$selector" -n "$namespace" --no-headers 2>/dev/null)" ]; do
+    if [ "$waited" -ge 120 ]; then
+      echo "✗ timed out waiting for a pod matching '${selector}' in ${namespace}" >&2
+      return 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  kubectl wait --for=condition=Ready pod -l "$selector" -n "$namespace" --timeout="${timeout}s"
+}
+
 echo "Deploying infrastructure services..."
 echo ""
 
@@ -38,7 +56,7 @@ kubectl apply -k deploy/dev/infrastructure || {
 }
 
 echo -e "${YELLOW}→${NC} Waiting for Redis to be ready..."
-if ! kubectl wait --for=condition=Ready pod -l app=redis -n redis --timeout=3m; then
+if ! wait_for_pods redis app=redis 180; then
   echo -e "${RED}✗ Error: Redis failed to become ready${NC}"
   echo ""
   echo "=== Pod Status ==="
@@ -58,7 +76,7 @@ fi
 # Check for MinIO in the manifest
 if kubectl get statefulset minio -n minio 2>/dev/null || kubectl get deployment minio -n minio 2>/dev/null; then
   echo -e "${YELLOW}→${NC} Waiting for MinIO to be ready..."
-  if ! kubectl wait --for=condition=Ready pod -l app=minio -n minio --timeout=5m; then
+  if ! wait_for_pods minio app=minio 300; then
     echo -e "${RED}✗ Error: MinIO failed to become ready${NC}"
     echo ""
     echo "=== Pod Status ==="
@@ -85,7 +103,7 @@ fi
 # Check for Kafka in the manifest
 if kubectl get statefulset kafka -n kafka 2>/dev/null; then
   echo -e "${YELLOW}→${NC} Waiting for Kafka to be ready..."
-  if ! kubectl wait --for=condition=Ready pod -l app=kafka -n kafka --timeout=5m; then
+  if ! wait_for_pods kafka app=kafka 300; then
     echo -e "${RED}✗ Error: Kafka failed to become ready${NC}"
     echo ""
     echo "=== Pod Status ==="
