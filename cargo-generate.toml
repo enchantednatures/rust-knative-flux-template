@@ -130,6 +130,7 @@ backup_schedule = { prompt = "Backup schedule (cron expression)", type = "string
 backup_retention_dev = { prompt = "Dev backup retention (days)", type = "string", default = "7" }
 backup_retention_staging = { prompt = "Staging backup retention (days)", type = "string", default = "14" }
 backup_retention_prod = { prompt = "Prod backup retention (days)", type = "string", default = "30" }
+barman_plugin_installed = { prompt = "Skip installing the Barman Cloud plugin (it is already installed on your cluster)?", type = "bool", default = false }
 
 [conditional.'!feature_postgres']
 ignore = [

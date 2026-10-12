@@ -49,6 +49,15 @@ jobs:
             feature_flagger: "false"
             event_source_kafka: "false"
             enable_image_updates: "false"
+          # Postgres only, barman plugin skipped — cluster already has it
+          - scenario: postgres-only-barman
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "true"
+            feature_flagger: "false"
+            event_source_kafka: "false"
+            enable_image_updates: "false"
+            barman_plugin_installed: "true"
           # Flagger only
           - scenario: flagger-only
             feature_s3: "false"
@@ -194,6 +203,14 @@ jobs:
           TOML_POSTGRES
           fi
 
+          # barman_plugin_installed is optional (default false); only set it
+          # explicitly when the row opts into the plugin
+          if [[ "${{ matrix.barman_plugin_installed || 'false' }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_BARMAN'
+          barman_plugin_installed = "true"
+          TOML_BARMAN
+          fi
+
           # kafka_topic is shared between feature_kafka and event_source_kafka
           if [[ "${{ matrix.feature_kafka }}" == "true" || "${{ matrix.event_source_kafka }}" == "true" ]]; then
             cat >> "$TEMP_DIR/template-values.toml" <<'TOML_KAFKA_COMMON'
@@ -263,7 +280,29 @@ jobs:
             deploy/flux/config/dev/kustomization.yaml \
             || { echo "FAIL: cnpg-operator Kustomization not wired in flux config"; exit 1; }
 
+          if [[ "${{ matrix.barman_plugin_installed || 'false' }}" != "true" ]]; then
+            grep -q 'plugin-barman-cloud/releases' \
+              deploy/infrastructure/cnpg-operator/kustomization.yaml \
+              || { echo "FAIL: barman plugin manifest URL missing from cnpg-operator kustomization"; exit 1; }
+          fi
+
           du -sh "$GENERATED_DIR" > /dev/null
+        shell: bash
+
+      - name: Assert barman plugin skipped when pre-installed
+        if: matrix.feature_postgres == 'true' && (matrix.barman_plugin_installed || 'false') == 'true'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          ! grep -q 'plugin-barman-cloud' \
+            deploy/infrastructure/cnpg-operator/kustomization.yaml \
+            || { echo "FAIL: barman plugin manifest present despite barman_plugin_installed=true"; exit 1; }
+          grep -q 'barman-cloud.cloudnative-pg.io' \
+            deploy/components/postgres/postgres-backup.yaml \
+            || { echo "FAIL: plugin name missing from postgres-backup.yaml after skip"; exit 1; }
+
+          echo "✓ barman plugin skipped (pre-installed in cluster), backup manifests intact"
         shell: bash
 
       - name: Assert no postgres residue when disabled

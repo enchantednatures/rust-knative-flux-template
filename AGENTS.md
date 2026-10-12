@@ -741,7 +741,7 @@ components:
 
 **Critical**: The CloudNativePG operator is installed **cluster-wide** via FluxCD (mirroring the Flagger operator pattern), not per-application.
 
-- **All environments (`dev`/`staging`/`prod`)**: `deploy/flux/cnpg-operator-kustomization.yaml` (Flux Kustomization `cnpg-operator` in `flux-system`) renders `deploy/infrastructure/cnpg-operator/` — the CNPG operator 1.28.0 + Barman cloud plugin v0.11.0 remote manifests, installed into the `cnpg-system` namespace. It is included from `deploy/flux/config/{env}/kustomization.yaml`, gated by the `feature_postgres` flag.
+- **All environments (`dev`/`staging`/`prod`)**: `deploy/flux/cnpg-operator-kustomization.yaml` (Flux Kustomization `cnpg-operator` in `flux-system`) renders `deploy/infrastructure/cnpg-operator/` — the CNPG operator 1.28.0 + Barman cloud plugin v0.11.0 remote manifests, installed into the `cnpg-system` namespace. The plugin manifest line is conditionally included: answering `yes` to the `barman_plugin_installed` prompt omits it (operator still installed; an existing plugin in `cnpg-system` is then a user prerequisite). It is included from `deploy/flux/config/{env}/kustomization.yaml`, gated by the `feature_postgres` flag.
 - **Ordering**: `deploy/flux/postgres-kustomization.yaml` declares `dependsOn: [{name: cnpg-operator}]` so CNPG CRDs exist before Cluster/ScheduledBackup objects are applied. PostgreSQL itself is configured through the HelmRelease values (`spec.values.postgres`) patched per environment.
 
 This prevents:

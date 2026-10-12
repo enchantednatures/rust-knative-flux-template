@@ -90,6 +90,7 @@ Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env 
    ```bash
    make bootstrap dev   # applies deploy/flux/config/dev incl. cnpg-operator
    # Operator + Barman plugin land in the cnpg-system namespace
+   # (skip the plugin with the barman_plugin_installed prompt — see below)
    ```
 
 2. **Prepare environment overlay**:
@@ -113,6 +114,16 @@ Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env 
    kubectl get cluster {{ project_name }}-postgres -o wide
    kubectl get pods -l postgresql={{ project_name }}-postgres -o wide
    ```
+
+### Using a pre-installed Barman Cloud plugin
+
+If your cluster already runs the Barman Cloud plugin, answer `yes` to the `barman_plugin_installed` prompt when generating the project. Only the plugin install is skipped; the CNPG operator itself is still installed cluster-wide by the `cnpg-operator` Flux Kustomization.
+
+Prerequisites and caveats:
+
+- **Existing plugin required**: the plugin must already be present in the `cnpg-system` namespace and be compatible with CNPG 1.28. Generation cannot validate the target cluster, so this is on you. The plugin name is fixed as `barman-cloud.cloudnative-pg.io`, so any recent version works with the Cluster/ScheduledBackup references.
+- **Flux prune interaction**: the `cnpg-operator` Kustomization has `prune: true`. Flipping `barman_plugin_installed` from `false` to `true` after a deploy prunes the plugin resources that Kustomization created; flipping `true` back to `false` re-installs them. Either way it is a one-line change in `deploy/infrastructure/cnpg-operator/kustomization.yaml` plus a git push.
+- **Version pinning**: when the template self-installs the plugin it pins v0.11.0. If you rely on a pre-installed plugin, its version is whatever your cluster runs.
 
 ## Configuration
 
