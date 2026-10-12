@@ -4,5 +4,5 @@ version: 0.1.0
 type: application
 dependencies:
   - name: ksvc
-    version: "0.6.6"
+    version: "0.6.7"
     repository: "oci://ghcr.io/enchantednatures/charts"
