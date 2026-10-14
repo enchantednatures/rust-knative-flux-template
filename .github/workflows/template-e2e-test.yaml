@@ -249,7 +249,7 @@ jobs:
           # instance and RustFS retention keep the CI run fast and stable.
           if [ "${{ matrix.feature_postgres }}" = "true" ]; then
             cat >> template-values.toml <<EOF
-          postgres_version = "16"
+          postgres_version = "18"
           postgres_instances_dev = "1"
           postgres_instances_staging = "2"
           postgres_instances_prod = "3"
@@ -582,8 +582,8 @@ jobs:
           helm dependency build "${CHART_DIR}"
 
           yq eval -i '
-            .spec.values.services[""].image.repository = "'"${NEW_IMAGE}"'" |
-            .spec.values.services[""].image.tag = "'"${NEW_TAG}"'"
+            .spec.values.services.app.image.repository = "'"${NEW_IMAGE}"'" |
+            .spec.values.services.app.image.tag = "'"${NEW_TAG}"'"
           ' "${GENERATED_DIR}/deploy/base/helmrelease.yaml"
 
           VALUES_FILE=$(mktemp)
@@ -1081,7 +1081,7 @@ jobs:
             restartPolicy: Never
             containers:
               - name: psql
-                image: ghcr.io/cloudnative-pg/postgresql:16-system-trixie
+                image: ghcr.io/cloudnative-pg/postgresql:18-system-trixie
                 command: ["/bin/sh", "-c"]
                 args:
                   - >-
