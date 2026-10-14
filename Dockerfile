@@ -1,9 +1,9 @@
 # ==============================================================================
 # Stage 1: Chef - Prepare dependency recipe
 # ==============================================================================
-# ARG for selecting base image tag (defaults to version, but 'release' preferred for releases)
-# Note: If rust:release doesn't exist, the default version tag is used
-# The release workflow passes RUST_BASE_IMAGE_TAG=release for production builds
+# ARG for selecting the base image tag. This default is the single source of
+# truth (renovate keeps rust-toolchain.toml and the Dockerfile in sync); the
+# release workflow builds without overriding it.
 ARG RUST_BASE_IMAGE_TAG=1.99-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS chef
@@ -11,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    {% if feature_kafka %}cmake \
+    libcurl4-openssl-dev \
+    libsasl2-dev \
+    libzstd-dev \
+    zlib1g-dev \
+    {% endif %}&& rm -rf /var/lib/apt/lists/*
 
 # Install cargo-chef
 RUN cargo install cargo-chef
@@ -33,7 +38,12 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     curl \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    {% if feature_kafka %}cmake \
+    libcurl4-openssl-dev \
+    libsasl2-dev \
+    libzstd-dev \
+    zlib1g-dev \
+    {% endif %}&& rm -rf /var/lib/apt/lists/*
 
 # Install cargo-chef
 RUN cargo install cargo-chef
@@ -54,9 +64,10 @@ COPY . .
 RUN cargo build --release
 
 # ==============================================================================
-# Stage 3: Runtime (Debian Slim)
+# Stage 3: Runtime (Debian Slim — must match the builder's Debian release for
+# the linked glibc; rust:slim tracks the current stable, so this tracks trixie)
 # ==============================================================================
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
 # Install CA certificates for TLS connections (Redis TLS, OTLP, etc.)
 RUN apt-get update && apt-get install -y \
