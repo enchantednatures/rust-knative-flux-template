@@ -191,7 +191,7 @@ jobs:
           # Postgres-specific values (prompted when feature_postgres = true)
           if [[ "${{ matrix.feature_postgres }}" == "true" ]]; then
             cat >> "$TEMP_DIR/template-values.toml" <<'TOML_POSTGRES'
-          postgres_version = "16"
+          postgres_version = "18"
           postgres_instances_dev = "1"
           postgres_instances_staging = "2"
           postgres_instances_prod = "3"
@@ -331,13 +331,11 @@ jobs:
           PROD_SENTINEL="http://prometheus.prod.svc.cluster.local:9090"
           DEV_URL="prometheus.observability.svc.cluster.local:9090"
 
-          # The full overlays cannot be kustomize-built directly: the HelmRelease
-          # values patch uses the empty-string services."" key, which kustomize's
-          # strategic merge rejects on every kustomize >= 5.4 (pre-existing,
-          # tracked separately). Validate the flagger surface exactly as the
-          # overlay applies it: component + namespace transformer + the
-          # MetricTemplate address patch extracted verbatim from the generated
-          # overlay file.
+          # Validate the flagger surface exactly as the overlay applies it:
+          # component + namespace transformer + the MetricTemplate address
+          # patch extracted verbatim from the generated overlay file. (The
+          # previous empty-string services."" limitation no longer applies —
+          # the HelmRelease now uses a named `services.app` key.)
           validate_env() {
             local overlay="$1" kust_ns="$2" outfile="$3"
             local tmp="deploy/overlays/.tmp-flagger-validation"
@@ -386,4 +384,207 @@ jobs:
             || { echo "FAIL: operator metricsServer not templated"; exit 1; }
 
           echo "Flagger per-env metric gate validation passed"
+        shell: bash
+
+  full-stack:
+    name: "Full-stack validation"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies (librdkafka toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libssl-dev cmake \
+            libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
+        shell: bash
+
+      - name: Install helm and yq
+        run: |
+          if ! command -v helm &> /dev/null; then
+            echo "Installing helm..."
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+          sudo curl -sSLo /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          helm version --short
+          yq --version
+        shell: bash
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Generate full-stack project
+        run: |
+          set -euo pipefail
+
+          # cargo-generate --path reads from the git index, NOT the working
+          # tree. Copy the checkout to a temp dir without .git/ so all files
+          # are visible.
+          TEMPLATE_SRC=$(mktemp -d)
+          rsync -a --exclude='.git' --exclude='target' "$GITHUB_WORKSPACE/" "$TEMPLATE_SRC/"
+
+          TEMP_DIR=$(mktemp -d)
+          cargo generate \
+            --path "$TEMPLATE_SRC" \
+            --name "test-app-full" \
+            --template-values-file "$GITHUB_WORKSPACE/ci/template-values-full.toml" \
+            --destination "$TEMP_DIR" \
+            --silent \
+            --allow-commands
+
+          GENERATED_DIR="$TEMP_DIR/test-app-full"
+          echo "GENERATED_DIR=$GENERATED_DIR" >> "$GITHUB_ENV"
+          echo "Generated full-stack project at $GENERATED_DIR"
+          ls "$GENERATED_DIR"
+        shell: bash
+
+      - name: Lint and build generated project
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          echo "Running Clippy"
+          cargo clippy --all-targets --all-features -- -D warnings
+          echo "Building"
+          cargo build --all-features
+        shell: bash
+
+      - name: Build generated container image
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          docker build -t test-app-full:ci .
+        shell: bash
+
+      - name: Render Helm chart and assert Kafka/DLQ wiring
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          helm dependency build deploy/chart
+
+          VALUES_FILE=$(mktemp)
+          yq eval '.spec.values' deploy/base/helmrelease.yaml > "$VALUES_FILE"
+
+          RENDERED=$(mktemp)
+          helm template test-app-full deploy/chart -f "$VALUES_FILE" -n default > "$RENDERED"
+
+          grep -q 'KafkaSource' "$RENDERED" \
+            || { echo "FAIL: KafkaSource missing from rendered chart"; exit 1; }
+          grep -q 'deadLetterSink' "$RENDERED" \
+            || { echo "FAIL: deadLetterSink missing from rendered chart"; exit 1; }
+          grep -q 'test-app-full-events-dlq' "$RENDERED" \
+            || { echo "FAIL: DLQ service name missing from rendered chart"; exit 1; }
+
+          # postRenderers are applied by Flux (not helm) — assert the generated
+          # HelmRelease targets the chart's DLQ service by name.
+          POSTRENDERERS=$(mktemp)
+          yq eval '.spec.postRenderers' deploy/base/helmrelease.yaml > "$POSTRENDERERS"
+          grep -q 'test-app-full-events-dlq' "$POSTRENDERERS" \
+            || { echo "FAIL: HelmRelease postRenderers do not target the DLQ service"; exit 1; }
+          echo "✓ Helm render + DLQ postRenderer assertions passed"
+        shell: bash
+
+      - name: Render environment overlays
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          for env in dev staging prod; do
+            OUT="/tmp/overlay-${env}.yaml"
+            kubectl kustomize "deploy/overlays/${env}" > "$OUT"
+            [ -s "$OUT" ] || { echo "FAIL: deploy/overlays/${env} rendered empty"; exit 1; }
+            if grep -q '{{' "$OUT"; then
+              echo "FAIL: unrendered template syntax in deploy/overlays/${env}"
+              exit 1
+            fi
+          done
+
+          # Dev overlay must keep the pooler host and preserve the base Kafka
+          # sink/delivery/dlq fields (per-field patches, not whole-object
+          # replaces) plus the DLQ postRenderer target.
+          grep -q 'APP__POSTGRES__HOST' /tmp/overlay-dev.yaml \
+            || { echo "FAIL: dev overlay missing APP__POSTGRES__HOST"; exit 1; }
+          grep -q 'dlq:' /tmp/overlay-dev.yaml \
+            || { echo "FAIL: dev overlay dropped kafka dlq config"; exit 1; }
+          grep -q 'delivery:' /tmp/overlay-dev.yaml \
+            || { echo "FAIL: dev overlay dropped kafka delivery config"; exit 1; }
+          grep -q 'sink: app' /tmp/overlay-dev.yaml \
+            || { echo "FAIL: dev overlay dropped kafka sink"; exit 1; }
+          grep -q 'test-app-full-events-dlq' /tmp/overlay-dev.yaml \
+            || { echo "FAIL: dev overlay dropped the DLQ postRenderer target"; exit 1; }
+          echo "✓ overlay render assertions passed"
+        shell: bash
+
+      - name: Render Flux config with load restrictions off
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          kubectl kustomize --load-restrictor=LoadRestrictionsNone deploy/flux/config/dev > /tmp/flux-config-dev.yaml
+          [ -s /tmp/flux-config-dev.yaml ] || { echo "FAIL: flux config dev rendered empty"; exit 1; }
+          echo "✓ flux config dev rendered"
+        shell: bash
+
+      - name: Run generated test suite
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          # GitHub service containers are unsupported on ARC-style runners;
+          # run Redis on the Docker daemon so localhost:6379 is reachable.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker run -d --name redis -p 6379:6379 redis:7-alpine
+          for i in $(seq 1 30); do
+            docker exec redis redis-cli ping >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec redis redis-cli ping
+
+          cargo test --all-features
+        shell: bash
+
+      - name: Assert no leaked template syntax or CI placeholders
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          # Scoped leak gate. Excludes:
+          #   - .github/workflows        GitHub Actions ${{ }} expressions
+          #   - deploy/chart/templates   legitimate Helm {{ }}
+          #   - docs/FLAGGER.md / TESTING.md / MONITORING.md
+          #                              intentional runtime {{ }} examples
+          #   - scripts/dev/build-and-deploy.sh
+          #                              literal template-detection probe
+          if grep -rnIE 'test-org|test-repo|\{\{ (project_name|crate_name|github_org|github_repo|image_registry|kafka_|postgres_)|\{\{project_name|\{% ' . \
+              --exclude-dir=.git \
+              --exclude-dir=target \
+              --exclude-dir=workflows \
+              --exclude-dir=templates \
+              --exclude=FLAGGER.md \
+              --exclude=TESTING.md \
+              --exclude=MONITORING.md \
+              --exclude=build-and-deploy.sh; then
+            echo "FAIL: unrendered template syntax or CI placeholders leaked into the generated tree"
+            exit 1
+          fi
+          echo "✓ no leaked template syntax or CI placeholders"
+        shell: bash
+
+      - name: Validate PostgreSQL manifests
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          ./scripts/validate-postgres-manifests.sh
         shell: bash
