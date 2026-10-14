@@ -1,16 +1,12 @@
 mod common;
 
 use axum::http::StatusCode;
-use axum_test::TestServer;
 use serde_json::json;
-
-use {{ crate_name }}::routes;
 
 #[tokio::test]
 async fn test_cloudevent_ping() {
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/")
@@ -36,8 +32,7 @@ async fn test_cloudevent_ping() {
 #[tokio::test]
 async fn test_cloudevent_missing_id() {
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/")
@@ -58,8 +53,7 @@ async fn test_cloudevent_missing_id() {
 #[tokio::test]
 async fn test_cloudevent_invalid_json() {
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/")
@@ -73,8 +67,7 @@ async fn test_cloudevent_invalid_json() {
 #[tokio::test]
 async fn test_cloudevent_with_custom_message() {
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/")

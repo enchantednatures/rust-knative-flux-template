@@ -1,19 +1,11 @@
 mod common;
 
-use axum_test::TestServer;
-
-use {{ crate_name }}::routes;
-
 #[tokio::test]
 async fn test_liveness_endpoint() {
     // Create test state
     let state = common::create_test_state().await;
 
-    // Create router
-    let app = routes::create_router(state);
-
-    // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     // Test liveness endpoint
     let response = server.get("/health/live").await;
@@ -29,11 +21,7 @@ async fn test_readiness_endpoint() {
     // Create test state
     let state = common::create_test_state().await;
 
-    // Create router
-    let app = routes::create_router(state);
-
-    // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     // Test readiness endpoint
     let response = server.get("/health/ready").await;
@@ -55,11 +43,7 @@ async fn test_api_v1_hello_endpoint() {
     // Create test state
     let state = common::create_test_state().await;
 
-    // Create router
-    let app = routes::create_router(state);
-
-    // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     // Test hello endpoint without query
     let response = server.get("/api/v1/hello").await;
@@ -82,11 +66,7 @@ async fn test_metrics_endpoint() {
     // Create test state (which now initializes metrics properly)
     let state = common::create_test_state().await;
 
-    // Create router
-    let app = routes::create_router(state);
-
-    // Create test server
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     // Make several requests to generate metrics
     // These should increment the http_requests_total counter
