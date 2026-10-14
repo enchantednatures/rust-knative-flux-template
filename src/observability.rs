@@ -7,6 +7,7 @@ use metrics::describe_counter;
 use metrics_exporter_prometheus::PrometheusHandle;
 use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_zipkin::Propagator as B3Propagator;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -97,6 +98,7 @@ pub fn init_telemetry(config: &TelemetryConfig) -> anyhow::Result<Option<SdkTrac
         // OpenTelemetry 0.31: New exporter builder API, no runtime parameter needed
         let exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
+            .with_endpoint(endpoint.as_str())
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to create OTLP exporter: {}", e))?;
 
