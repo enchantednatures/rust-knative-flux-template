@@ -13,16 +13,33 @@ spec:
         name: {{ project_name | replace: "_", "-" }}
         namespace: flux-system
       reconcileStrategy: Revision
+  {% if event_source_kafka %}
+  # Knative >=1.23 rejects valueFrom.fieldRef env vars; the ksvc chart's DLQ
+  # service hardcodes POD_NAME/POD_NAMESPACE via fieldRef. Strip the env list
+  # post-render — the event_display image does not need them.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Service
+              name: "{{ project_name | replace: '_', '-' }}-{{ kafka_topic }}-dlq"
+            patch: |-
+              - op: replace
+                path: /spec/template/spec/containers/0/env
+                value: []
+  {% endif %}
   values:
     global:
       fullnameOverride: "{{ project_name | replace: '_', '-' }}"
       labels:
         app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
 
-    # Empty key "" produces service name = fullnameOverride (no suffix)
-    # via ksvc.serviceName: printf "%s-%s" fullname "" | trimSuffix "-"
+    # Named the services key `app` (non-empty) because kafka.sources.*.sink must
+    # reference a services key and the ksvc chart rejects an empty sink. An empty
+    # nameOverride makes the Knative Service name exactly fullnameOverride.
     services:
-      "":
+      app:
+        nameOverride: ""
         image:
           repository: "{{ image_registry }}/{{ github_org }}/{{ project_name | replace: '_', '-' }}"
           tag: "latest"  # {"$imagepolicy": "flux-system:{{ project_name | replace: '_', '-' }}:tag"}
@@ -141,7 +158,7 @@ spec:
             - "kafka.kafka.svc.cluster.local:9092"
           consumers: 3
           initialOffset: latest
-          sink: ""
+          sink: "app"
           delivery:
             retry: 5
             backoffPolicy: exponential
