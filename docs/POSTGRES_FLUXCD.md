@@ -142,7 +142,7 @@ Each overlay:
    - `ObjectStore /spec/retentionPolicy` — `{{ backup_retention_dev }}d` / `{{ backup_retention_staging }}d` / `{{ backup_retention_prod }}d`
 3. App values patched via the HelmRelease strategic merge in `deploy/base/helmrelease.yaml` (image, scaling, gated `APP__POSTGRES__URL` env + CA volume).
 
-> **Known limitation**: overlays contain the empty-string `services.""` HelmRelease patch, which kustomize >= 5.4 rejects ("wrong node kind: expected ScalarNode but got MappingNode"). Pre-existing tracked issue #136, not specific to postgres resources.
+> **Historical note**: earlier template revisions used an empty-string `services.""` HelmRelease patch key that kustomize >= 5.4 rejected (issue #136). The HelmRelease now uses a named `services.app` key, so overlays build cleanly.
 
 ## Multi-Environment Deployment
 
@@ -171,6 +171,6 @@ kubectl logs -l cnpg.io/cluster=<project>-postgres -n default --tail=100
 # Decryption failures (missing/rotated age key)
 flux logs --all-namespaces | grep -i decrypt
 
-# Overlay reconciliation fails due to services."" (issue #136)
-kubectl kustomize deploy/overlays/dev    # reproduces the failure locally
+# Overlays build cleanly now (issue #136 resolved via the named services.app key)
+kubectl kustomize deploy/overlays/dev    # build the overlay locally
 ```

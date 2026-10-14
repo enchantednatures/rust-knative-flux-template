@@ -630,7 +630,8 @@ patches:
       spec:
         values:
           services:
-            "":
+            app:
+              nameOverride: ""
               image:
                 repository: "kind-registry-dev:5000/my-service" # Local registry (in-cluster name)
                 tag: "dev"                                       # Development tag
@@ -989,6 +990,7 @@ deploy/
 ```
 
 ## Recent Changes
+- marrakesh-backport: Ported the deployment fixes a real generated project surfaced. The HelmRelease now uses a named `services.app` key (with `nameOverride: ""`) and the Kafka source `sink` points at it; a postRenderer strips the `fieldRef` env list from the DLQ Knative Service (Knative >= 1.23 rejects it); per-env patches layer over the base instead of clobbering `sink`/`delivery`/`dlq` and the dev overlay keeps `APP__POSTGRES__HOST`; CNPG Cluster and Pooler pods carry resource requests/limits so `require-pod-resources` policies admit them; the Dockerfile builder and runtime both use trixie with the librdkafka build deps; telemetry honors `APP__TELEMETRY__OTLP_ENDPOINT`; the test harness installs one global metrics recorder and injects `ConnectInfo`; the generated CI/release workflows run on ARC runners and authenticate Trivy; `make bootstrap` renders each config with `--load-restrictor=LoadRestrictionsNone`; and the default PostgreSQL major is now 18.
 - rustfs-dev-storage: Replaced the dev/CI MinIO deployment with RustFS (`rustfs/rustfs:1.0.1`) and the `mc` client with `rc` (`cargo install rustfs-cli`); dev namespace/service `rustfs`, credentials rustfsadmin/rustfsadmin, console :9001, endpoints updated in manifests, overlays, scripts and docs
 - pgbouncer-pooler: Added opt-in PgBouncer via a sibling Pooler component (`deploy/components/postgres-pooler`, `postgres_pooler` prompt, per-env instances 1/2/4); Cluster registers the pooler service name in `spec.certificates.serverAltDNSNames` so `verify-full` works through the reused `<cluster>-server` cert; app routes through it via `APP__POSTGRES__HOST` (postgres.host override)
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)

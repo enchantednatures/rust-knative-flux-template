@@ -52,6 +52,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - None
 
+### Fixed (backported from generated-project feedback)
+
+Fixes ported from a real generated project (marrakesh) that deployed the full stack and surfaced defects the template's own CI never exercised.
+
+- **Deployment**: the HelmRelease uses a named `services.app` key (with `nameOverride: ""`) instead of the empty-string `services.""` key, and the Kafka source `sink` references `app`. An empty sink was rejected by the ksvc chart validator, which made every Kafka-source project undeployable.
+- **Knative DLQ**: a HelmRelease `postRenderer` strips the `fieldRef` env list from the DLQ Knative Service; Knative >= 1.23 rejects `valueFrom.fieldRef` in that position.
+- **Overlays**: the dev/staging/prod Kafka patches now merge into the base source instead of replacing the whole object, so `sink`, `delivery`, and `dlq` survive; the dev overlay keeps `APP__POSTGRES__HOST` so PgBouncer routing is not silently dropped.
+- **Policy conformance**: the CNPG `Cluster` gains pod-level `resources` and the `Pooler` carries a `pgbouncer` container with requests/limits, so clusters running `require-pod-resources` policies admit the pods.
+- **Container image**: the Dockerfile builder and runtime share the trixie base and the librdkafka build dependencies ship with the Kafka feature, fixing a glibc startup crash and the Kafka image build.
+- **Observability**: `src/observability.rs` now calls `.with_endpoint(...)`, so traces reach `APP__TELEMETRY__OTLP_ENDPOINT` instead of localhost.
+- **Tests**: the harness installs the global metrics recorder once and injects `ConnectInfo`, so the shipped suite runs to completion in one process.
+- **CI/CD**: the generated `ci.yaml`/`release.yaml` install the build dependencies, wait for Docker-in-Docker, and work on ARC runners; the security jobs authenticate to GHCR and upload the Trivy SARIF as a build artifact (code scanning needs GitHub Advanced Security, which many repos lack). The release workflow no longer overrides the image tag with a non-existent `release` tag.
+- **Bootstrap**: `make bootstrap <env>` renders with `kustomize build --load-restrictor=LoadRestrictionsNone`, fixing the config-directory reference that `kubectl apply -k` rejected.
+- **Defaults**: `postgres_version` defaults to `18` (field-proven on CloudNativePG 1.28.0), and the Kafka consumer-group and event-name prompts use literal defaults instead of unexpanded generate-time placeholders.
+
 ### Fixed
 - Fixed CloudNativePG 1.28 compatibility issues in E2E test fixtures
 - Fixed heredoc multi-line SQL in failover test script

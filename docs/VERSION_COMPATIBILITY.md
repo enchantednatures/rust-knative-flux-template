@@ -14,7 +14,7 @@ This document tracks the compatibility requirements for all components used in t
 | **Kourier** | v1.20.0 | Knative ingress controller |
 | **Redis** | Latest (Bitnami) | Infrastructure dependency |
 | **RustFS** | 1.0.1 | S3-compatible storage (managed with the `rc` CLI) |
-| **PostgreSQL (CloudNativePG)** | 16 (default) | Optional database |
+| **PostgreSQL (CloudNativePG)** | 18 (default) | Optional database |
 
 ## Kubernetes → Knative Compatibility
 
