@@ -561,7 +561,7 @@ jobs:
           cd "$GENERATED_DIR"
 
           # Scoped leak gate. Excludes:
-          #   - .github/workflows        GitHub Actions ${{ }} expressions
+          #   - .github/workflows        GitHub Actions dollar-double-brace expressions
           #   - deploy/chart/templates   legitimate Helm {{ }}
           #   - docs/FLAGGER.md / TESTING.md / MONITORING.md
           #                              intentional runtime {{ }} examples
