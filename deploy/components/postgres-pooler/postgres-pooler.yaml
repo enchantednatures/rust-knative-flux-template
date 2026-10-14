@@ -36,9 +36,17 @@ spec:
 
   template:
     spec:
-      # `containers` is a mandatory key in the Pooler CRD; empty list defers
-      # container spec (resources, affinity, versions) to operator defaults.
-      containers: []
+      # `containers` is a mandatory key in the Pooler CRD. A `pgbouncer`
+      # container carries the pod resource floor (require-pod-resources
+      # policies reject a Pooler with an empty list); overlays may patch it.
+      containers:
+        - name: pgbouncer
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
 
   pgbouncer:
     # transaction pooling is the right default for a stateless web service;
