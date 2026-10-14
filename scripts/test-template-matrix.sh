@@ -77,7 +77,7 @@ SCENARIOS=(
 
 # Postgres-specific template values (only used when postgres feature is enabled)
 POSTGRES_VALUES='
-postgres_version = "16"
+postgres_version = "18"
 postgres_instances_dev = "1"
 postgres_instances_staging = "2"
 postgres_instances_prod = "3"
