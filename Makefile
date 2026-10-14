@@ -289,6 +289,7 @@ dev-get-url: ## Get the application URL
 # Valid overlay environments (derived from deploy/overlays/ subdirectories)
 VALID_ENVS := $(notdir $(wildcard deploy/overlays/*))
 
+# Bootstrap renders each Flux config with `kustomize build --load-restrictor=LoadRestrictionsNone` (kubectl apply -k cannot set the restrictor) because every config dir references `../../kustomization-<env>.yaml` outside its own root, which kustomize's default LoadRestrictionsRootOnly rejects.
 .PHONY: bootstrap
 bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 	@ENV="$(word 2,$(MAKECMDGOALS))"; \
@@ -317,7 +318,7 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 		kubectl apply --server-side -f deploy/flux/git-repository.yaml || { echo "${RED}✗ Failed to apply GitRepository${NC}"; exit 1; }; \
 		echo ""; \
 		echo "${YELLOW}[2/2]${NC} Applying Flux Kustomizations from $$CONFIG ..."; \
-		kubectl apply --server-side -k "$$CONFIG" || { echo "${RED}✗ Failed to apply $$CONFIG${NC}"; exit 1; }; \
+		kustomize build --load-restrictor=LoadRestrictionsNone "$$CONFIG" > /tmp/flux-config-render.yaml && kubectl apply --server-side -f /tmp/flux-config-render.yaml || { echo "${RED}✗ Failed to apply $$CONFIG${NC}"; exit 1; }; \
 		echo ""; \
 		echo "${GREEN}✓ Flux bootstrap complete for $${RESOLVED}${NC}"; \
 		echo "  Flux will now reconcile deploy/overlays/$${RESOLVED}/"; \
