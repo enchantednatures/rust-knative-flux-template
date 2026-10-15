@@ -92,20 +92,40 @@ spec:
                 name: "{{ project_name | replace: '_', '-' }}-secrets"
                 key: redis-url
           {% if feature_s3 %}
+          # Object storage is backed by the chart-created ObjectBucketClaim
+          # "<project>-app-data". The cluster's bucket provisioner publishes:
+          #   - Secret   "<project>-app-data" -> AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+          #   - ConfigMap "<project>-app-data" -> BUCKET_HOST / BUCKET_PORT / BUCKET_NAME
+          # both in the release namespace.
           - name: AWS_ACCESS_KEY_ID
             valueFrom:
               secretKeyRef:
-                name: "{{ project_name | replace: '_', '-' }}-secrets"
-                key: aws-access-key-id
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: AWS_ACCESS_KEY_ID
           - name: AWS_SECRET_ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: "{{ project_name | replace: '_', '-' }}-secrets"
-                key: aws-secret-access-key
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: AWS_SECRET_ACCESS_KEY
+          # BUCKET_HOST/BUCKET_PORT must be declared BEFORE APP__S3__ENDPOINT:
+          # Kubernetes expands $(VAR) references using earlier env entries only.
+          - name: BUCKET_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_HOST
+          - name: BUCKET_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_PORT
           - name: APP__S3__ENDPOINT
-            value: "http://rustfs:9000"
+            value: "http://$(BUCKET_HOST):$(BUCKET_PORT)"
           - name: APP__S3__BUCKET
-            value: "data"
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_NAME
           - name: APP__S3__REGION
             value: "us-east-1"
           {% endif %}
