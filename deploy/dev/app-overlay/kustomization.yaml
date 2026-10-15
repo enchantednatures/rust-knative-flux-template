@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Kind-local variant of the dev overlay: the dev overlay wires chart-created
+# Ceph buckets, but the local Kind cluster has no bucket provisioner. This
+# layer drops the ObjectBucketClaim values and points the CNPG ObjectStore
+# back at the in-cluster RustFS (whose init job stands in for the provisioner).
+# Always generated; a passthrough for projects without feature_s3/feature_postgres.
+resources:
+  - ../../overlays/dev
+{% if feature_s3 or feature_postgres %}
+patches:
+  # Kind has no ObjectBucketClaim CRDs/provisioner: drop the chart claims.
+  - target:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: remove
+        path: /spec/values/objectBuckets
+{% if feature_postgres %}
+  # Backups keep using the local RustFS in Kind.
+  - target:
+      kind: ObjectStore
+      name: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"
+    patch: |-
+      - op: replace
+        path: /spec/configuration/endpointURL
+        value: "http://rustfs.rustfs.svc.cluster.local:9000"
+{% endif %}
+{% endif %}

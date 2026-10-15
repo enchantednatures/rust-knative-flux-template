@@ -49,7 +49,7 @@ dev-up: ## Start full development environment (cluster + all services)
 	@echo ""
 {%- if feature_postgres %}
 	@echo "${YELLOW}[5/6]${NC} Waiting for CNPG operator and deploying PostgreSQL..."
-	@./scripts/dev/deploy-postgres.sh || { echo "${RED}✗ Failed to deploy PostgreSQL${NC}"; exit 1; }
+	@./scripts/dev/deploy-postgres.sh dev --kustomize deploy/dev/app-overlay || { echo "${RED}✗ Failed to deploy PostgreSQL${NC}"; exit 1; }
 	@echo ""
 {%- endif %}
 	@echo "${YELLOW}[6/6]${NC} Building and deploying application..."
@@ -237,7 +237,7 @@ dev-postgres: ## Deploy PostgreSQL cluster (requires feature_postgres)
 	@if [ ! -f scripts/dev/deploy-postgres.sh ]; then \
 		echo "${RED}PostgreSQL feature is not enabled in this project${NC}"; exit 1; \
 	fi
-	@./scripts/dev/deploy-postgres.sh
+	@./scripts/dev/deploy-postgres.sh dev --kustomize deploy/dev/app-overlay
 
 .PHONY: dev-postgres-status
 dev-postgres-status: ## Show CNPG Cluster status and ready instances

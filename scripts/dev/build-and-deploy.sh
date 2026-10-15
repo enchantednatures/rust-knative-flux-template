@@ -96,7 +96,8 @@ for cmd in helm yq; do
 done
 
 CHART_DIR="${PROJECT_ROOT}/deploy/chart"
-OVERLAY_DIR="${PROJECT_ROOT}/deploy/overlays/dev"
+# Kind-local overlay: falls back to the in-cluster RustFS (no Ceph provisioner).
+OVERLAY_DIR="${PROJECT_ROOT}/deploy/dev/app-overlay"
 
 # Build chart dependencies (pulls ksvc OCI dependency if not cached)
 if [[ ! -d "${CHART_DIR}/charts" ]] || [[ ! -f "${CHART_DIR}/Chart.lock" ]]; then
@@ -107,8 +108,8 @@ if [[ ! -d "${CHART_DIR}/charts" ]] || [[ ! -f "${CHART_DIR}/Chart.lock" ]]; the
 	fi
 fi
 
-# Render the merged HelmRelease (base + dev overlay) and extract values
-echo -e "${YELLOW}→${NC} Extracting values from dev overlay..."
+# Render the merged HelmRelease (base + Kind dev overlay) and extract values
+echo -e "${YELLOW}→${NC} Extracting values from Kind dev overlay..."
 RENDERED_HR=$(kubectl kustomize "${OVERLAY_DIR}")
 VALUES_FILE=$(mktemp /tmp/helm-values-XXXXXX.yaml)
 trap 'rm -f "${VALUES_FILE}"' EXIT
