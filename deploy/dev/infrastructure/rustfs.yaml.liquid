@@ -93,27 +93,61 @@ spec:
               sleep 2
             done
             {%- if feature_s3 %}
-            rc bucket create -p local/data
+            # App data bucket. Named after the ObjectBucketClaim the chart
+            # creates in a real cluster (the claim's bucket takes its name);
+            # local Kind has no bucket provisioner, so this init job stands in.
+            rc bucket create -p "local/{{ project_name | replace: "_", "-" }}-app-data"
             {%- endif %}
             {%- if feature_postgres %}
             # Backup destination bucket for the CNPG ObjectStore: barman does
             # not create buckets, so the dev init job must create it upfront.
+            # Mimics the chart's ObjectBucketClaim <project>-postgres-backups.
             rc bucket create -p "local/{{ project_name | replace: "_", "-" }}-postgres-backups"
             {%- endif %}
             echo "Bucket creation completed"
 {%- if feature_postgres %}
 ---
-# Dev-only credentials for the CNPG barman-cloud ObjectStore. The
-# ObjectStore CR references this secret by name (keys ACCESS_KEY_ID /
-# ACCESS_SECRET_KEY). Rotate along with the rustfs creds when hardening dev.
+# Dev-only stand-in for the ObjectBucketClaim provisioner contract: a
+# claim-named Secret carrying the S3 credentials the CNPG barman-cloud
+# ObjectStore consumes (keys AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY,
+# matching the lib-bucket-provisioner contract). Rotate along with the rustfs
+# creds when hardening dev. This mimics what the provisioner creates for the
+# local Kind cluster, which has no bucket provisioner.
 apiVersion: v1
 kind: Secret
 metadata:
-  name: postgres-backup-storage
+  name: {{ project_name | replace: "_", "-" }}-postgres-backups
   namespace: default
 type: Opaque
 stringData:
-  ACCESS_KEY_ID: "rustfsadmin"
-  ACCESS_SECRET_KEY: "rustfsadmin"
+  AWS_ACCESS_KEY_ID: "rustfsadmin"
+  AWS_SECRET_ACCESS_KEY: "rustfsadmin"
+{%- endif %}
+{%- if feature_s3 %}
+---
+# Dev-only stand-ins for the ObjectBucketClaim provisioner contract used by
+# the app: a claim-named Secret (credentials) and ConfigMap (connection
+# identity). The app consumes these exactly as it would the objects the
+# provisioner creates in a real cluster, so no env rewriting is needed between
+# local Kind and Ceph. This is the local Kind fallback for the app-data claim.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-app-data
+  namespace: default
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "rustfsadmin"
+  AWS_SECRET_ACCESS_KEY: "rustfsadmin"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ project_name | replace: "_", "-" }}-app-data
+  namespace: default
+data:
+  BUCKET_HOST: rustfs.rustfs.svc.cluster.local
+  BUCKET_PORT: "9000"
+  BUCKET_NAME: {{ project_name | replace: "_", "-" }}-app-data
 {%- endif %}
 {% endif %}
