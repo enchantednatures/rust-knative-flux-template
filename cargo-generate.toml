@@ -131,6 +131,17 @@ backup_retention_dev = { prompt = "Dev backup retention (days)", type = "string"
 backup_retention_staging = { prompt = "Staging backup retention (days)", type = "string", default = "14" }
 backup_retention_prod = { prompt = "Prod backup retention (days)", type = "string", default = "30" }
 barman_plugin_installed = { prompt = "Skip installing the Barman Cloud plugin (it is already installed on your cluster)?", type = "bool", default = false }
+# Ceph RGW endpoints per environment — referenced only by the postgres path in
+# the per-env overlays (the ObjectStore endpointURL patch).
+ceph_rgw_endpoint_dev = { prompt = "Ceph RGW endpoint URL (dev)", type = "string", default = "http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:80" }
+ceph_rgw_endpoint_staging = { prompt = "Ceph RGW endpoint URL (staging)", type = "string", default = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443" }
+ceph_rgw_endpoint_prod = { prompt = "Ceph RGW endpoint URL (prod)", type = "string", default = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443" }
+
+[conditional.'feature_s3 || feature_postgres'.placeholders]
+# Bucket StorageClass for chart-created ObjectBucketClaims (serves both
+# consumers: postgres backups and app storage). Referenced by the
+# per-env overlays.
+ceph_bucket_storage_class = { prompt = "Bucket StorageClass for Ceph RGW (ObjectBucketClaims)", type = "string", default = "ceph-bucket" }
 
 [conditional.'!feature_postgres']
 ignore = [
