@@ -206,11 +206,10 @@ For production/staging, ensure external Kafka is configured:
 - `APP__REDIS__URL`: Redis connection URL (default: redis://localhost:6379)
 
 **S3/RustFS:**
-- `APP__S3__ENDPOINT`: S3 endpoint (default: http://rustfs:9000)
-- `APP__S3__BUCKET`: Bucket name (default: data)
+- `APP__S3__ENDPOINT`: S3 endpoint. Deployed environments get `http://$(BUCKET_HOST):$(BUCKET_PORT)`, interpolated from the provisioned `{{ project_name | replace: "_", "-" }}-app-data` ConfigMap; local dev defaults to `http://localhost:9000`
+- `APP__S3__BUCKET`: Bucket name. Deployed environments read it from the claim ConfigMap (`BUCKET_NAME`); local dev defaults to `data`
 - `APP__S3__REGION`: AWS region (default: us-east-1)
-- `AWS_ACCESS_KEY_ID`: S3 access key
-- `AWS_SECRET_ACCESS_KEY`: S3 secret key
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`: S3 credentials. Deployed environments read them from the provisioner-owned `{{ project_name | replace: "_", "-" }}-app-data` Secret, never from Git
 
 {% if feature_kafka %}
 **Kafka Event Publishing:**
@@ -553,6 +552,10 @@ docker logs <container-id>
 ```
 
 ## Terraform Infrastructure
+
+> Optional, self-managed object store. The dev/staging/prod Ceph deployments get
+> their buckets and credentials from the chart-provisioned ObjectBucketClaims
+> (see `docs/STORAGE.md`); the `rustfsadmin` values below are local-dev only.
 
 ### Deploy Buckets
 

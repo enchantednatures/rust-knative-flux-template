@@ -13,13 +13,20 @@ This template includes optional S3-compatible storage support via Apache OpenDAL
          │
          │ (opendal::Operator)
          ▼
-┌──────────────────┐         ┌──────────────────┐
-│   OpenDAL        │────────▶│  RustFS (local)  │
-│   S3 Backend     │         │  or AWS S3       │
-└──────────────────┘         └──────────────────┘
+┌──────────────────┐         ┌──────────────────────────────┐
+│   OpenDAL        │────────▶│  RustFS (local Kind)         │
+│   S3 Backend     │         │  Ceph RGW (chart-provisioned)│
+└──────────────────┘         │  or external S3              │
+                             └──────────────────────────────┘
 ```
 
 The `AppState` contains a pre-configured `opendal::Operator` that handles all object storage operations.
+
+In deployed environments the bucket and its credentials come from an
+ObjectBucketClaim that the chart creates; the app reads them from a
+provisioner-owned Secret and ConfigMap. Local Kind development falls back to the
+bundled RustFS, which mimics the same contract. See
+[Kubernetes Deployment](#kubernetes-deployment).
 
 ## Configuration
 
@@ -49,6 +56,12 @@ This automatically:
 1. Starts RustFS on http://localhost:9000
 2. Creates the `data` bucket via the `rustfs-init` service (using the `rc` CLI)
 3. Makes web console available at http://localhost:9001
+
+> **Local development only.** The docker-compose flow uses the bundled `data`
+> bucket and the `rustfsadmin` / `rustfsadmin` credentials above. Deployed
+> environments never use these literals: the provisioner creates the
+> `<project>-app-data` bucket, Secret and ConfigMap, and the app consumes those
+> (see [Kubernetes Deployment](#kubernetes-deployment)).
 
 ### Configuration Priority
 
@@ -182,14 +195,17 @@ Test operations covered:
 - List objects with prefix
 - Delete objects
 
-## Infrastructure: Terraform
+## Infrastructure: Terraform (optional, self-managed store)
 
-Manage MinIO buckets with Terraform:
+This Terraform module manages MinIO/RustFS buckets for teams that run their own
+object store instead of the chart-provisioned Ceph bucket. It is not used by the
+dev/staging/prod Ceph deployments, which get their buckets and credentials from
+the ObjectBucketClaim.
 
 ```bash
 cd terraform
 
-# Create .tfvars
+# Create .tfvars (local development values; rustfsadmin is local-dev only)
 cat > terraform.tfvars <<EOF
 minio_endpoint   = "http://localhost:9000"
 minio_access_key = "rustfsadmin"
@@ -206,6 +222,10 @@ The module creates:
 - `data` bucket (for development)
 - `data-staging` bucket (with versioning)
 - `data-prod` bucket (with versioning)
+
+If you go this route, point the app at the resulting endpoint and bucket with
+the [override](#override-for-external-s3--tls) above, and name those buckets with
+your project prefix to avoid collisions.
 
 ### Production RustFS (Kubernetes)
 
@@ -247,19 +267,47 @@ cargo run
 
 ## Kubernetes Deployment
 
-### Secret Management
+### App storage from the provisioned claim
 
-Create secret with S3 credentials:
+In dev/staging/prod the chart declares an ObjectBucketClaim named
+`{{ project_name | replace: "_", "-" }}-app-data`. The cluster's bucket
+provisioner (Rook/Ceph RGW) creates the bucket and publishes two objects in the
+release namespace:
+
+- **Secret** `{{ project_name | replace: "_", "-" }}-app-data` with keys
+  `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+- **ConfigMap** `{{ project_name | replace: "_", "-" }}-app-data` with keys
+  `BUCKET_HOST`, `BUCKET_PORT` and `BUCKET_NAME`
+
+The base HelmRelease wires the app to those objects, so you don't create S3
+credentials yourself. Env var names are unchanged:
+
+| Env var | Source |
+| --- | --- |
+| `AWS_ACCESS_KEY_ID` | Secret `...-app-data`, key `AWS_ACCESS_KEY_ID` |
+| `AWS_SECRET_ACCESS_KEY` | Secret `...-app-data`, key `AWS_SECRET_ACCESS_KEY` |
+| `BUCKET_HOST` | ConfigMap `...-app-data`, key `BUCKET_HOST` |
+| `BUCKET_PORT` | ConfigMap `...-app-data`, key `BUCKET_PORT` |
+| `APP__S3__ENDPOINT` | literal `http://$(BUCKET_HOST):$(BUCKET_PORT)`, expanded from the two entries above |
+| `APP__S3__BUCKET` | ConfigMap `...-app-data`, key `BUCKET_NAME` |
+| `APP__S3__REGION` | literal `us-east-1` |
+
+`BUCKET_HOST` and `BUCKET_PORT` are declared as env entries *before*
+`APP__S3__ENDPOINT`, because Kubernetes only expands `$(VAR)` references using
+env entries that appear earlier in the list. Reordering them breaks the
+endpoint.
+
+The `{{ project_name | replace: "_", "-" }}-secrets` Secret now carries only the
+`redis-url` key; the old `aws-access-key-id` / `aws-secret-access-key` keys are
+gone. Create it with:
 
 ```bash
 kubectl create secret generic {{ project_name | replace: "_", "-" }}-secrets \
   --from-literal=redis-url='redis://redis:6379' \
-  --from-literal=aws-access-key-id='your-key' \
-  --from-literal=aws-secret-access-key='your-secret' \
   -n {{ target_namespace }}
 ```
 
-Or use ExternalSecrets Operator to sync from AWS Secrets Manager:
+Or sync just that key with the ExternalSecrets Operator:
 
 ```yaml
 apiVersion: external-secrets.io/v1beta1
@@ -273,12 +321,9 @@ spec:
   target:
     name: {{ project_name | replace: "_", "-" }}-secrets
   data:
-    - secretKey: aws-access-key-id
+    - secretKey: redis-url
       remoteRef:
-        key: /prod/{{ project_name }}/aws-access-key-id
-    - secretKey: aws-secret-access-key
-      remoteRef:
-        key: /prod/{{ project_name }}/aws-secret-access-key
+        key: /prod/{{ project_name }}/redis-url
 ```
 
 ### RustFS in Kubernetes
@@ -331,21 +376,71 @@ spec:
 EOF
 ```
 
-### Kustomize Patches
+### Override for external S3 / TLS
 
-Environment-specific S3 configuration is managed via Kustomize ConfigMaps:
+To point the app at a store that is not the chart-provisioned claim (plain S3, an
+existing bucket, or a TLS-protected RGW endpoint), patch the app env entries per
+environment. The env list lives under
+`/spec/values/services//env` in the HelmRelease; the environment overlays
+already patch it (see `deploy/overlays/<env>/kustomization.yaml`).
+
+Replace the four claim-sourced entries with literals and a Secret you own:
 
 ```yaml
-# deploy/overlays/dev/kustomization.yaml
-configMapGenerator:
-  - name: s3-config
-    literals:
-      - S3_ENDPOINT=http://rustfs:9000
-      - S3_BUCKET=data
-      - S3_REGION=us-east-1
+# deploy/overlays/<env>/kustomization.yaml (excerpt)
+patches:
+  - target:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: replace
+        path: /spec/values/services//env
+        value:
+          # ... keep the non-S3 base entries (server, redis, telemetry) ...
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: {{ project_name | replace: "_", "-" }}-external-s3
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ project_name | replace: "_", "-" }}-external-s3
+                key: AWS_SECRET_ACCESS_KEY
+          - name: APP__S3__ENDPOINT
+            value: "https://s3.example.com"   # use https:// for TLS clusters
+          - name: APP__S3__BUCKET
+            value: "your-bucket"
+          - name: APP__S3__REGION
+            value: "us-east-1"
 ```
 
+Key points:
+
+- Set `APP__S3__ENDPOINT` to a literal endpoint and include `https://` for
+  TLS-protected stores. Set `APP__S3__BUCKET` to your bucket name.
+- Point `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` at a Secret you manage,
+  not the claim Secret.
+- Drop the `BUCKET_HOST` / `BUCKET_PORT` entries and the `APP__S3__ENDPOINT`
+  interpolation when you override; they only make sense against the claim
+  ConfigMap.
+- `<project>-secrets` keeps only `redis-url` for these overrides; don't stuff S3
+  keys back into it under the old `aws-access-key-id` names.
+
+> **Never Git-manage a Secret with the claim name.** The provisioner owns the
+> `<project>-app-data` Secret and rewrites it on reconciliation. A Git-managed
+> Secret that reuses that name (or the backup name `<project>-postgres-backups`)
+> fights the provisioner and your credentials get overwritten. Put external
+> credentials in a differently named Secret, such as
+> `{{ project_name | replace: "_", "-" }}-external-s3`. The provisioner Secret
+> is also plaintext, so it must never be committed or SOPS-managed.
+
 ## Troubleshooting
+
+> The steps below target the local docker-compose / Kind RustFS (`rustfsadmin`
+> credentials, `data` bucket). Deployed environments get their bucket and
+> credentials from the ObjectBucketClaim; check the provisioner Secret/ConfigMap
+> instead.
 
 ### Connection refused error
 
@@ -366,7 +461,7 @@ configMapGenerator:
    echo $AWS_ACCESS_KEY_ID
    echo $AWS_SECRET_ACCESS_KEY
    ```
-2. Default credentials for RustFS: `rustfsadmin / rustfsadmin`
+2. Default credentials for RustFS (local development): `rustfsadmin / rustfsadmin`
 3. Check RustFS console at http://localhost:9001
 
 ### Bucket not found
@@ -392,7 +487,7 @@ configMapGenerator:
 
 ## Monitoring
 
-### RustFS Web Console
+### RustFS Web Console (local development)
 
 Access RustFS UI at http://localhost:9001:
 - Username: `rustfsadmin`
@@ -421,7 +516,9 @@ Traces appear in Jaeger with operation details.
 1. **Use descriptive paths**: `documents/user-123/report.pdf` instead of `file123.pdf`
 2. **Add retry logic**: OpenDAL supports retry policies via layers
 3. **Enable versioning**: For production buckets (automatic via Terraform)
-4. **Use environment-specific buckets**: `data-dev`, `data-staging`, `data-prod`
+4. **Use environment-specific buckets**: the chart names them
+   `<project>-app-data` (dev) or `<project>-app-data-<env>` (staging/prod), so
+   names never collide across namespaces
 5. **Monitor usage**: Set up bucket lifecycle policies for old objects
 6. **Test locally**: Always test with RustFS locally before production
 

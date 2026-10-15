@@ -676,6 +676,7 @@ deploy/
 │       ├── canary.yaml
 │       └── metric-templates.yaml
 ├── dev/                         # Local dev infrastructure (installed imperatively)
+│   ├── app-overlay/             # Kind-only overlay: drops chart buckets, points ObjectStore at RustFS
 │   ├── kind-config.yaml         # Kind cluster + local registry config
 │   ├── infrastructure/          # redis, rustfs, kafka (Knative eventing sources)
 │   └── observability/           # jaeger, otel-collector, prometheus
@@ -751,6 +752,49 @@ This prevents:
 - Unnecessary resource duplication
 - Deployment failures when operator CRDs are missing
 
+### Object Bucket Provisioning (Ceph RGW / ObjectBucketClaim)
+
+When `feature_postgres` and/or `feature_s3` is on, the app HelmRelease declares
+`spec.values.objectBuckets`; the ksvc chart turns each entry into an
+ObjectBucketClaim. A cluster bucket provisioner (Rook/Ceph RGW, a documented
+cluster prerequisite) creates the bucket and publishes a claim-named Secret
+(credentials) and ConfigMap (connection identity) in the release namespace.
+
+Generate-time prompts:
+
+- `ceph_bucket_storage_class` (default `ceph-bucket`) - StorageClass for both
+  claims; it must use `reclaimPolicy: Retain` so pruning never destroys backups.
+- `ceph_rgw_endpoint_dev` / `ceph_rgw_endpoint_staging` / `ceph_rgw_endpoint_prod`
+  - the RGW endpoint the CNPG `ObjectStore` targets per environment. The app
+  derives its own endpoint from the claim ConfigMap instead.
+
+Per-environment bucket names (immutable once an ObjectBucketClaim first binds):
+
+| Claim | dev | staging | prod |
+| --- | --- | --- | --- |
+| Postgres backups | `<project>-postgres-backups` | `<project>-postgres-backups-staging` | `<project>-postgres-backups-prod` |
+| App data | `<project>-app-data` | `<project>-app-data-staging` | `<project>-app-data-prod` |
+
+Consumption contracts:
+
+- **Postgres backups**: the CNPG `ObjectStore`
+  (`deploy/components/postgres/postgres-backup.yaml`) reads
+  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from the claim Secret
+  `<project>-postgres-backups`; per-env overlays patch `endpointURL` and
+  `destinationPath` (`s3://<project>-postgres-backups[-env]/`).
+- **App storage**: the base HelmRelease reads S3 credentials from the claim
+  Secret `<project>-app-data` (keys `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY`) and the endpoint/bucket from the claim ConfigMap
+  (`BUCKET_HOST` / `BUCKET_PORT` / `BUCKET_NAME`), with
+  `APP__S3__ENDPOINT=http://$(BUCKET_HOST):$(BUCKET_PORT)`. Env var names are
+  unchanged; `BUCKET_HOST`/`BUCKET_PORT` must precede `APP__S3__ENDPOINT` for
+  Kubernetes `$(VAR)` expansion. `<project>-secrets` keeps only `redis-url`.
+
+Local Kind has no bucket provisioner: `deploy/dev/app-overlay` drops the chart
+claims and points the `ObjectStore` back at the in-cluster RustFS, whose init Job
+creates the same claim-named Secret/ConfigMap. External-S3 and TLS setups patch
+the app env entries per environment instead (see `docs/STORAGE.md`).
+
 ## Configuration
 
 - Use `figment` for hierarchical config (TOML files + env vars)
@@ -798,7 +842,7 @@ entirely absent when the prompt answers `false`.
 
 ## Active Technologies
 - Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
-- PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage (RustFS for dev, configurable for prod) (001-cloudnative-postgres-backups)
+- PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage backed by chart-provisioned ObjectBucketClaims (Ceph RGW in dev/staging/prod, RustFS for local Kind) (001-cloudnative-postgres-backups)
 - Flagger >=1.41.0 (optional, `flagger` feature flag — 1.41 introduced the Knative provider), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
 - GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
 
@@ -991,6 +1035,7 @@ deploy/
 
 ## Recent Changes
 - marrakesh-backport: Ported the deployment fixes a real generated project surfaced. The HelmRelease now uses a named `services.app` key (with `nameOverride: ""`) and the Kafka source `sink` points at it; a postRenderer strips the `fieldRef` env list from the DLQ Knative Service (Knative >= 1.23 rejects it); per-env patches layer over the base instead of clobbering `sink`/`delivery`/`dlq` and the dev overlay keeps `APP__POSTGRES__HOST`; CNPG Cluster and Pooler pods carry resource requests/limits so `require-pod-resources` policies admit them; the Dockerfile builder and runtime both use trixie with the librdkafka build deps; telemetry honors `APP__TELEMETRY__OTLP_ENDPOINT`; the test harness installs one global metrics recorder and injects `ConnectInfo`; the generated CI/release workflows run on ARC runners and authenticate Trivy; `make bootstrap` renders each config with `--load-restrictor=LoadRestrictionsNone`; and the default PostgreSQL major is now 18.
+- ksvc-ceph-bucket-adoption: App S3 and Postgres backups now consume chart-provisioned ObjectBucketClaims (Ceph RGW). Bucket names are `<project>-postgres-backups[-env]` and `<project>-app-data[-env]`; both read credentials from the claim-named provisioner Secret and bucket identity from its ConfigMap (app endpoint `http://$(BUCKET_HOST):$(BUCKET_PORT)`, env names unchanged). Local Kind falls back to RustFS via `deploy/dev/app-overlay` (the RustFS init Job mimics the provisioner contract); the dead staging/prod `s3-config` ConfigMaps were removed; external-S3/TLS setups patch the app env per environment.
 - rustfs-dev-storage: Replaced the dev/CI MinIO deployment with RustFS (`rustfs/rustfs:1.0.1`) and the `mc` client with `rc` (`cargo install rustfs-cli`); dev namespace/service `rustfs`, credentials rustfsadmin/rustfsadmin, console :9001, endpoints updated in manifests, overlays, scripts and docs
 - pgbouncer-pooler: Added opt-in PgBouncer via a sibling Pooler component (`deploy/components/postgres-pooler`, `postgres_pooler` prompt, per-env instances 1/2/4); Cluster registers the pooler service name in `spec.certificates.serverAltDNSNames` so `verify-full` works through the reused `<cluster>-server` cert; app routes through it via `APP__POSTGRES__HOST` (postgres.host override)
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
