@@ -986,12 +986,14 @@ jobs:
           fi
 
           if [ "${{ matrix.feature_postgres }}" = "true" ]; then
-            # Dev-grade barman credentials backing the ObjectStore CR the
-            # generated project applies (bucket created in the Install RustFS
-            # step, endpoint http://rustfs.default.svc.cluster.local:9000).
-            kubectl create secret generic postgres-backup-storage \
-              --from-literal=ACCESS_KEY_ID=rustfsadmin \
-              --from-literal=ACCESS_SECRET_KEY=rustfsadmin \
+            # Claim-contract credentials backing the ObjectStore CR the
+            # generated project applies: the bucket provisioner creates Secret
+            # <claim name> (here ${SERVICE_NAME}-postgres-backups) with the
+            # standard AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY keys. The
+            # bucket itself is created in the Install RustFS step.
+            kubectl create secret generic ${SERVICE_NAME}-postgres-backups \
+              --from-literal=AWS_ACCESS_KEY_ID=rustfsadmin \
+              --from-literal=AWS_SECRET_ACCESS_KEY=rustfsadmin \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
 
@@ -1020,6 +1022,16 @@ jobs:
             echo "patches:"
             yq eval '.patches | map(select(.target.kind == "Cluster" or .target.kind == "ObjectStore" or .target.kind == "Pooler"))' \
               "${GENERATED_DIR}/deploy/overlays/dev/kustomization.yaml" | sed 's/^/  /'
+            # The dev overlay patches the ObjectStore endpoint to the chart's
+            # Ceph RGW, which this Kind e2e cannot reach (its RustFS runs in
+            # namespace default). Appended LAST so this replace wins over the
+            # filtered-in dev-overlay entry.
+            echo "  - target:"
+            echo "      kind: ObjectStore"
+            echo "    patch: |-"
+            echo "      - op: replace"
+            echo "        path: /spec/configuration/endpointURL"
+            echo '        value: "http://rustfs.default.svc.cluster.local:9000"'
           } > "$PG_TMP/kustomization.yaml"
           kustomize build "$PG_TMP" > /tmp/pg-rendered.yaml
           grep -E '^kind:' /tmp/pg-rendered.yaml | head -5 || true
