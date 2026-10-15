@@ -47,6 +47,29 @@ patches:
         value: earliest
       {% endif %}
 
+  {% if feature_postgres or feature_s3 %}
+  # Object buckets provisioned per environment by the chart (ObjectBucketClaim).
+  # Names are immutable once a claim first binds; keep them environment-unique.
+  - target:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: add
+        path: /spec/values/objectBuckets
+        value:
+          {% if feature_postgres %}
+          postgres-backups:
+            storageClassName: "{{ ceph_bucket_storage_class }}"
+            endpointURL: "{{ ceph_rgw_endpoint_staging }}"
+            bucketName: "{{ project_name | replace: '_', '-' }}-postgres-backups-staging"
+          {% endif %}
+          {% if feature_s3 %}
+          app-data:
+            storageClassName: "{{ ceph_bucket_storage_class }}"
+            bucketName: "{{ project_name | replace: '_', '-' }}-app-data-staging"
+          {% endif %}
+  {% endif %}
+
   {% if feature_postgres %}
   # Per-env CloudNativePG sizing (component base carries prod-leaning defaults).
   - target:
@@ -64,6 +87,18 @@ patches:
       - op: replace
         path: /spec/retentionPolicy
         value: "{{ backup_retention_staging }}d"
+  # Point backups at THIS environment's Ceph RGW bucket (base carries the
+  # dev/Kind RustFS endpoint and the un-suffixed destination path).
+  - target:
+      kind: ObjectStore
+      name: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"
+    patch: |-
+      - op: replace
+        path: /spec/configuration/endpointURL
+        value: "{{ ceph_rgw_endpoint_staging }}"
+      - op: replace
+        path: /spec/configuration/destinationPath
+        value: "s3://{{ project_name | replace: '_', '-' }}-postgres-backups-staging/"
   {% endif %}
   {% if feature_postgres and postgres_pooler %}
   # PgBouncer pooler instance count (see deploy/components/postgres/pooler).
@@ -88,13 +123,3 @@ patches:
         path: /spec/provider/address
         value: "{{ flagger_prometheus_url_staging }}"
   {% endif %}
-
- {% if feature_s3 %}
-configMapGenerator:
-  - name: s3-config
-    behavior: create
-    literals:
-      - S3_ENDPOINT=https://rustfs.staging.svc.cluster.local:9000
-      - S3_BUCKET=data-staging
-      - S3_REGION=us-east-1
- {% endif %}
