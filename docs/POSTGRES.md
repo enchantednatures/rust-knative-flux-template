@@ -580,7 +580,7 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 **TLS/cert story**: the operator generates a self-signed CA (secret `<cluster>-ca`, key `ca.crt`), signs server certs per node and mounts them server-side. TLS is *enforced* by the shipped pg_hba rule (`hostssl all all all scram-sha-256`). The CA cert is mounted into the Knative pod via the ksvc chart `volumes`/`volumeMounts` wiring, so sqlx connects with `sslmode=verify-full`; the operator rotates certs automatically (7d before expiry).
 
 **Known limitations**:
-- Repository issue #136: the empty-string `services.""` HelmRelease patch is rejected by kustomize >= 5.4 — overlay reconciliation is blocked until that patch format is fixed (pre-existing, unrelated to postgres resources).
+- Repository issue #136 (resolved): the HelmRelease now uses a named services.app key instead of the empty-string services."" patch.
 - Dev RustFS bucket `<project>-postgres-backups` is created by the dev RustFS init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
 - PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
 

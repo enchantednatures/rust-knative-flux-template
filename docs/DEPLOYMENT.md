@@ -723,8 +723,8 @@ jobs:
         with:
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:sha-${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}:latest
+            {% raw %}${{ env.REGISTRY }}/${{ github.repository }}:sha-${{ github.sha }}{% endraw %}
+            {% raw %}${{ env.REGISTRY }}/${{ github.repository }}:latest{% endraw %}
 ```
 
 ### Release Workflow
@@ -747,8 +747,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
-          name: Release ${{ github.ref }}
+          tag_name: {% raw %}${{ github.ref }}{% endraw %}
+          name: Release {% raw %}${{ github.ref }}{% endraw %}
   
   build-release:
     needs: create-release
@@ -760,8 +760,8 @@ jobs:
         with:
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ github.repository }}:release
+            {% raw %}${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}{% endraw %}
+            {% raw %}${{ env.REGISTRY }}/${{ github.repository }}:release{% endraw %}
           build-args: |
             RUST_BASE_IMAGE_TAG=release
 ```
@@ -930,7 +930,7 @@ flux reconcile kustomization {{ project_name }} -n {{ project_name }}
 4. **Image Vulnerability Scanning**:
    ```yaml
    - name: Run Trivy
-     run: trivy image --severity HIGH,CRITICAL ${{ secrets.REGISTRY }}/{{ project_name }}:${{ github.sha }}
+     run: trivy image --severity HIGH,CRITICAL {% raw %}${{ secrets.REGISTRY }}/{% endraw %}{{ project_name }}:{% raw %}${{ github.sha }}{% endraw %}
    ```
 
 See `docs/SECURITY.md` for complete security guidance.

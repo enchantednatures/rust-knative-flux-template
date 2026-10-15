@@ -18,23 +18,21 @@ patches:
   - target:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
-    # JSON6902 instead of a strategic-merge patch: kustomize >= 5.4 rejects the
-    # empty-string `services.""` key during strategic merges (repository issue
-    # #136). RFC 6901 encodes the empty member as an empty path segment
-    # (double slash), which kustomize's JSON6902 implementation supports.
+    # JSON6902 instead of a strategic-merge patch: the env list must be
+    # REPLACED wholesale (a strategic merge would name-merge it with the base).
     patch: |-
       - op: replace
-        path: /spec/values/services//image
+        path: /spec/values/services/app/image
         value:
           repository: "kind-registry-dev:5000/{{ project_name | replace: '_', '-' }}"
           tag: "dev"
       - op: replace
-        path: /spec/values/services//scaling
+        path: /spec/values/services/app/scaling
         value:
           minScale: {% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}
       - op: replace
-        path: /spec/values/services//resources
+        path: /spec/values/services/app/resources
         value:
           requests:
             cpu: "{% if use_default_scaling %}100m{% else %}{{ dev_cpu_request }}{% endif %}"
@@ -45,7 +43,7 @@ patches:
       # Replaces the base env list; must keep every base entry the app needs,
       # including the gated S3 and PostgreSQL values.
       - op: replace
-        path: /spec/values/services//env
+        path: /spec/values/services/app/env
         value:
           - name: APP_ENV
             value: "development"
@@ -82,6 +80,12 @@ patches:
                 name: "{{ project_name | replace: '_', '-' }}-postgres-app"
                 key: uri
           {% endif %}
+          {% if feature_postgres and postgres_pooler %}
+          # Route the sqlx pool through the PgBouncer Pooler service; the
+          # wholesale env replace above would otherwise drop the base entry.
+          - name: APP__POSTGRES__HOST
+            value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+          {% endif %}
           {% if event_source_kafka %}
           - name: APP__KAFKA__BROKER_URL
             value: "kafka.kafka.svc.cluster.local:9092"
@@ -89,12 +93,15 @@ patches:
 
       {% if event_source_kafka %}
       - op: replace
-        path: /spec/values/kafka/sources/{{ kafka_topic }}
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
         value:
-          bootstrapServers:
-            - "kafka.kafka.svc.cluster.local:9092"
-          consumers: 1
-          initialOffset: earliest
+          - "kafka.kafka.svc.cluster.local:9092"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 1
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: earliest
       {% endif %}
 
   {% if feature_postgres %}

@@ -102,7 +102,7 @@ ignore = [
 
 [conditional.'event_source_kafka'.placeholders]
 kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events" }
-kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "{{project_name}}-consumers" }
+kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "events-consumers" }
 kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
 kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
 
@@ -117,7 +117,7 @@ ignore = [
 ]
 
 [conditional.'feature_postgres'.placeholders]
-postgres_version = { prompt = "PostgreSQL version", type = "string", default = "16" }
+postgres_version = { prompt = "PostgreSQL version", type = "string", default = "18" }
 postgres_pooler = { prompt = "Enable PgBouncer connection pooler (CNPG Pooler)?", type = "bool", default = true }
 postgres_pooler_instances_dev = { prompt = "Dev PgBouncer pooler instances", type = "string", default = "1" }
 postgres_pooler_instances_staging = { prompt = "Staging PgBouncer pooler instances", type = "string", default = "2" }
@@ -159,7 +159,7 @@ ignore = [
 [conditional.'feature_kafka'.placeholders]
 kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
 kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
-kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.{{project_name}}.event.published" }
+kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.example.service.event.published" }
 
 [conditional.'!feature_kafka']
 ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]

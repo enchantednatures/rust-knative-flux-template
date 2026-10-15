@@ -11,12 +11,10 @@ mod common;
 
 use std::sync::Arc;
 
-use axum_test::TestServer;
 use serde_json::json;
 use validator::Validate;
 
 use {{ crate_name }}::handlers::items::{DemoItem, UpsertItemRequest};
-use {{ crate_name }}::routes;
 
 #[test]
 fn test_validation_rejects_empty_key() {
@@ -79,8 +77,7 @@ async fn test_items_routes_return_500_without_pool() {
     // create_test_state wires postgres as None: handlers must surface the
     // missing pool as a configuration error, not a panic.
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/api/v1/items")
@@ -96,8 +93,7 @@ async fn test_items_routes_return_500_without_pool() {
 #[ignore = "requires live infra (Redis via create_test_state); run with --ignored"]
 async fn test_upsert_item_rejects_empty_key() {
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server
         .post("/api/v1/items")
@@ -112,8 +108,7 @@ async fn test_upsert_item_rejects_empty_key() {
 async fn test_openapi_documents_items_routes() {
     // Asserts the handler templates rendered into the OpenAPI registration.
     let state = common::create_test_state().await;
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server.get("/api-docs/openapi.json").await;
     assert_eq!(response.status_code(), 200);
@@ -145,8 +140,7 @@ async fn test_upsert_and_get_roundtrip() {
 
     let mut state = common::create_test_state().await;
     state.postgres = Some(Arc::new(pool.clone()));
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let key = format!("itest-{}", uuid::Uuid::new_v4());
 
@@ -194,8 +188,7 @@ async fn test_get_missing_item_returns_404() {
 
     let mut state = common::create_test_state().await;
     state.postgres = Some(Arc::new(pool));
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let key = format!("missing-{}", uuid::Uuid::new_v4());
     let response = server.get(&format!("/api/v1/items/{}", key)).await;
@@ -212,8 +205,7 @@ async fn test_readiness_reports_ready_with_live_pool() {
 
     let mut state = common::create_test_state().await;
     state.postgres = Some(Arc::new(pool));
-    let app = routes::create_router(state);
-    let server = TestServer::new(app).expect("Failed to create test server");
+    let server = common::create_test_server(state);
 
     let response = server.get("/health/ready").await;
     assert_eq!(response.status_code(), 200);

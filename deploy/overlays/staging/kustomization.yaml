@@ -18,16 +18,14 @@ patches:
   - target:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
-    # JSON6902 via RFC 6901 double-slash encoding — see deploy/overlays/dev for
-    # the issue #136 strategic-merge rationale.
     patch: |-
       - op: replace
-        path: /spec/values/services//scaling
+        path: /spec/values/services/app/scaling
         value:
           minScale: {% if use_default_scaling %}1{% else %}{{ staging_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}5{% else %}{{ staging_max_scale }}{% endif %}
       - op: replace
-        path: /spec/values/services//resources
+        path: /spec/values/services/app/resources
         value:
           requests:
             cpu: "{% if use_default_scaling %}200m{% else %}{{ staging_cpu_request }}{% endif %}"
@@ -38,12 +36,15 @@ patches:
 
       {% if event_source_kafka %}
       - op: replace
-        path: /spec/values/kafka/sources/{{ kafka_topic }}
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
         value:
-          bootstrapServers:
-            - "{{ kafka_bootstrap_servers_staging }}"
-          consumers: 5
-          initialOffset: earliest
+          - "{{ kafka_bootstrap_servers_staging }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 5
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: earliest
       {% endif %}
 
   {% if feature_postgres %}

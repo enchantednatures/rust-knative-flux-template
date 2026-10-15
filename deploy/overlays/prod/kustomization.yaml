@@ -18,16 +18,14 @@ patches:
   - target:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
-    # JSON6902 via RFC 6901 double-slash encoding — see deploy/overlays/dev for
-    # the issue #136 strategic-merge rationale.
     patch: |-
       - op: replace
-        path: /spec/values/services//scaling
+        path: /spec/values/services/app/scaling
         value:
           minScale: {% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}
       - op: replace
-        path: /spec/values/services//resources
+        path: /spec/values/services/app/resources
         value:
           requests:
             cpu: "{% if use_default_scaling %}250m{% else %}{{ prod_cpu_request }}{% endif %}"
@@ -38,15 +36,21 @@ patches:
 
       {% if event_source_kafka %}
       - op: replace
-        path: /spec/values/kafka/sources/{{ kafka_topic }}
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
         value:
-          bootstrapServers:
-            - "{{ kafka_bootstrap_servers_prod }}"
-          consumers: 10
-          initialOffset: latest
-          delivery:
-            retry: 10
-            backoffDelay: "PT2S"
+          - "{{ kafka_bootstrap_servers_prod }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 10
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: latest
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/delivery/retry
+        value: 10
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/delivery/backoffDelay
+        value: "PT2S"
       {% endif %}
 
   {% if feature_postgres %}

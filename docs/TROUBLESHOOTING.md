@@ -10,6 +10,7 @@ Common issues, error messages, and solutions for {{ project_name }}.
 - [FluxCD Issues](#fluxcd-issues)
 - [Performance Issues](#performance-issues)
 - [Debugging Techniques](#debugging-techniques)
+- [Cluster Policy Conformance](#cluster-policy-conformance)
 - [Getting Help](#getting-help)
 
 ---
@@ -792,6 +793,81 @@ nc -zv redis 6379
 nc -zv s3.amazonaws.com 443
 {% endif %}
 ```
+
+---
+
+## Cluster Policy Conformance
+
+Managed clusters often run admission policies (Kyverno, Gatekeeper, OPA) and default-deny network policies. A project that installs on a permissive cluster can still be rejected or silently blocked on a hardened one. These are the three most common gates and how to satisfy them.
+
+### Pinned or digest image tags (no `:latest`)
+
+Policies such as Kyverno's `disallow-latest-tag` reject any pod whose image uses a mutable tag like `:latest`.
+
+Where it shows up:
+- The base HelmRelease ships `services.app.image.tag: "latest"` next to a Flux `{"$imagepolicy": ...}` marker, and the Kafka DLQ `event_display` image also uses `:latest`.
+- The local dev overlay uses the mutable `dev` tag.
+
+What to do:
+- Enable Flux image updates (the generated `deploy/flux/image-policy.yaml` and `image-update-automation.yaml` when `enable_image_updates` is on). On the first reconcile, `ImageUpdateAutomation` rewrites the marker to a pinned tag or digest.
+- Or pin explicitly: set `spec.values.services.app.image.tag` (and the DLQ `dlq.image.tag`) to a digest (`@sha256:...`) or an immutable semver tag. A digest is the safest choice because a registry cannot move it.
+- The `dev` tag is only used by the local Kind overlay, which you do not ship to a policy-enforcing cluster.
+
+Verify:
+```bash
+kubectl get ksvc <service> -n <namespace> -o jsonpath='{.spec.template.spec.containers[*].image}'
+```
+
+### require-pod-resources
+
+A policy that requires every container to declare requests and limits rejects pods with no `resources` block. The template already ships:
+- app Knative Service: request and limits in `services.app.resources`.
+- CNPG `Cluster`: pod-level `resources` (requests and limits).
+- `Pooler`: a `pgbouncer` container with requests and limits.
+- Kafka DLQ Knative Service: requests and limits.
+
+If a policy also caps values, patch them per environment in the overlay (a JSON6902 or strategic-merge patch on the HelmRelease `spec.values`). A missing `resources` block on an extra sidecar or init container is the usual cause when the app is admitted but a helper pod is not.
+
+### Kyverno default-deny NetworkPolicy
+
+A `default-deny` ingress or egress policy blocks all pod traffic until an explicit `NetworkPolicy` allows it. The symptom is subtle: pods start and probes may pass, yet requests time out (ingress blocked) or the app cannot reach Redis, PostgreSQL, or Kafka (egress blocked).
+
+Diagnose:
+```bash
+kubectl get networkpolicy -n <namespace>
+# Readiness passes but requests fail => likely ingress default-deny
+kubectl exec -it deploy/<service> -n <namespace> -- wget -qO- http://<service>.svc.cluster.local/health/live
+```
+
+Fix by adding allow policies for:
+- Ingress from the Knative ingress (Kourier) namespace and from the kubelet for probes.
+- Egress to Redis, PostgreSQL (or the PgBouncer pooler), the Kafka bootstrap servers, and the OTel collector on port 4317.
+- DNS egress to `kube-system` on port 53.
+
+A minimal starting point:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: <service>-allow
+  namespace: <namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <service>
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}   # Knative ingress and kubelet probes
+  egress:
+    - to:
+        - namespaceSelector: {}   # Redis, PostgreSQL, Kafka, OTel
+```
+
+Tighten the selectors to the exact namespaces and ports your cluster uses. Keep the OTel egress (port 4317) or telemetry silently drops.
 
 ---
 

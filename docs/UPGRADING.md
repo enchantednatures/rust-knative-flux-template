@@ -223,7 +223,11 @@ pub async fn upload_handler(
 
 #### Step 5: Update Kubernetes Manifests
 
-**If deployment changed**, update manifests:
+**If deployment changed**, update manifests.
+
+**HelmRelease `services` key (projects generated before the ksvc 0.6.6 bump)**:
+
+Earlier template revisions used an empty-string key (`services.""`) for the app. The ksvc chart now rejects an empty `sink`, and `kafka.sources.*.sink` must reference a non-empty `services` key, so the app moved to a named `services.app` key with `nameOverride: ""` (which keeps the Knative Service name equal to `fullnameOverride`).
 
 **Old** (`deploy/base/helmrelease.yaml`):
 ```yaml
@@ -237,10 +241,24 @@ services:
 **New**:
 ```yaml
 services:
-  "":
+  app:
+    nameOverride: ""
     scaling:
       minScale: 5  # New value
       maxScale: 10
+```
+
+If the project uses a Kafka source, point its sink at the new key in the same HelmRelease:
+```yaml
+kafka:
+  sources:
+    <topic>:
+      sink: "app"
+```
+
+Every overlay patch that targets the old key must change with it: replace `services.""` with `services.app` and add `nameOverride: ""` under it in `deploy/overlays/*/kustomization.yaml`. Then re-render to confirm the overlays still build:
+```bash
+kubectl kustomize deploy/overlays/dev
 ```
 
 #### Step 6: Update Tests

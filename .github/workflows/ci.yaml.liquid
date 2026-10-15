@@ -21,6 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      {% if feature_kafka or feature_gha_runner %}
+      - name: Install build dependencies
+        run: |
+          # The ARC runner image is minimal; the crates need a C linker and
+          # the rdkafka `cmake-build` feature needs cmake at compile time.
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev cmake libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
+      {% endif %}
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,21 +58,44 @@ jobs:
   test:
     name: Test
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v6
 
+      {% if feature_kafka or feature_gha_runner %}
+      - name: Install build dependencies
+        run: |
+          # The ARC runner image is minimal; the crates need a C linker and
+          # the rdkafka `cmake-build` feature needs cmake at compile time.
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev cmake libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
+      {% endif %}
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Wait for Docker daemon
+        run: |
+          # The DinD sidecar's TLS setup can lag the runner container; wait
+          # for the daemon before any docker/buildx step.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker info
+          exit 1
+
+      - name: Start Redis
+        run: |
+          # ARC kubernetes-mode runners do not support GitHub service
+          # containers; run Redis on the pod's DinD daemon instead (the
+          # runner and dind share the pod network namespace, so the
+          # published port is reachable on localhost).
+          docker run -d --name redis -p 6379:6379 redis:7-alpine
+          for i in $(seq 1 30); do
+            docker exec redis redis-cli ping >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec redis redis-cli ping
 
       - name: Cache cargo registry
         uses: actions/cache@v5
@@ -123,7 +155,7 @@ jobs:
   # ==========================================================================
   manifests:
     name: Validate manifests
-    runs-on: ubuntu-latest
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     steps:
       - uses: actions/checkout@v6
 
@@ -152,6 +184,17 @@ jobs:
       image-digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Wait for Docker daemon
+        run: |
+          # The DinD sidecar's TLS setup can lag the runner container; wait
+          # for the daemon before any docker/buildx step.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker info
+          exit 1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -207,7 +250,18 @@ jobs:
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     needs: build
     if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
     steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -216,6 +270,10 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v4
+        # SARIF ingestion via code scanning needs GitHub Advanced Security,
+        # which is unavailable on many repos (including private ones); ship
+        # the report as a build artifact instead.
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: 'trivy-results.sarif'
+          name: trivy-sarif
+          path: trivy-results.sarif

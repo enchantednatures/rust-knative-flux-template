@@ -38,7 +38,10 @@ pub static EMAIL_REGEX: Lazy<Regex> = Lazy::new(|| {
 /// assert!(!is_safe_name("<script>alert('xss')</script>"));
 /// ```
 pub fn is_safe_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 100 {
+    // Length is counted in characters to match the regex quantifiers; a byte
+    // limit would reject long strings of multi-byte whitespace that the
+    // pattern itself accepts.
+    if name.is_empty() || name.chars().count() > 100 {
         return false;
     }
     SAFE_NAME_REGEX.is_match(name)

@@ -68,6 +68,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Wait for Docker daemon
+        run: |
+          # The DinD sidecar's TLS setup can lag the runner container; wait
+          # for the daemon before any docker/buildx step.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker info
+          exit 1
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -104,10 +115,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
-          # Note: RUST_BASE_IMAGE_TAG=release assumes rust:release exists
-          # If not available, the Dockerfile's ARG default (1.92-slim) is used
-          build-args: |
-            RUST_BASE_IMAGE_TAG=release
+          # NOTE: `rust:release` does not exist on Docker Hub; the Dockerfile's
+          # RUST_BASE_IMAGE_TAG default (kept in sync by renovate) is used.
 
       - name: Image digest
         run: |
@@ -124,10 +133,18 @@ jobs:
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
     needs: build-release
     permissions:
-      security-events: write
       contents: read
+      packages: read
+      security-events: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -138,9 +155,13 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v4
+        # SARIF ingestion via code scanning needs GitHub Advanced Security,
+        # which is unavailable on many repos (including private ones); ship
+        # the report as a build artifact instead.
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: 'trivy-results.sarif'
+          name: trivy-sarif
+          path: trivy-results.sarif
 
       - name: Fail on vulnerabilities
         uses: aquasecurity/trivy-action@master

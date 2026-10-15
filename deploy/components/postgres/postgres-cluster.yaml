@@ -17,7 +17,7 @@ metadata:
   # No namespace key: the consuming overlay/Flux wiring owns placement.
 spec:
   # `-system-trixie` image variant (Debian trixie base with Barman plugin
-  # tooling). `postgres_version` placeholder defaults to "16".
+  # tooling). `postgres_version` placeholder defaults to "18".
   imageName: ghcr.io/cloudnative-pg/postgresql:{{ postgres_version }}-system-trixie
 
   # Base default; overlays patch per env (dev 1 / staging 2 / prod 3, from the
@@ -38,6 +38,17 @@ spec:
     size: 20Gi   # dev-sized floor; overlays patch per env (staging/prod grow it)
     # storageClass intentionally omitted: uses the cluster default
     # StorageClass. Overlays may add one per env.
+
+  # Pod-level requests/limits for the PostgreSQL instances. Required by
+  # policy-enforcing clusters (e.g. require-pod-resources) which otherwise
+  # reject CNPG pods. Overlays may patch these per environment.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
   # Superuser (postgres) access disabled: apps use the `app` owner role only.
   enableSuperuserAccess: false
