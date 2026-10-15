@@ -32,10 +32,13 @@ spec:
       kind: Cluster
       name: "{{ project_name | replace: '_', '-' }}-postgres"
       namespace: default
-  # SOPS decryption so the sops-encrypted `postgres-backup-storage` secret
-  # (deploy/base/object-storage-secret.yaml.example, added to the overlay by
-  # the user) can be committed encrypted. Requires an `sops-age` secret in the
-  # flux-system namespace on the target cluster.
+  # The backup bucket is provisioned by the chart (ObjectBucketClaim) and its
+  # credentials come from the provisioner-created Secret
+  # `<project>-postgres-backups`, consumed by the CNPG ObjectStore. SOPS
+  # decryption is retained for user-managed secrets; it requires an `sops-age`
+  # secret in the flux-system namespace on the target cluster.
+  # Prerequisites: the lib-bucket-provisioner CRDs (installed by Rook) and a
+  # bucket StorageClass with `reclaimPolicy: Retain`.
   decryption:
     provider: sops
     secretRef:
