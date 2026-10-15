@@ -255,9 +255,9 @@ kubectl exec -it prometheus-pod -n monitoring -- \
 2. **Review operator logs**: `kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system`
 3. **Verify storage connectivity**:
    ```bash
-   # RustFS example
+   # Dev bucket example (RustFS on Kind)
    kubectl exec -it {{ project_name }}-postgres-1 -- \
-     s3cmd -c /opt/postgres/barmanrc get s3://postgres-backups/ /tmp/
+     s3cmd -c /opt/postgres/barmanrc get s3://{{ project_name }}-postgres-backups/ /tmp/
    ```
 4. **Check operator version**: `kubectl get pods -n cnpg-system`
 5. **Escalate if unresolved**: Page on-call DBA

@@ -78,11 +78,13 @@ kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 
 | Environment | Cluster Size | Replication | Retention | Storage | Backups |
 |------------|-------------|-------------|-----------|---------|---------|
-| **dev** | 1 instance | async | 7 days | 20Gi | RustFS (gzip) |
-| **staging** | 2 instances (patched via JSON6902) | async | 14 days | 20Gi | S3 (gzip) |
-| **production** | 3 instances | async | 30 days | 20Gi | S3 (gzip) |
+| **dev** | 1 instance | async | 7 days | 20Gi | `<project>-postgres-backups` (Ceph RGW, RustFS on Kind) |
+| **staging** | 2 instances (patched via JSON6902) | async | 14 days | 20Gi | `<project>-postgres-backups-staging` (Ceph RGW) |
+| **production** | 3 instances | async | 30 days | 20Gi | `<project>-postgres-backups-prod` (Ceph RGW) |
 
 Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env from the overlay if you need larger volumes.
+
+Each environment's backup bucket is declared in the overlay (`objectBuckets`) as an `ObjectBucketClaim`. The cluster's bucket provisioner creates the bucket plus the claim-named Secret and ConfigMap; nothing is created or pasted in by hand. See [Backup & Restore Guide](POSTGRES_BACKUP_RESTORE.md) for the credential contract.
 
 ### Deployment Steps
 
@@ -95,19 +97,23 @@ Storage is 20Gi in the base Cluster manifest; patch `spec.storage.size` per env 
 
 2. **Prepare environment overlay**:
    ```bash
-   # Dev (already includes RustFS)
+   # Dev (local Kind wires ObjectStore to the bundled RustFS bucket)
    kubectl apply -k deploy/overlays/dev/
-   
-   # Staging
-   # First create object-storage-secret.yaml from example
-   cp deploy/base/object-storage-secret.yaml.example deploy/overlays/staging/
-   # Edit with staging credentials
-   sops -e -i deploy/overlays/staging/object-storage-secret.yaml
+
+   # Staging / Production
+   # No bucket and no credential Secret to make by hand: the overlay declares
+   # the ObjectBucketClaims (postgres-backups / app-data); the cluster's bucket
+   # provisioner creates each bucket plus a claim-named Secret
+   # (<project>-postgres-backups[-staging|-prod]) and ConfigMap. Set the Ceph
+   # RGW endpoint and a Retain StorageClass through the overlay values, then:
    kubectl apply -k deploy/overlays/staging/
-   
-   # Production
-   # Similar process with production S3 credentials
+   kubectl apply -k deploy/overlays/prod/
    ```
+
+   Cluster prerequisites: the ObjectBucketClaim CRDs (shipped with Rook/Ceph)
+   and an object-bucket StorageClass with `reclaimPolicy: Retain` so pruning a
+   claim can't silently delete backups. Bucket names are final once a claim
+   first binds, which is why each environment gets its own name.
 
 3. **Verify deployment**:
    ```bash
@@ -387,11 +393,11 @@ watch -n 5 'kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "S
 kubectl logs -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system | grep -i "backup\|error"
 
 # Check object storage connectivity
-# For RustFS:
-kubectl exec {{ project_name }}-postgres-1 -- s3cmd ls s3://postgres-backups/
+# For RustFS (local Kind) and Ceph RGW alike:
+kubectl exec {{ project_name }}-postgres-1 -- s3cmd ls s3://{{ project_name }}-postgres-backups/
 
-# Check credentials secret
-kubectl get secret object-storage-secret -o jsonpath='{.data}' | base64 -d
+# Check the claim-named credentials secret the provisioner delivered
+kubectl get secret {{ project_name }}-postgres-backups -o jsonpath='{.data}' | base64 -d
 ```
 
 ### Connection Issues
@@ -460,7 +466,7 @@ Monitor WAL archiving:
 kubectl exec {{ project_name }}-postgres-1 -- psql -U postgres -c "SELECT * FROM pg_stat_archiver;"
 
 # List archived WAL files
-aws s3 ls s3://postgres-backups/wal/ --recursive
+aws s3 ls s3://{{ project_name }}-postgres-backups/wal/ --recursive
 ```
 
 ### Binary Replication Slots
@@ -581,7 +587,7 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 
 **Known limitations**:
 - Repository issue #136 (resolved): the HelmRelease now uses a named services.app key instead of the empty-string services."" patch.
-- Dev RustFS bucket `<project>-postgres-backups` is created by the dev RustFS init job; in staging/prod you create/point the bucket yourself and patch `ObjectStore /spec/configuration/endpointURL`.
+- Backup destinations are chart-provisioned buckets: dev/staging/prod each declare an `ObjectBucketClaim` (`<project>-postgres-backups`, `-staging`, `-prod`), and the cluster's bucket provisioner creates the bucket and delivers a claim-named Secret (keys `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). The bucket StorageClass must set `reclaimPolicy: Retain`. On the local Kind cluster (no bucket provisioner) the dev RustFS init job creates a matching bucket, Secret and ConfigMap so `make dev-up` works unchanged.
 - PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
 
 ## PgBouncer Pooler

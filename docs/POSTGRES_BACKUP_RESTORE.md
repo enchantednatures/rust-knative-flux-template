@@ -52,7 +52,10 @@ retentionPolicy:
   base: 7      # 7 days
   wal: 3       # 3 days
 compressionAlgorithm: gzip
-endpoint: "rustfs.rustfs.svc.cluster.local:9000"
+# Destination bucket: <project>-postgres-backups
+# Endpoint: the dev overlay's Ceph RGW (default
+# http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:80). Local Kind reverts
+# this to the bundled RustFS (http://rustfs.rustfs.svc.cluster.local:9000).
 ```
 
 #### Staging
@@ -64,6 +67,9 @@ retentionPolicy:
   wal: 7       # 7 days
 compressionAlgorithm: zstd
 compressionLevel: 3
+# Destination bucket: <project>-postgres-backups-staging
+# Endpoint: the staging overlay's Ceph RGW (default
+# https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443).
 ```
 
 #### Production
@@ -76,29 +82,51 @@ retentionPolicy:
 compressionAlgorithm: zstd
 compressionLevel: 10
 encryptionType: sse-s3    # Server-side encryption
+# Destination bucket: <project>-postgres-backups-prod
+# Endpoint: the prod overlay's Ceph RGW (default
+# https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443).
 ```
 
 ### Object Storage Configuration
 
-#### RustFS (Development)
+Buckets are provisioned by the chart. Each overlay declares an `objectBuckets`
+entry, and the matching `ObjectBucketClaim` makes the cluster's bucket
+provisioner create the bucket plus a claim-named Secret
+(`<project>-postgres-backups`, `-staging`, `-prod`) carrying
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. The CNPG ObjectStore reads those
+keys directly, so no credentials are pasted into the overlay by hand:
 
 ```yaml
-endpointURL: "http://rustfs.rustfs.svc.cluster.local:9000"
-region: "us-east-1"
-credentials:
-  accessKey: rustfsadmin
-  secretKey: rustfsadmin
+# ObjectStore (deploy/components/postgres/postgres-backup.yaml)
+configuration:
+  destinationPath: "s3://<project>-postgres-backups/"   # -staging/-prod per env
+  endpointURL: <per-env Ceph RGW endpoint>              # RustFS on local Kind
+  s3Credentials:
+    accessKeyId:
+      name: <project>-postgres-backups
+      key: AWS_ACCESS_KEY_ID
+    secretAccessKey:
+      name: <project>-postgres-backups
+      key: AWS_SECRET_ACCESS_KEY
 ```
 
-#### AWS S3 (Production)
+The backup bucket's StorageClass must set `reclaimPolicy: Retain` so pruning a
+claim can't silently destroy backups.
 
-```yaml
-region: "us-east-1"
-# AWS defaults to S3 endpoint
-credentials:
-  accessKey: <IAM_ACCESS_KEY>
-  secretKey: <IAM_SECRET_KEY>
-```
+#### Local Kind fallback
+
+Kind has no bucket provisioner, so the RustFS init job creates a matching
+bucket, Secret and ConfigMap, and the Kind-only overlay
+(`deploy/dev/app-overlay`) points the ObjectStore at
+`http://rustfs.rustfs.svc.cluster.local:9000`. The commands in this guide work
+identically in both setups.
+
+#### External S3 (escape hatch)
+
+To back up to plain AWS S3 instead of Ceph, override the endpoint/credentials
+in your environment overlay and drop `endpointURL` in favour of
+`s3Credentials.region`. The credential keys (`AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`) stay the same.
 
 ## Manual Backup Procedures
 
@@ -163,12 +191,12 @@ kubectl describe backup {{ project_name }}-postgres-backup-before-upgrade
 # List backups in RustFS/S3
 ./scripts/dev/list-backups.sh
 
-# Or with AWS CLI
-aws s3 ls s3://postgres-backups/dev/ --recursive --human-readable
+# Or with AWS CLI (dev bucket; use the -staging/-prod suffixes in those envs)
+aws s3 ls s3://{{ project_name }}-postgres-backups/ --recursive --human-readable
 
 # Output example:
-# 2024-01-03 16:42:22      10.5 MiB postgres-backups/dev/base/000000010000000000000001
-# 2024-01-03 16:42:22   2.1 GiB postgres-backups/dev/wal/000000010000000000000002
+# 2024-01-03 16:42:22      10.5 MiB {{ project_name }}-postgres-backups/base/000000010000000000000001
+# 2024-01-03 16:42:22   2.1 GiB {{ project_name }}-postgres-backups/wal/000000010000000000000002
 ```
 
 ## Scheduled Backups
@@ -431,7 +459,7 @@ kubectl delete cluster test-restore
 
 ```bash
 # List backup files with checksums
-aws s3 ls s3://postgres-backups/dev/base/ --recursive
+aws s3 ls s3://{{ project_name }}-postgres-backups/base/ --recursive
 
 # Verify backup metadata
 kubectl get backup {{ project_name }}-postgres-backup-1704326400 -o yaml | grep -E "checksum|phase|size"
@@ -498,10 +526,10 @@ kubectl logs restored-cluster-1
 
 ```bash
 # Check storage usage
-aws s3 ls s3://postgres-backups/ --summarize --human-readable
+aws s3 ls s3://{{ project_name }}-postgres-backups/ --summarize --human-readable
 
 # Reduce retention policy
-kubectl patch objectstore postgres-backup-store \
+kubectl patch objectstore {{ project_name }}-postgres-backup-store \
   -p '{"spec":{"retentionPolicy":{"base":14,"wal":7}}}'
 
 # Manually delete old backups (use with caution!)
