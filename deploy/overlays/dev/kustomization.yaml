@@ -52,16 +52,39 @@ patches:
           - name: APP__REDIS__URL
             value: "redis://redis.redis.svc.cluster.local:6379"
           {% if feature_s3 %}
+          # Object storage mirrors the base claim contract: credentials come
+          # from the provisioner Secret "<project>-app-data", bucket identity
+          # from its ConfigMap. BUCKET_HOST/BUCKET_PORT must precede
+          # APP__S3__ENDPOINT for Kubernetes $(VAR) expansion.
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: AWS_SECRET_ACCESS_KEY
+          - name: BUCKET_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_HOST
+          - name: BUCKET_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_PORT
           - name: APP__S3__ENDPOINT
-            value: "http://rustfs.rustfs.svc.cluster.local:9000"
+            value: "http://$(BUCKET_HOST):$(BUCKET_PORT)"
           - name: APP__S3__BUCKET
-            value: "data"
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_name | replace: '_', '-' }}-app-data"
+                key: BUCKET_NAME
           - name: APP__S3__REGION
             value: "us-east-1"
-          - name: AWS_ACCESS_KEY_ID
-            value: "rustfsadmin"
-          - name: AWS_SECRET_ACCESS_KEY
-            value: "rustfsadmin"
           {% endif %}
           - name: APP__TELEMETRY__OTLP_ENDPOINT
             value: "http://otel-collector.observability.svc.cluster.local:4317"
@@ -104,6 +127,29 @@ patches:
         value: earliest
       {% endif %}
 
+  {% if feature_s3 or feature_postgres %}
+  # Chart-created object buckets (ObjectBucketClaims); consumed by the CNPG
+  # ObjectStore (postgres-backups) and the app S3 env (app-data).
+  - target:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: add
+        path: /spec/values/objectBuckets
+        value:
+          {%- if feature_postgres %}
+          postgres-backups:
+            storageClassName: "{{ ceph_bucket_storage_class }}"
+            endpointURL: "{{ ceph_rgw_endpoint_dev }}"
+            bucketName: "{{ project_name | replace: '_', '-' }}-postgres-backups"
+          {%- endif %}
+          {%- if feature_s3 %}
+          app-data:
+            storageClassName: "{{ ceph_bucket_storage_class }}"
+            bucketName: "{{ project_name | replace: '_', '-' }}-app-data"
+          {%- endif %}
+  {% endif %}
+
   {% if feature_postgres %}
   # Per-env CloudNativePG sizing (component base carries prod-leaning defaults).
   - target:
@@ -113,7 +159,9 @@ patches:
       - op: replace
         path: /spec/instances
         value: {{ postgres_instances_dev }}
-  # Per-env backup retention (ObjectStore base carries the prod default).
+  # Per-env ObjectStore settings: backup retention (base carries the prod
+  # default) and the Ceph RGW endpoint (base carries the RustFS dev value;
+  # the Kind-only overlay deploy/dev/app-overlay reverts it to RustFS).
   - target:
       kind: ObjectStore
       name: "{{ project_name | replace: '_', '-' }}-postgres-backup-store"
@@ -121,6 +169,9 @@ patches:
       - op: replace
         path: /spec/retentionPolicy
         value: "{{ backup_retention_dev }}d"
+      - op: replace
+        path: /spec/configuration/endpointURL
+        value: "{{ ceph_rgw_endpoint_dev }}"
   {% endif %}
   {% if feature_postgres and postgres_pooler %}
   # PgBouncer pooler instance count (see deploy/components/postgres/pooler).
