@@ -15,7 +15,8 @@
 #   - ScheduledBackup spec.schedule            (e.g. more frequent in prod)
 #   - ObjectStore spec.retentionPolicy         (dev "{{ backup_retention_prod }}d" base; dev/staging lower)
 #   - ObjectStore spec.configuration.endpointURL / destinationPath
-#     (the RustFS endpoint below exists ONLY in the local dev cluster)
+#     (base carries the dev/Kind RustFS endpoint; per-env overlays patch the
+#     endpoint to the Ceph RGW, which is the production destination)
 #   - ScheduledBackup spec.suspend / spec.immediate (pause / first-backup-now)
 
 # =============================================================================
@@ -37,22 +38,24 @@ spec:
 
     # Dev-only default: RustFS installed imperatively by
     # deploy/dev/infrastructure/rustfs.yaml.liquid (namespace `rustfs`), which
-    # exists only in the local dev cluster. Overlays MUST patch this per env
-    # for staging/prod (for AWS S3, remove endpointURL entirely and set
-    # s3Credentials.region instead).
+    # exists only in the local dev cluster. Per-env overlays patch this to the
+    # Ceph RGW endpoint for staging/prod (for plain AWS S3, remove endpointURL
+    # entirely and set s3Credentials.region instead).
     endpointURL: "http://rustfs.rustfs.svc.cluster.local:9000"
 
-    # Static credentials from the `postgres-backup-storage` secret (keys
-    # ACCESS_KEY_ID / ACCESS_SECRET_KEY), matching
-    # deploy/base/object-storage-secret.yaml.example. SOPS-decrypted by the
-    # Flux kustomization (deploy/flux/postgres-kustomization.yaml).
+    # Credentials delivered by the chart-provisioned bucket claim: the bucket
+    # provisioner creates the Secret `{{ project_name | replace: '_', '-' }}-postgres-backups`
+    # (same name as the ObjectBucketClaim) with the provisioner's standard
+    # access-key-id / secret-access-key entries. The bucket StorageClass used
+    # for backup buckets MUST set reclaimPolicy: Retain so pruning a claim
+    # cannot silently destroy backups.
     s3Credentials:
       accessKeyId:
-        name: postgres-backup-storage
-        key: ACCESS_KEY_ID
+        name: "{{ project_name | replace: '_', '-' }}-postgres-backups"
+        key: AWS_ACCESS_KEY_ID
       secretAccessKey:
-        name: postgres-backup-storage
-        key: ACCESS_SECRET_KEY
+        name: "{{ project_name | replace: '_', '-' }}-postgres-backups"
+        key: AWS_SECRET_ACCESS_KEY
 
     # WAL stream compression. CRD enum: bzip2|gzip|lz4|snappy|xz|zstd.
     wal:
