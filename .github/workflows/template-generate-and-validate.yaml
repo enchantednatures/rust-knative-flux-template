@@ -150,10 +150,15 @@ jobs:
 
           echo "Generating template: ${{ env.SCENARIO }}"
 
-          # Build template-values.toml with boolean placeholders
-          cat > "$TEMP_DIR/template-values.toml" <<'TOML_HEADER'
+          # Build template-values.toml with boolean placeholders. project_name
+          # must stay identical to the --name passed below: Cargo.toml's crate
+          # name derives from --name, while every Kubernetes/bucket name
+          # renders from the project_name placeholder.
+          PROJ_NAME="example-app-${{ env.SCENARIO }}"
+
+          cat > "$TEMP_DIR/template-values.toml" <<TOML_HEADER
           [values]
-          project_name = "example-app"
+          project_name = "${PROJ_NAME}"
           project_author = "CI Bot <ci@github.com>"
           TOML_HEADER
 
@@ -250,8 +255,6 @@ jobs:
           echo "--- template-values.toml ---"
           cat "$TEMP_DIR/template-values.toml"
           echo "---"
-
-          PROJ_NAME="example-app-${{ env.SCENARIO }}"
 
           cargo generate \
             --path "$TEMPLATE_SRC" \
