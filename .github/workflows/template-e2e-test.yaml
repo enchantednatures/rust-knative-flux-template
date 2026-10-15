@@ -266,6 +266,18 @@ jobs:
           backup_retention_dev = "7"
           backup_retention_staging = "14"
           backup_retention_prod = "30"
+          ceph_rgw_endpoint_dev = "http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:80"
+          ceph_rgw_endpoint_staging = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443"
+          ceph_rgw_endpoint_prod = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443"
+          EOF
+          fi
+
+          # Ceph bucket StorageClass (prompted when feature_s3 OR
+          # feature_postgres is true). Emitted exactly once here so the
+          # assembled values file never repeats the key when both are on.
+          if [ "${{ matrix.feature_s3 }}" = "true" ] || [ "${{ matrix.feature_postgres }}" = "true" ]; then
+            cat >> template-values.toml <<EOF
+          ceph_bucket_storage_class = "ceph-bucket"
           EOF
           fi
 

@@ -87,6 +87,15 @@ backup_schedule = "0 2 * * *"
 backup_retention_dev = "7"
 backup_retention_staging = "14"
 backup_retention_prod = "30"
+ceph_rgw_endpoint_dev = "http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:80"
+ceph_rgw_endpoint_staging = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443"
+ceph_rgw_endpoint_prod = "https://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc:443"
+'
+
+# Ceph bucket StorageClass (shared by the feature_s3 and feature_postgres
+# consumers). Prompted when either feature is enabled; emitted exactly once.
+CEPH_BUCKET_SC_VALUE='
+ceph_bucket_storage_class = "ceph-bucket"
 '
 
 # Kafka-related template values (shared between feature_kafka and event_source_kafka)
@@ -246,6 +255,11 @@ use_default_scaling = true
 EOF
 
   # Add conditional values based on features
+  # Ceph bucket StorageClass is prompted when feature_s3 OR feature_postgres
+  # is enabled; emitted once here to avoid a duplicate TOML key.
+  if [[ "$f_s3" == "true" || "$f_postgres" == "true" ]]; then
+    echo "$CEPH_BUCKET_SC_VALUE" >> "$values_file"
+  fi
   if [[ "$f_postgres" == "true" ]]; then
     echo "$POSTGRES_VALUES" >> "$values_file"
   fi
