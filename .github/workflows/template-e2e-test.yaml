@@ -907,7 +907,7 @@ jobs:
           curl -fsS http://127.0.0.1:9000/health >/dev/null
 
           rc alias set e2e http://127.0.0.1:9000 rustfsadmin rustfsadmin
-          rc bucket create -p e2e/data
+          rc bucket create -p e2e/${SERVICE_NAME}-app-data
           rc bucket create -p e2e/${SERVICE_NAME}-postgres-backups
 
       - name: Validate cluster dependencies
@@ -973,15 +973,27 @@ jobs:
       - name: Create application secrets
         if: matrix.deploy == 'true'
         run: |
+          # The app reads only redis-url from this Secret; its S3 credentials
+          # now come from the claim-contract Secret/ConfigMap below.
+          kubectl create secret generic ${SERVICE_NAME}-secrets \
+            --from-literal=redis-url=redis://redis-master:6379 \
+            --dry-run=client -o yaml | kubectl apply -f -
+
           if [ "${{ matrix.feature_s3 }}" = "true" ]; then
-            kubectl create secret generic ${SERVICE_NAME}-secrets \
-              --from-literal=redis-url=redis://redis-master:6379 \
-              --from-literal=aws-access-key-id=rustfsadmin \
-              --from-literal=aws-secret-access-key=rustfsadmin \
+            # Claim-contract credentials and bucket identity backing the app's
+            # S3 env: the bucket provisioner publishes Secret <claim name>
+            # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) and ConfigMap
+            # <claim name> (BUCKET_HOST / BUCKET_PORT / BUCKET_NAME). The
+            # bucket itself is created in the Install RustFS step.
+            kubectl create secret generic ${SERVICE_NAME}-app-data \
+              --from-literal=AWS_ACCESS_KEY_ID=rustfsadmin \
+              --from-literal=AWS_SECRET_ACCESS_KEY=rustfsadmin \
               --dry-run=client -o yaml | kubectl apply -f -
-          else
-            kubectl create secret generic ${SERVICE_NAME}-secrets \
-              --from-literal=redis-url=redis://redis-master:6379 \
+
+            kubectl create configmap ${SERVICE_NAME}-app-data \
+              --from-literal=BUCKET_HOST=rustfs.default.svc.cluster.local \
+              --from-literal=BUCKET_PORT="9000" \
+              --from-literal=BUCKET_NAME=${SERVICE_NAME}-app-data \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
 
