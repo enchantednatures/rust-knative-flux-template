@@ -131,7 +131,7 @@ docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0.0
 
 ```bash
 # Start development environment
-make dev-up
+make local-up
 
 # Verify health
 curl http://localhost:8080/health/live
@@ -154,7 +154,7 @@ make dev-logs
 
 ```bash
 # Start development environment
-make dev-up
+make local-up
 
 # Run tests
 cargo test -- --ignored --nocapture
@@ -227,6 +227,32 @@ your-repo/
 │       ├── kustomization.yaml
 │       └── image-repository.yaml
 ```
+
+### One-command deploy (`make deploy`)
+
+After generating and pushing the repository:
+
+```bash
+# Private repositories: create the flux-system SSH deploy-key Secret once
+make git-auth
+
+# Commit the working tree, push, and (re)apply the Flux bootstrap for an env
+make deploy dev
+```
+
+`make deploy <env>` (env: dev, staging, prod) commits any pending changes, pushes, then applies the GitRepository + Kustomizations for that environment — the apply is a no-op after the first run, so day-to-day it is "commit + push + reconcile". Flux then reconciles `deploy/overlays/<env>`.
+
+Generation knobs that shape this flow:
+
+| Prompt | Effect |
+|---|---|
+| `git_auth_secret` | GitRepository pulls over SSH with a `secretRef`; empty keeps public HTTPS |
+| `image_pull_secret` | Adds `imagePullSecrets` to the app image; create the encrypted Secret from `deploy/overlays/dev/image-pull-secret.sops.yaml.example` |
+| `custom_domain` | Adds a `ClusterDomainClaim` + `DomainMapping` (dev overlay) for the given hostname |
+| `network_policy_allow_all` | Adds an allow-all NetworkPolicy to the dev namespace |
+| `target_namespace` | Namespace for every overlay (each generates `namespace.yaml` when it is not `default`) |
+
+The Kubeconfig used by `make bootstrap`/`make deploy` is `$KUBECONFIG` when set, otherwise `CLUSTER_KUBECONFIG` (defaults to `~/.kube/config`). The local Kind cluster is `make local-up` / `make local-down`; SOPS configuration starts from the gitignored `.sops.yaml` (copy `.sops.yaml.example`).
 
 ### Step 1: Create GitRepository
 

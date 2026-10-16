@@ -39,7 +39,7 @@ Application
                      └──────┘
 ```
 
-**Local Development** (via make dev-up):
+**Local Development** (via make local-up):
 - Jaeger: http://localhost:16686
 - Prometheus: http://localhost:9090
 - OpenTelemetry Collector: http://localhost:4317

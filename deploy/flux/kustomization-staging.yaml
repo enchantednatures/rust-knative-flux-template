@@ -31,7 +31,7 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: "{{ project_name | replace: '_', '-' }}-postgres"
-      namespace: staging
+      namespace: {{ target_namespace }}
   # The backup bucket is provisioned by the chart (ObjectBucketClaim) and its
   # credentials come from the provisioner-created Secret
   # `<project>-postgres-backups`, consumed by the CNPG ObjectStore. SOPS

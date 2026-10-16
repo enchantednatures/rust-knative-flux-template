@@ -1,0 +1,19 @@
+# SOPS configuration for secret encryption (Age + FluxCD).
+#
+# Copy this file to `.sops.yaml` and set your Age recipient. `.sops.yaml` is
+# gitignored on purpose: every environment keeps its own recipient, and
+# regenerating or updating the project never overwrites your real config.
+#
+# Setup:
+# 1. age-keygen -o age.key        (never commit age.key)
+# 2. Put the printed public key below (or export SOPS_AGE_RECIPIENTS for the sops CLI)
+# 3. Encrypt a manifest:  sops -e -i deploy/overlays/dev/<name>.sops.yaml
+# 4. Flux decrypts with the `sops-age` Secret in flux-system (see docs/SECURITY.md)
+
+creation_rules:
+  # Kubernetes Secrets only: match *.sops.yaml files and encrypt just the
+  # data/stringData values so metadata stays reviewable in diffs.
+  - path_regex: .*\.sops\.ya?ml$
+    encrypted_regex: ^(data|stringData)$
+    age: >-
+      age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

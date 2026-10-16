@@ -54,7 +54,7 @@ Use the Makefile for common development tasks:
 
 ```bash
 # Start full dev environment (cluster + all services + app)
-make dev-up
+make local-up
 
 # View logs
 make dev-logs
@@ -63,7 +63,7 @@ make dev-logs
 make dev-restart
 
 # Stop everything
-make dev-down
+make local-down
 ```
 
 See the [main README](../README.md) for more Makefile targets.

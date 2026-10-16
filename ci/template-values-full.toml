@@ -71,3 +71,7 @@ kafka_broker_url = "kafka.kafka.svc.cluster.local:9092"
 kafka_topic = "events"
 kafka_bootstrap_servers_staging = "kafka.staging.svc.cluster.local:9092"
 kafka_bootstrap_servers_prod = "kafka.prod.svc.cluster.local:9092"
+git_auth_secret = "test-git-auth"
+image_pull_secret = "test-pull-secret"
+custom_domain = "test-app-full.example.com"
+network_policy_allow_all = true

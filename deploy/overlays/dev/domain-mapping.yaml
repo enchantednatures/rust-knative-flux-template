@@ -1,0 +1,23 @@
+{% if custom_domain != "" %}
+# Expose the Knative service on {{ custom_domain }}. The ClusterDomainClaim is
+# only required on clusters that disable Knative's automatic domain claims
+# (config-domain `autoCreateClusterDomainClaim: "false"`); drop the claim on
+# clusters that create claims automatically.
+apiVersion: networking.internal.knative.dev/v1alpha1
+kind: ClusterDomainClaim
+metadata:
+  name: {{ custom_domain }}
+spec:
+  namespace: {{ target_namespace }}
+---
+apiVersion: serving.knative.dev/v1beta1
+kind: DomainMapping
+metadata:
+  name: {{ custom_domain }}
+  namespace: {{ target_namespace }}
+spec:
+  ref:
+    name: {{ project_name | replace: "_", "-" }}
+    kind: Service
+    apiVersion: serving.knative.dev/v1
+{% endif %}
