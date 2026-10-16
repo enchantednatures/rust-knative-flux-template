@@ -180,7 +180,7 @@ cargo test --test kafka_publishing_test -- --ignored
 ### E2E Test (Kind + Kubernetes)
 ```bash
 # Deploy to local Kind cluster
-make dev-up
+make local-up
 # Send HTTP request
 curl http://localhost:8080/api/ping
 # Verify event in Kafka topic

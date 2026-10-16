@@ -19,7 +19,7 @@ Complete guide for deploying, managing, and troubleshooting CloudNativePG Postgr
 
 ```bash
 # Deploy with dev configuration (1 instance, RustFS backups)
-make dev-up
+make local-up
 
 # Or manually
 export KUBECONFIG=.kubeconfig-dev
@@ -587,7 +587,7 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 
 **Known limitations**:
 - Repository issue #136 (resolved): the HelmRelease now uses a named services.app key instead of the empty-string services."" patch.
-- Backup destinations are chart-provisioned buckets: dev/staging/prod each declare an `ObjectBucketClaim` (`<project>-postgres-backups`, `-staging`, `-prod`), and the cluster's bucket provisioner creates the bucket and delivers a claim-named Secret (keys `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). The bucket StorageClass must set `reclaimPolicy: Retain`. On the local Kind cluster (no bucket provisioner) the dev RustFS init job creates a matching bucket, Secret and ConfigMap so `make dev-up` works unchanged.
+- Backup destinations are chart-provisioned buckets: dev/staging/prod each declare an `ObjectBucketClaim` (`<project>-postgres-backups`, `-staging`, `-prod`), and the cluster's bucket provisioner creates the bucket and delivers a claim-named Secret (keys `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). The bucket StorageClass must set `reclaimPolicy: Retain`. On the local Kind cluster (no bucket provisioner) the dev RustFS init job creates a matching bucket, Secret and ConfigMap so `make local-up` works unchanged.
 - PgBouncer pooling is not part of the shipped Component (the deprecated Helm values-pooler design was removed with the dead chart values block).
 
 ## PgBouncer Pooler

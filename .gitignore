@@ -35,6 +35,10 @@ deploy/base/secret.yaml
 *.env
 .env*
 !.env.example
+# SOPS: per-environment config and the age private key stay out of git
+# (start from .sops.yaml.example)
+.sops.yaml
+age.key
 
 # Local testing
 docker-compose.override.yaml

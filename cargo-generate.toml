@@ -27,6 +27,10 @@ ignore = [
   "CHANGELOG-LOCAL-E2E.md",
   "scripts/test-template-matrix.sh",
   "template-values.toml",
+  "ci/template-values-full.toml",
+  ".github/workflows/dev-setup-validation.yaml",
+  ".sops.yaml",
+  ".omo",
 ]
 
 # Post-generation hook: formats generated code and runs clippy --fix (see
@@ -60,6 +64,13 @@ github_org = { prompt = "GitHub organization or username", type = "string", defa
 github_repo = { prompt = "GitHub repository name", type = "string", default = "your-repo" }
 default_branch = { prompt = "Default git branch for Flux", type = "string", default = "main" }
 image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
+
+# GitOps / private-cluster options (all optional; the defaults keep the
+# project public and portable)
+git_auth_secret = { prompt = "Flux Git SSH deploy-key secret name in flux-system (empty = public repo over HTTPS)", type = "string", default = "" }
+image_pull_secret = { prompt = "Image pull secret name for private registries (empty = none)", type = "string", default = "" }
+custom_domain = { prompt = "Custom hostname for the dev Knative service, e.g. app.example.com (empty = none)", type = "string", default = "" }
+network_policy_allow_all = { prompt = "Add an allow-all NetworkPolicy to the dev namespace (lifts default-deny policies)?", type = "bool", default = false }
 
 # Scaling configuration
 use_default_scaling = { prompt = "Use default scaling parameters?", type = "bool", default = true }

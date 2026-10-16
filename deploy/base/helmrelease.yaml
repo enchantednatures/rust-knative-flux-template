@@ -43,6 +43,12 @@ spec:
         image:
           repository: "{{ image_registry }}/{{ github_org }}/{{ project_name | replace: '_', '-' }}"
           tag: "latest"  # {"$imagepolicy": "flux-system:{{ project_name | replace: '_', '-' }}:tag"}
+          {% if image_pull_secret != "" %}
+          # Private registry credentials (see deploy/overlays/dev for the
+          # SOPS-encrypted Secret and `make` targets).
+          imagePullSecrets:
+            - name: {{ image_pull_secret }}
+          {% endif %}
         scaling:
           minScale: {% if use_default_scaling %}1{% else %}{{ base_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}10{% else %}{{ base_max_scale }}{% endif %}
