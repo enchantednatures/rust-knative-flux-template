@@ -315,7 +315,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 - **Test Plan Documentation**: `tests/TEST_PLAN.md`
 
 #### Local Development Testing
-- **make dev-up**: Full environment (Kind, Knative, Redis, RustFS, Kafka, PostgreSQL, Observability)
+- **make local-up**: Full environment (Kind, Knative, Redis, RustFS, Kafka, PostgreSQL, Observability)
 - **make dev-logs**: Follow service logs
 - **cargo test**: Run all tests
 - **cargo watch -x test**: Auto-rerun on changes
@@ -438,7 +438,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 ### Development & Testing
 - **Testing**: axum-test 17, tokio-test 0.4
 - **Database Testing**: sqlx 0.8 (PostgreSQL)
-- **Local Kubernetes**: Kind (via make dev-up)
+- **Local Kubernetes**: Kind (via make local-up)
 - **Container Orchestration**: Docker Compose (implicit via Kind scripts)
 
 ### Optional/Conditional Dependencies
@@ -496,7 +496,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 | | Multi-environment overlays | ✅ Built-in | Dev/staging/prod |
 | | Kustomize patches | ✅ Built-in | Base + overlays pattern |
 | | Docker support | ✅ Built-in | Multi-stage, optimized |
-| **Infrastructure** | Kind support | ✅ Built-in | make dev-up |
+| **Infrastructure** | Kind support | ✅ Built-in | make local-up |
 | | Kafka cluster | ✅ Local only | Included in Kind setup |
 | | PostgreSQL HA | ✅ Operators | CloudNativePG 1.28.0 |
 | | Backup/PITR | ✅ Built-in | Barman Cloud + S3 |

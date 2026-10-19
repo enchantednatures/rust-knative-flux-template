@@ -5,9 +5,12 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m
-  url: https://github.com/{{ github_org }}/{{ github_repo }}
+  # Private repositories pull over SSH with a deploy key stored in the
+  # `git_auth_secret` Secret (identity / identity.pub / known_hosts);
+  # create it with `make git-auth`. Public repositories use HTTPS.
+  url: {% if git_auth_secret != "" %}ssh://git@github.com/{{ github_org }}/{{ github_repo }}.git{% else %}https://github.com/{{ github_org }}/{{ github_repo }}{% endif %}
   ref:
     branch: {{ default_branch }}
-  # Optional: For private repositories
-  # secretRef:
-  #   name: github-deploy-key
+  {% if git_auth_secret != "" %}secretRef:
+    name: {{ git_auth_secret }}
+  {% endif %}

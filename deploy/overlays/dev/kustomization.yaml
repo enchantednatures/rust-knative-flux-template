@@ -1,10 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: default
+namespace: {{ target_namespace }}
 
 resources:
   - ../../base
+  {% if target_namespace != "default" %}
+  - namespace.yaml
+  {% endif %}
+  {% if network_policy_allow_all %}
+  - networkpolicy.yaml
+  {% endif %}
+  {% if custom_domain != "" %}
+  - domain-mapping.yaml
+  {% endif %}
+  # After creating the encrypted image pull secret (see
+  # image-pull-secret.sops.yaml.example), uncomment:
+  # - image-pull-secret.sops.yaml
 
 components:
   {% if feature_postgres %}
@@ -26,6 +38,10 @@ patches:
         value:
           repository: "kind-registry-dev:5000/{{ project_name | replace: '_', '-' }}"
           tag: "dev"
+          {% if image_pull_secret != "" %}
+          imagePullSecrets:
+            - name: {{ image_pull_secret }}
+          {% endif %}
       - op: replace
         path: /spec/values/services/app/scaling
         value:

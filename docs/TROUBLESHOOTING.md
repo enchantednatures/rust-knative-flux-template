@@ -33,10 +33,10 @@ make dev-status
 # Should show redis pod in "services" namespace
 ```
 
-2. Restart Redis (part of make dev-up):
+2. Restart Redis (part of make local-up):
 ```bash
-make dev-down
-make dev-up
+make local-down
+make local-up
 ```
 
 3. Check Redis logs:
@@ -76,10 +76,10 @@ make dev-status
 # Should show rustfs pod in the rustfs namespace
 ```
 
-2. Restart RustFS (part of make dev-up):
+2. Restart RustFS (part of make local-up):
 ```bash
-make dev-down
-make dev-up
+make local-down
+make local-up
 ```
 
 3. Check RustFS logs:

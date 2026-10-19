@@ -7,7 +7,7 @@ This guide explains how to use Apache Kafka event sources with your Knative serv
 
 1. **Start development environment** (includes Kafka):
    ```bash
-   make dev-up
+   make local-up
    ```
 
 2. **Send a test event**:
@@ -67,7 +67,7 @@ To subscribe to multiple topics, create additional KafkaSource YAML files (see [
 ### Knative Eventing Kafka Controller
 
 **Local Development (Kind):**
-The Kafka controller is automatically installed when you run `make dev-up`. It includes:
+The Kafka controller is automatically installed when you run `make local-up`. It includes:
 - Knative Eventing core
 - Kafka source controller
 - Kafka source data plane
@@ -97,7 +97,7 @@ kubectl apply -f https://github.com/knative-extensions/eventing-kafka-broker/rel
 
 ### Kafka Cluster Configuration
 
-**Automatically deployed with `make dev-up`:**
+**Automatically deployed with `make local-up`:**
 - **Namespace**: `kafka`
 - **Bootstrap servers**: `kafka.kafka.svc.cluster.local:9092`
 {% if event_source_kafka %}

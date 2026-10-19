@@ -207,7 +207,7 @@ The local Kind cluster has no Rook/Ceph and no bucket provisioner, so the Kind l
 - removes the `objectBuckets` HelmRelease values (no `ObjectBucketClaim` is rendered)
 - points the CNPG `ObjectStore` back at the in-cluster RustFS (`http://rustfs.rustfs.svc.cluster.local:9000`)
 
-`scripts/dev/build-and-deploy.sh`, `make dev-up`, and `make dev-postgres` render that layer. The RustFS init job stands in for the provisioner: it writes the same claim-named Secret and ConfigMap keys, so the backup `ObjectStore` and the app read the same contract locally. For projects without `feature_s3`/`feature_postgres` the layer is a passthrough.
+`scripts/dev/build-and-deploy.sh`, `make local-up`, and `make dev-postgres` render that layer. The RustFS init job stands in for the provisioner: it writes the same claim-named Secret and ConfigMap keys, so the backup `ObjectStore` and the app read the same contract locally. For projects without `feature_s3`/`feature_postgres` the layer is a passthrough.
 
 A real cluster (including a Flux-managed dev cluster) uses `deploy/overlays/dev` directly and gets the Ceph bucket from `ceph_rgw_endpoint_dev`. Only the Kind loop uses `deploy/dev/app-overlay`.
 

@@ -41,7 +41,7 @@ cargo install cargo-edit
 cargo install cargo-audit
 
 # Start local development environment
-make dev-up
+make local-up
 
 # Run tests
 cargo test
