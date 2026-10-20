@@ -26,6 +26,7 @@ jobs:
       matrix:
         include:
           - scenario: with-s3
+            feature_cron: "false"
             feature_s3: "true"
             feature_kafka: "false"
             feature_postgres: "false"
@@ -36,6 +37,7 @@ jobs:
             deploy: "true"
 
           - scenario: with-gha-runner
+            feature_cron: "false"
             feature_s3: "false"
             feature_kafka: "false"
             feature_postgres: "false"
@@ -46,6 +48,7 @@ jobs:
             deploy: "false"
 
           - scenario: with-flagger
+            feature_cron: "false"
             feature_s3: "false"
             feature_kafka: "false"
             feature_postgres: "false"
@@ -56,6 +59,7 @@ jobs:
             deploy: "true"
 
           - scenario: with-postgres
+            feature_cron: "false"
             feature_s3: "false"
             feature_kafka: "false"
             feature_postgres: "true"
@@ -63,6 +67,17 @@ jobs:
             feature_gha_runner: "false"
             event_source_kafka: "false"
             project_name: "test-app-with-postgres"
+            deploy: "true"
+
+          - scenario: with-cron
+            feature_cron: "true"
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            feature_gha_runner: "false"
+            event_source_kafka: "false"
+            project_name: "test-app-with-cron"
             deploy: "true"
 
     env:
@@ -181,6 +196,7 @@ jobs:
           project_name = "${{ matrix.project_name }}"
           project_author = "E2E Bot <e2e@github.com>"
           feature_s3 = ${{ matrix.feature_s3 }}
+          feature_cron = ${{ matrix.feature_cron }}
           feature_kafka = ${{ matrix.feature_kafka }}
           feature_postgres = ${{ matrix.feature_postgres }}
           feature_flagger = ${{ matrix.feature_flagger }}
@@ -229,6 +245,17 @@ jobs:
           gha_runner_storage_class = "openebs-hostpath"
           gha_runner_priority_class = "actions-runner-high-priority"
           gha_runner_storage_size = "50Gi"
+          EOF
+          fi
+
+          # Scheduled work values (prompted when feature_cron = true). The
+          # every-minute schedule makes dispatch deterministic, and the
+          # run-scoped payload gives the E2E a unique sentinel to assert on.
+          if [ "${{ matrix.feature_cron }}" = "true" ]; then
+            cat >> template-values.toml <<EOF
+          cron_schedule = "* * * * *"
+          cron_timezone = "UTC"
+          cron_payload = '{"message":"e2e-cron-${{ github.run_id }}"}'
           EOF
           fi
 
@@ -719,6 +746,15 @@ jobs:
             deployment/autoscaler \
             deployment/controller \
             deployment/webhook
+
+      - name: Install Knative Eventing (scheduled work)
+        if: matrix.feature_cron == 'true' && matrix.deploy == 'true'
+        run: |
+          GENERATED_DIR="./generated/${PROJECT_NAME}"
+
+          # Eventing (and the PingSource CRD) must exist before Flux applies
+          # the OCI artifact, otherwise the rendered PingSource is rejected.
+          bash "${GENERATED_DIR}/scripts/dev/install-knative-eventing.sh"
 
       - name: Install Observability (canary prerequisites)
         if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
@@ -1630,6 +1666,87 @@ jobs:
           fi
           echo "======================================"
 
+      - name: Run scheduled event E2E
+        if: matrix.feature_cron == 'true' && matrix.deploy == 'true'
+        run: |
+          set -uo pipefail
+          SERVICE_NAME="${SERVICE_NAME}"
+          PING_LABEL="app.kubernetes.io/component=event-source"
+          PING_FALLBACK="${SERVICE_NAME}-scheduled-ping-source"
+          PINGSOURCE=""
+
+          dump_scheduled_diagnostics() {
+            echo "::group::PingSources"
+            kubectl get pingsources.sources.knative.dev -A -o wide || true
+            echo "::endgroup::"
+
+            echo "::group::PingSource describe"
+            kubectl describe pingsources.sources.knative.dev -n default ${PINGSOURCE} || true
+            echo "::endgroup::"
+
+            echo "::group::PingSource adapter logs"
+            kubectl logs -n knative-eventing deploy/pingsource-mt-adapter --tail=200 || true
+            echo "::endgroup::"
+
+            echo "::group::Application logs"
+            kubectl logs -l "serving.knative.dev/service=${SERVICE_NAME}" --tail=300 || true
+            echo "::endgroup::"
+          }
+
+          echo "Locating PingSource (label ${PING_LABEL}, fallback ${PING_FALLBACK})..."
+          PING_DEADLINE=$((SECONDS + 60))
+          while [ $SECONDS -lt $PING_DEADLINE ]; do
+            PINGSOURCE=$(kubectl get pingsources.sources.knative.dev -n default \
+              -l "${PING_LABEL}" \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -z "${PINGSOURCE}" ] && \
+               kubectl get pingsources.sources.knative.dev "${PING_FALLBACK}" -n default >/dev/null 2>&1; then
+              PINGSOURCE="${PING_FALLBACK}"
+            fi
+            [ -n "${PINGSOURCE}" ] && break
+            sleep 2
+          done
+
+          if [ -z "${PINGSOURCE}" ]; then
+            echo "❌ No PingSource found for ${SERVICE_NAME}"
+            dump_scheduled_diagnostics
+            exit 1
+          fi
+          echo "Found PingSource: ${PINGSOURCE}"
+
+          if ! kubectl wait --for=condition=Ready --timeout=180s \
+            -n default "pingsources.sources.knative.dev/${PINGSOURCE}"; then
+            echo "❌ PingSource ${PINGSOURCE} did not become Ready"
+            dump_scheduled_diagnostics
+            exit 1
+          fi
+
+          echo "Waiting for scheduled dispatch logs..."
+          LOG_DEADLINE=$((SECONDS + 180))
+          FOUND_SCHEDULED=0
+          FOUND_SENTINEL=0
+          while [ $SECONDS -lt $LOG_DEADLINE ]; do
+            APP_LOGS=$(kubectl logs -l "serving.knative.dev/service=${SERVICE_NAME}" --tail=300 2>/dev/null || true)
+            if echo "${APP_LOGS}" | grep -q "Received scheduled CloudEvent"; then
+              FOUND_SCHEDULED=1
+            fi
+            if echo "${APP_LOGS}" | grep -q "e2e-cron-${GITHUB_RUN_ID}"; then
+              FOUND_SENTINEL=1
+            fi
+            if [ "${FOUND_SCHEDULED}" = "1" ] && [ "${FOUND_SENTINEL}" = "1" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "${FOUND_SCHEDULED}" != "1" ] || [ "${FOUND_SENTINEL}" != "1" ]; then
+            echo "❌ Scheduled event assertion failed (scheduled=${FOUND_SCHEDULED}, sentinel=${FOUND_SENTINEL})"
+            dump_scheduled_diagnostics
+            exit 1
+          fi
+
+          echo "✅ Scheduled event received with run sentinel e2e-cron-${GITHUB_RUN_ID}"
+
       - name: Final validation summary
         if: always() && matrix.deploy == 'true'
         run: |
@@ -1638,6 +1755,7 @@ jobs:
           echo "           E2E Test Summary"
           echo "============================================"
           echo "Scenario: ${{ matrix.scenario }}"
+          echo "Feature cron: ${{ matrix.feature_cron }}"
           echo "Image: ${{ steps.image-meta.outputs.app_image }}"
           echo "Manifest: ${{ steps.image-meta.outputs.manifest_image }}"
           echo ""
@@ -1658,9 +1776,19 @@ jobs:
           kubectl logs -n flux-system deployment/kustomize-controller --tail=100 || true
           echo "::endgroup::"
 
+          echo "Feature cron: ${{ matrix.feature_cron }}"
+
           echo "::group::Application logs"
           kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100 || true
           echo "::endgroup::"
+
+          if [ "${{ matrix.feature_cron }}" = "true" ]; then
+            echo "::group::Scheduled work (PingSource) diagnostics"
+            kubectl get pingsources.sources.knative.dev -A -o wide || true
+            kubectl describe pingsources.sources.knative.dev -n default || true
+            kubectl logs -n knative-eventing deploy/pingsource-mt-adapter --tail=120 || true
+            echo "::endgroup::"
+          fi
 
           echo "::group::All pods"
           kubectl get pods -A -o wide
