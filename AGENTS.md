@@ -599,6 +599,33 @@ These configure:
 - `linger_ms`: 5ms default (batch small messages)
 - `timeout_ms`: 10s default (fail-fast on unreachable broker)
 
+{% if feature_cron %}
+## Scheduled Work (feature_cron)
+
+The opt-in `feature_cron` flag adds a Knative PingSource for cron-triggered
+work. It does not add a CronJobSource. CronJobSource was removed in Knative
+Eventing v0.14, and PingSource is the supported successor.
+
+- Prompts and defaults: `cron_schedule` (`0 * * * *`), `cron_timezone` (`UTC`),
+  and `cron_payload` (`{"message":"scheduled tick"}`).
+- Values live in `deploy/base/helmrelease.yaml` under
+  `spec.values.pingsources.scheduled` with `contentType: application/json`.
+- The chart uses the root sink `sink: "app"` for the `services.app` Knative
+  Service. There is no target path and no custom event type.
+- The event type is fixed at `dev.knative.sources.ping`. The handler in
+  `src/handlers/events.rs` routes on that constant.
+- PingSource does not expose a delivery, retry, or DLQ spec. A failed delivery
+  is not retried, and ticks missed while the adapter is down are not replayed.
+  The adapter and the Knative Service can both cold start, so handlers must be
+  idempotent and must not assume exactly-once delivery.
+- The adapter runs in `knative-eventing` as `pingsource-mt-adapter`.
+- `scripts/dev/install-knative-eventing.sh` installs Eventing core and the
+  PingSource CRD for local development only. It requires cluster-admin.
+- The payload is committed Git/HelmRelease configuration. Do not put secrets in
+  it.
+- Full guide: `docs/SCHEDULED_WORK.md`.
+
+{% endif %}
 ## Knative-Specific Constraints
 
 - **Port 8080**: Always use port 8080 (required by Knative)
@@ -1034,6 +1061,9 @@ deploy/
 ```
 
 ## Recent Changes
+{% if feature_cron %}
+- feature-cron-scheduled-work: Added opt-in `feature_cron` scheduled work with a Knative PingSource (`pingsources.scheduled`, fixed type `dev.knative.sources.ping`, root `sink: "app"`), a `dev.knative.sources.ping` handler branch, and a local-dev Eventing install script. CronJobSource was removed in Knative Eventing v0.14, so the template does not use it. Deliveries are not retried and missed schedules are not replayed; see `docs/SCHEDULED_WORK.md`.
+{% endif %}
 - marrakesh-backport: Ported the deployment fixes a real generated project surfaced. The HelmRelease now uses a named `services.app` key (with `nameOverride: ""`) and the Kafka source `sink` points at it; a postRenderer strips the `fieldRef` env list from the DLQ Knative Service (Knative >= 1.23 rejects it); per-env patches layer over the base instead of clobbering `sink`/`delivery`/`dlq` and the dev overlay keeps `APP__POSTGRES__HOST`; CNPG Cluster and Pooler pods carry resource requests/limits so `require-pod-resources` policies admit them; the Dockerfile builder and runtime both use trixie with the librdkafka build deps; telemetry honors `APP__TELEMETRY__OTLP_ENDPOINT`; the test harness installs one global metrics recorder and injects `ConnectInfo`; the generated CI/release workflows run on ARC runners and authenticate Trivy; `make bootstrap` renders each config with `--load-restrictor=LoadRestrictionsNone`; and the default PostgreSQL major is now 18.
 - ksvc-ceph-bucket-adoption: App S3 and Postgres backups now consume chart-provisioned ObjectBucketClaims (Ceph RGW). Bucket names are `<project>-postgres-backups[-env]` and `<project>-app-data[-env]`; both read credentials from the claim-named provisioner Secret and bucket identity from its ConfigMap (app endpoint `http://$(BUCKET_HOST):$(BUCKET_PORT)`, env names unchanged). Local Kind falls back to RustFS via `deploy/dev/app-overlay` (the RustFS init Job mimics the provisioner contract); the dead staging/prod `s3-config` ConfigMaps were removed; external-S3/TLS setups patch the app env per environment.
 - rustfs-dev-storage: Replaced the dev/CI MinIO deployment with RustFS (`rustfs/rustfs:1.0.1`) and the `mc` client with `rc` (`cargo install rustfs-cli`); dev namespace/service `rustfs`, credentials rustfsadmin/rustfsadmin, console :9001, endpoints updated in manifests, overlays, scripts and docs
