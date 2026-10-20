@@ -668,7 +668,7 @@ deploy/
 │   ├── secret.yaml.example
 │   └── object-storage-secret.yaml.example
 ├── chart/                       # Local Helm chart wrapping the ksvc chart dependency
-│   ├── Chart.yaml               # ksvc 0.6.3 (oci://ghcr.io/enchantednatures/charts)
+│   ├── Chart.yaml               # ksvc 0.9.0 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
 │   └── flagger/                 # Canary + metric templates (staging/prod)

@@ -53,6 +53,10 @@ feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", defa
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
 feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
 event_source_kafka = { prompt = "Enable Kafka event source (consumer)?", type = "bool", default = false }
+# Scheduled work uses a Knative PingSource because CronJobSource was removed in
+# Knative Eventing v0.14. The PingSource event type is fixed at
+# `dev.knative.sources.ping`, so there is no custom-event-type prompt.
+feature_cron = { prompt = "Enable scheduled work (Knative PingSource)?", type = "bool", default = false }
 
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
@@ -114,6 +118,17 @@ ignore = [
   "scripts/dev/create-kafka-topic.sh",
   "docs/KAFKA_EVENTING.md",
   "tests/e2e/fixtures/kafka",
+]
+
+[conditional.'feature_cron'.placeholders]
+cron_schedule = { prompt = "Cron schedule (e.g. '0 * * * *')", type = "string", default = "0 * * * *" }
+cron_timezone = { prompt = "Cron timezone (e.g. UTC)", type = "string", default = "UTC" }
+cron_payload = { prompt = "PingSource event payload (JSON)", type = "string", default = '{"message":"scheduled tick"}' }
+
+[conditional.'!feature_cron']
+ignore = [
+  "scripts/dev/install-knative-eventing.sh",
+  "docs/SCHEDULED_WORK.md",
 ]
 
 [conditional.'feature_postgres'.placeholders]
