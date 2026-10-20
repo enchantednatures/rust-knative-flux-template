@@ -287,7 +287,7 @@ async fn test_with_fixture() {
 
 ```bash
 # Start development environment
-make dev-up
+make local-up
 
 # Wait for services to be ready
 sleep 5

@@ -56,7 +56,7 @@ It provides a complete starting point for building cloud-native services.
 
 ```bash
 # Start development environment
-make dev-up
+make local-up
 
 # Run application (in another terminal)
 cargo run
@@ -68,7 +68,7 @@ cargo watch -q -c -w src -x run
 make dev-forward
 ```
 
-### What services are started with make dev-up?
+### What services are started with make local-up?
 
 - **Kind Kubernetes Cluster** - Local Kubernetes environment
 - **Knative Serving** - Serverless framework
@@ -113,7 +113,7 @@ pub use my_handler::my_handler;
 cargo test
 
 # Integration tests (requires dev environment)
-make dev-up
+make local-up
 cargo test -- --ignored --nocapture
 
 # E2E tests
@@ -311,7 +311,7 @@ See `docs/TROUBLESHOOTING.md` for detailed solutions.
 
 ```bash
 # Start development environment
-make dev-up
+make local-up
 
 # Run tests with output
 cargo test -- --nocapture

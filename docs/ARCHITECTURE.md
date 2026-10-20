@@ -305,11 +305,11 @@ services:
 |---------|---------|-------------|-----------|------------|
 | Kubernetes | Container orchestration | REQUIRED | Kind (tests) | EKS/GKE/etc |
 | Knative | Serverless runtime | REQUIRED | Included in Kind | Pre-installed |
-| Redis | Caching/sessions | REQUIRED | make dev-up | AWS ElastiCache/Redis Enterprise |
-| {% if feature_s3 %}RustFS/S3 | Object storage | REQUIRED | make dev-up | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |{% endif %} |
-| OpenTelemetry | Observability | OPTIONAL | make dev-up | Dedicated collector |
-| Jaeger | Distributed tracing | OPTIONAL | make dev-up | Cloud provider/self-hosted |
-| Prometheus | Metrics collection | OPTIONAL | make dev-up | Cloud provider/self-hosted |
+| Redis | Caching/sessions | REQUIRED | make local-up | AWS ElastiCache/Redis Enterprise |
+| {% if feature_s3 %}RustFS/S3 | Object storage | REQUIRED | make local-up | AWS S3 |{% else %}OpenTelemetry | Observability | OPTIONAL | make local-up | Dedicated collector |{% endif %} |
+| OpenTelemetry | Observability | OPTIONAL | make local-up | Dedicated collector |
+| Jaeger | Distributed tracing | OPTIONAL | make local-up | Cloud provider/self-hosted |
+| Prometheus | Metrics collection | OPTIONAL | make local-up | Cloud provider/self-hosted |
 
 ### Rust Dependencies
 

@@ -1,0 +1,20 @@
+{% if network_policy_allow_all %}
+# Clusters that create a default-deny NetworkPolicy per namespace (for example
+# Kyverno policies) need this allow-all policy so the app can serve traffic.
+# Delete this file and its kustomization entry if your cluster manages
+# NetworkPolicies for you.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all
+  namespace: {{ target_namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {}
+  egress:
+    - {}
+{% endif %}

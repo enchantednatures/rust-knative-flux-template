@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (deploy-ready generated projects)
+
+- New generation prompts shape the deploy surface without hardcoding any cluster: `git_auth_secret` (Flux pulls the repo over SSH with a deploy-key Secret), `image_pull_secret` (private-registry pull secret wired into the app image), `custom_domain` (Knative `ClusterDomainClaim` + `DomainMapping` in the dev overlay), and `network_policy_allow_all` (allow-all policy for clusters with default-deny namespace policies).
+- All overlays now follow `target_namespace` (previously hardcoded `default`/`staging`/`production`), each generates a `namespace.yaml` when it is not `default`, and the per-env Flux health checks target the same namespace.
+- `make deploy <env>` commits the working tree, pushes, and applies the Flux bootstrap for the environment — a no-op after the first run — so a fresh generate goes from zero to reconciled with one command. `make git-auth` creates the SSH deploy-key Secret (`scripts/bootstrap-git-auth.sh`, optional `--sops` encrypted copy under `deploy/flux/bootstrap/`).
+- The local Kind lifecycle moved from `make dev-up`/`make dev-down` to `make local-up`/`make local-down` (old names remain as aliases) so "dev" means the real cluster.
+- `.sops.yaml` is gitignored and shipped as `.sops.yaml.example` (tight `*.sops.yaml` + `data|stringData` rule shape); template-internal files (`ci/template-values-full.toml`, `.github/workflows/dev-setup-validation.yaml`, `.omo`) are excluded from generation.
+
 ### Added (PostgreSQL feature, shipped core)
 
 - `feature_postgres` now deploys a complete CloudNativePG stack as a Kustomize Component (`deploy/components/postgres/`): a `Cluster` (operator-managed TLS certs, `hostssl` pg_hba enforcement, SCRAM-SHA-256, bootstrap db/owner `app`, checksummed data, plugin-based WAL archiving), a barman-cloud `ObjectStore` (`barmancloud.cnpg.io/v1`, gzip data and WAL, retention per environment), and a `ScheduledBackup` (`method: plugin`, `target: primary`, `{{ backup_schedule }}`).

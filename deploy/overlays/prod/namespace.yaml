@@ -1,0 +1,10 @@
+{% if target_namespace != "default" %}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ target_namespace }}
+  labels:
+    # Keeps the namespace (and anything a cluster policy generated inside it)
+    # alive if this Kustomization is ever removed.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+{% endif %}

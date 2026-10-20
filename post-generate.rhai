@@ -60,4 +60,5 @@ if warnings > 0 {
 print("\nNext steps:");
 print("  1. Review the generated code");
 print("  2. Update config files with your settings");
-print("  3. Run: make dev-up  (to start development environment)");
+print("  3. Run: make local-up  (to start the local dev environment)");
+print("  4. Deploy to a cluster: make deploy dev  (see docs/DEPLOYMENT.md)");

@@ -63,7 +63,7 @@
 
 ### Development Environment
 ```bash
-make dev-up      # Start Kind + Knative + Redis + RustFS + Kafka + PostgreSQL
+make local-up      # Start Kind + Knative + Redis + RustFS + Kafka + PostgreSQL
 make dev-logs    # Follow service logs
 cargo test       # Run all tests
 ```
@@ -126,7 +126,7 @@ cargo generate --git https://github.com/your-org/rust-knative-flux-template
 ### Minimal Development Setup
 ```bash
 # Start full development environment
-make dev-up
+make local-up
 
 # Build and test
 cargo build

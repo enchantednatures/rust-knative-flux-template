@@ -300,13 +300,13 @@ cargo clippy -- -D warnings
 cargo test
 
 # Start services for integration tests
-make dev-up
+make local-up
 
 # Run integration tests
 cargo test -- --ignored --nocapture
 
 # Cleanup
-make dev-down
+make local-down
 ```
 
 #### Step 8: Deploy to Staging

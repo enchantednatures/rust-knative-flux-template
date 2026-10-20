@@ -64,7 +64,7 @@ cargo test test_readiness_endpoint -- --nocapture --test-threads=1
 ### Development Workflow
 ```bash
 # Start local development environment (Kind + Knative + all services)
-make dev-up
+make local-up
 
 # Watch for changes and re-run tests
 cargo watch -x test
@@ -76,7 +76,7 @@ make dev-restart
 make dev-logs
 
 # Stop development environment
-make dev-down
+make local-down
 ```
 
 ## Naming Conventions
@@ -764,7 +764,7 @@ components:
 
 **Feature-flag wiring** happens in `deploy/flux/config/{dev,staging,prod}/kustomization.yaml`, which aggregates the app Kustomization (`deploy/flux/kustomization-{env}.yaml`) with the optional operator Kustomizations (flagger, cnpg-operator, gha-runner, postgres) and image-update resources, each gated by the corresponding feature flag.
 
-**Local infrastructure** (Kind cluster, local registry, redis, rustfs, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make dev-up`, etc.).
+**Local infrastructure** (Kind cluster, local registry, redis, rustfs, kafka, observability) is NOT part of the overlays — it lives in `deploy/dev/` and is installed imperatively by `scripts/dev/*` and Makefile targets (`make local-up`, etc.).
 
 ### CNPG Operator Installation
 
@@ -1064,6 +1064,7 @@ deploy/
 {% if feature_cron %}
 - feature-cron-scheduled-work: Added opt-in `feature_cron` scheduled work with a Knative PingSource (`pingsources.scheduled`, fixed type `dev.knative.sources.ping`, root `sink: "app"`), a `dev.knative.sources.ping` handler branch, and a local-dev Eventing install script. CronJobSource was removed in Knative Eventing v0.14, so the template does not use it. Deliveries are not retried and missed schedules are not replayed; see `docs/SCHEDULED_WORK.md`.
 {% endif %}
+- zero-setup-deploy: Generated projects now carry the deploy surface behind optional prompts — SSH `git_auth_secret`, `image_pull_secret`, `custom_domain` (ClusterDomainClaim + DomainMapping), `network_policy_allow_all` — and all overlays follow `target_namespace` (namespace resource included) with matching Flux health checks. `make deploy <env>` commits + pushes + applies the Flux bootstrap (no-op after the first run), `make git-auth` creates the SSH deploy-key Secret via `scripts/bootstrap-git-auth.sh`, and the local Kind lifecycle is `make local-up`/`make local-down` (old names aliased). `.sops.yaml` moved to a gitignored `.sops.yaml.example`; template-only files (`ci/template-values-full.toml`, the dev-setup-validation workflow, `.omo`) no longer ship.
 - marrakesh-backport: Ported the deployment fixes a real generated project surfaced. The HelmRelease now uses a named `services.app` key (with `nameOverride: ""`) and the Kafka source `sink` points at it; a postRenderer strips the `fieldRef` env list from the DLQ Knative Service (Knative >= 1.23 rejects it); per-env patches layer over the base instead of clobbering `sink`/`delivery`/`dlq` and the dev overlay keeps `APP__POSTGRES__HOST`; CNPG Cluster and Pooler pods carry resource requests/limits so `require-pod-resources` policies admit them; the Dockerfile builder and runtime both use trixie with the librdkafka build deps; telemetry honors `APP__TELEMETRY__OTLP_ENDPOINT`; the test harness installs one global metrics recorder and injects `ConnectInfo`; the generated CI/release workflows run on ARC runners and authenticate Trivy; `make bootstrap` renders each config with `--load-restrictor=LoadRestrictionsNone`; and the default PostgreSQL major is now 18.
 - ksvc-ceph-bucket-adoption: App S3 and Postgres backups now consume chart-provisioned ObjectBucketClaims (Ceph RGW). Bucket names are `<project>-postgres-backups[-env]` and `<project>-app-data[-env]`; both read credentials from the claim-named provisioner Secret and bucket identity from its ConfigMap (app endpoint `http://$(BUCKET_HOST):$(BUCKET_PORT)`, env names unchanged). Local Kind falls back to RustFS via `deploy/dev/app-overlay` (the RustFS init Job mimics the provisioner contract); the dead staging/prod `s3-config` ConfigMaps were removed; external-S3/TLS setups patch the app env per environment.
 - rustfs-dev-storage: Replaced the dev/CI MinIO deployment with RustFS (`rustfs/rustfs:1.0.1`) and the `mc` client with `rc` (`cargo install rustfs-cli`); dev namespace/service `rustfs`, credentials rustfsadmin/rustfsadmin, console :9001, endpoints updated in manifests, overlays, scripts and docs

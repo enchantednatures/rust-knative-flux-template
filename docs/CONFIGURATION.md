@@ -404,7 +404,7 @@ kubectl apply -f my-secret.sealed.yaml
 
 1. **Start services**:
    ```bash
-   make dev-up
+   make local-up
    ```
 
 2. **Run app** (uses `config/development.toml`):
