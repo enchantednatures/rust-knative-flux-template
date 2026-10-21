@@ -599,6 +599,33 @@ These configure:
 - `linger_ms`: 5ms default (batch small messages)
 - `timeout_ms`: 10s default (fail-fast on unreachable broker)
 
+{% if feature_cron %}
+## Scheduled Work (feature_cron)
+
+The opt-in `feature_cron` flag adds a Knative PingSource for cron-triggered
+work. It does not add a CronJobSource. CronJobSource was removed in Knative
+Eventing v0.14, and PingSource is the supported successor.
+
+- Prompts and defaults: `cron_schedule` (`0 * * * *`), `cron_timezone` (`UTC`),
+  and `cron_payload` (`{"message":"scheduled tick"}`).
+- Values live in `deploy/base/helmrelease.yaml` under
+  `spec.values.pingsources.scheduled` with `contentType: application/json`.
+- The chart uses the root sink `sink: "app"` for the `services.app` Knative
+  Service. There is no target path and no custom event type.
+- The event type is fixed at `dev.knative.sources.ping`. The handler in
+  `src/handlers/events.rs` routes on that constant.
+- PingSource does not expose a delivery, retry, or DLQ spec. A failed delivery
+  is not retried, and ticks missed while the adapter is down are not replayed.
+  The adapter and the Knative Service can both cold start, so handlers must be
+  idempotent and must not assume exactly-once delivery.
+- The adapter runs in `knative-eventing` as `pingsource-mt-adapter`.
+- `scripts/dev/install-knative-eventing.sh` installs Eventing core and the
+  PingSource CRD for local development only. It requires cluster-admin.
+- The payload is committed Git/HelmRelease configuration. Do not put secrets in
+  it.
+- Full guide: `docs/SCHEDULED_WORK.md`.
+
+{% endif %}
 ## Knative-Specific Constraints
 
 - **Port 8080**: Always use port 8080 (required by Knative)
@@ -668,7 +695,7 @@ deploy/
 │   ├── secret.yaml.example
 │   └── object-storage-secret.yaml.example
 ├── chart/                       # Local Helm chart wrapping the ksvc chart dependency
-│   ├── Chart.yaml               # ksvc 0.6.3 (oci://ghcr.io/enchantednatures/charts)
+│   ├── Chart.yaml               # ksvc 0.9.0 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
 │   └── flagger/                 # Canary + metric templates (staging/prod)
@@ -1034,6 +1061,9 @@ deploy/
 ```
 
 ## Recent Changes
+{% if feature_cron %}
+- feature-cron-scheduled-work: Added opt-in `feature_cron` scheduled work with a Knative PingSource (`pingsources.scheduled`, fixed type `dev.knative.sources.ping`, root `sink: "app"`), a `dev.knative.sources.ping` handler branch, and a local-dev Eventing install script. CronJobSource was removed in Knative Eventing v0.14, so the template does not use it. Deliveries are not retried and missed schedules are not replayed; see `docs/SCHEDULED_WORK.md`.
+{% endif %}
 - zero-setup-deploy: Generated projects now carry the deploy surface behind optional prompts — SSH `git_auth_secret`, `image_pull_secret`, `custom_domain` (ClusterDomainClaim + DomainMapping), `network_policy_allow_all` — and all overlays follow `target_namespace` (namespace resource included) with matching Flux health checks. `make deploy <env>` commits + pushes + applies the Flux bootstrap (no-op after the first run), `make git-auth` creates the SSH deploy-key Secret via `scripts/bootstrap-git-auth.sh`, and the local Kind lifecycle is `make local-up`/`make local-down` (old names aliased). `.sops.yaml` moved to a gitignored `.sops.yaml.example`; template-only files (`ci/template-values-full.toml`, the dev-setup-validation workflow, `.omo`) no longer ship.
 - marrakesh-backport: Ported the deployment fixes a real generated project surfaced. The HelmRelease now uses a named `services.app` key (with `nameOverride: ""`) and the Kafka source `sink` points at it; a postRenderer strips the `fieldRef` env list from the DLQ Knative Service (Knative >= 1.23 rejects it); per-env patches layer over the base instead of clobbering `sink`/`delivery`/`dlq` and the dev overlay keeps `APP__POSTGRES__HOST`; CNPG Cluster and Pooler pods carry resource requests/limits so `require-pod-resources` policies admit them; the Dockerfile builder and runtime both use trixie with the librdkafka build deps; telemetry honors `APP__TELEMETRY__OTLP_ENDPOINT`; the test harness installs one global metrics recorder and injects `ConnectInfo`; the generated CI/release workflows run on ARC runners and authenticate Trivy; `make bootstrap` renders each config with `--load-restrictor=LoadRestrictionsNone`; and the default PostgreSQL major is now 18.
 - ksvc-ceph-bucket-adoption: App S3 and Postgres backups now consume chart-provisioned ObjectBucketClaims (Ceph RGW). Bucket names are `<project>-postgres-backups[-env]` and `<project>-app-data[-env]`; both read credentials from the claim-named provisioner Secret and bucket identity from its ConfigMap (app endpoint `http://$(BUCKET_HOST):$(BUCKET_PORT)`, env names unchanged). Local Kind falls back to RustFS via `deploy/dev/app-overlay` (the RustFS init Job mimics the provisioner contract); the dead staging/prod `s3-config` ConfigMaps were removed; external-S3/TLS setups patch the app env per environment.

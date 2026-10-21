@@ -24,6 +24,7 @@ jobs:
             feature_postgres: "false"
             feature_flagger: "false"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
           # S3 only
           - scenario: s3-only
@@ -32,6 +33,7 @@ jobs:
             feature_postgres: "false"
             feature_flagger: "false"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
           # Kafka only (producer + consumer)
           - scenario: kafka-only
@@ -40,6 +42,7 @@ jobs:
             feature_postgres: "false"
             feature_flagger: "false"
             event_source_kafka: "true"
+            feature_cron: "false"
             enable_image_updates: "false"
           # Postgres only
           - scenario: postgres-only
@@ -48,6 +51,7 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "false"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
           # Postgres only, barman plugin skipped — cluster already has it
           - scenario: postgres-only-barman
@@ -56,6 +60,7 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "false"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
             barman_plugin_installed: "true"
           # Flagger only
@@ -65,6 +70,7 @@ jobs:
             feature_postgres: "false"
             feature_flagger: "true"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
           # S3 + Kafka
           - scenario: s3-kafka
@@ -73,6 +79,7 @@ jobs:
             feature_postgres: "false"
             feature_flagger: "false"
             event_source_kafka: "true"
+            feature_cron: "false"
             enable_image_updates: "false"
           # S3 + Postgres
           - scenario: s3-postgres
@@ -81,6 +88,7 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "false"
             event_source_kafka: "false"
+            feature_cron: "false"
             enable_image_updates: "false"
           # Kafka + Postgres
           - scenario: kafka-postgres
@@ -89,6 +97,7 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "false"
             event_source_kafka: "true"
+            feature_cron: "false"
             enable_image_updates: "false"
           # All features (no image updates)
           - scenario: all-features
@@ -97,6 +106,7 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "true"
             event_source_kafka: "true"
+            feature_cron: "false"
             enable_image_updates: "false"
           # All features + image updates
           - scenario: all-features-img
@@ -105,7 +115,17 @@ jobs:
             feature_postgres: "true"
             feature_flagger: "true"
             event_source_kafka: "true"
+            feature_cron: "false"
             enable_image_updates: "true"
+          # Scheduled work only (Knative PingSource)
+          - scenario: cron-only
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            event_source_kafka: "false"
+            feature_cron: "true"
+            enable_image_updates: "false"
     env:
       SCENARIO: ${{ matrix.scenario }}
     steps:
@@ -169,6 +189,7 @@ jobs:
           feature_postgres = ${{ matrix.feature_postgres }}
           feature_flagger = ${{ matrix.feature_flagger }}
           event_source_kafka = ${{ matrix.event_source_kafka }}
+          feature_cron = ${{ matrix.feature_cron }}
           enable_image_updates = ${{ matrix.enable_image_updates }}
           TOML_FEATURES
 
@@ -252,6 +273,15 @@ jobs:
           TOML_KAFKA_FEAT
           fi
 
+          # Scheduled-work values (prompted when feature_cron = true)
+          if [[ "${{ matrix.feature_cron }}" == "true" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_CRON'
+          cron_schedule = "0 * * * *"
+          cron_timezone = "UTC"
+          cron_payload = '{"message":"generated"}'
+          TOML_CRON
+          fi
+
           echo "--- template-values.toml ---"
           cat "$TEMP_DIR/template-values.toml"
           echo "---"
@@ -333,6 +363,73 @@ jobs:
           ! grep -q 'tls-rustls-ring' Cargo.toml || { echo "FAIL: runtime sqlx present"; exit 1; }
 
           echo "✓ no postgres residue"
+        shell: bash
+
+      - name: Validate scheduled work
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          if [[ "${{ matrix.feature_cron }}" == "true" ]]; then
+            grep -q 'pingsources:' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: pingsources missing from HelmRelease values"; exit 1; }
+            grep -Fq 'schedule: "0 * * * *"' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_schedule not rendered into HelmRelease values"; exit 1; }
+            grep -Fq 'timezone: "UTC"' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_timezone not rendered into HelmRelease values"; exit 1; }
+            grep -Fq '{"message":"generated"}' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_payload not rendered into HelmRelease values"; exit 1; }
+
+            grep -q 'handle_scheduled_event' src/handlers/events.rs \
+              || { echo "FAIL: scheduled handler missing"; exit 1; }
+            grep -q 'SCHEDULED_EVENT_TYPE' src/handlers/events.rs \
+              || { echo "FAIL: scheduled event type constant missing"; exit 1; }
+            grep -q 'test_scheduled_cloudevent' tests/events_test.rs \
+              || { echo "FAIL: scheduled event test missing"; exit 1; }
+
+            [ -f scripts/dev/install-knative-eventing.sh ] \
+              || { echo "FAIL: install-knative-eventing.sh missing"; exit 1; }
+            [ -f docs/SCHEDULED_WORK.md ] \
+              || { echo "FAIL: docs/SCHEDULED_WORK.md missing"; exit 1; }
+
+            grep -q 'SCHEDULED_WORK.md' README.md \
+              || { echo "FAIL: README.md missing SCHEDULED_WORK link"; exit 1; }
+            grep -q 'SCHEDULED_WORK.md' docs/KNATIVE_EVENTING.md \
+              || { echo "FAIL: docs/KNATIVE_EVENTING.md missing SCHEDULED_WORK link"; exit 1; }
+            grep -q 'Scheduled Work (feature_cron)' AGENTS.md \
+              || { echo "FAIL: AGENTS.md missing Scheduled Work section"; exit 1; }
+
+            ! grep -rq 'kind: PingSource' deploy/ \
+              || { echo "FAIL: raw PingSource manifest found in deploy/ (expected HelmRelease values only)"; exit 1; }
+
+            echo "✓ scheduled-work artifacts present (feature_cron=true)"
+          else
+            ! grep -q 'pingsources:' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: pingsources present when feature_cron=false"; exit 1; }
+            ! grep -q 'cron_schedule' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_schedule present when feature_cron=false"; exit 1; }
+            ! grep -q 'cron_timezone' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_timezone present when feature_cron=false"; exit 1; }
+            ! grep -q 'cron_payload' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: cron_payload present when feature_cron=false"; exit 1; }
+
+            ! grep -q 'handle_scheduled_event' src/handlers/events.rs \
+              || { echo "FAIL: scheduled handler present when feature_cron=false"; exit 1; }
+            ! grep -q 'SCHEDULED_EVENT_TYPE' src/handlers/events.rs \
+              || { echo "FAIL: scheduled event type constant present when feature_cron=false"; exit 1; }
+
+            [ ! -f scripts/dev/install-knative-eventing.sh ] \
+              || { echo "FAIL: install-knative-eventing.sh present when feature_cron=false"; exit 1; }
+            [ ! -f docs/SCHEDULED_WORK.md ] \
+              || { echo "FAIL: docs/SCHEDULED_WORK.md present when feature_cron=false"; exit 1; }
+
+            ! grep -q 'feature_cron' AGENTS.md \
+              || { echo "FAIL: AGENTS.md retains feature_cron content when feature_cron=false"; exit 1; }
+            ! grep -q 'SCHEDULED_WORK' README.md docs/KNATIVE_EVENTING.md \
+              || { echo "FAIL: README.md/docs/KNATIVE_EVENTING.md retain SCHEDULED_WORK links when feature_cron=false"; exit 1; }
+
+            echo "✓ no scheduled-work residue (feature_cron=false)"
+          fi
         shell: bash
 
       - name: Validate Flagger per-env metric gates
@@ -500,13 +597,23 @@ jobs:
           grep -q 'test-app-full-events-dlq' "$RENDERED" \
             || { echo "FAIL: DLQ service name missing from rendered chart"; exit 1; }
 
+          PINGSOURCE_COUNT=$(grep -c '^kind: PingSource$' "$RENDERED" || true)
+          [ "$PINGSOURCE_COUNT" = "1" ] \
+            || { echo "FAIL: expected exactly 1 rendered PingSource, got $PINGSOURCE_COUNT"; exit 1; }
+          PINGSOURCE_NAME=$(yq eval 'select(.kind == "PingSource") | .metadata.name' "$RENDERED")
+          [ "$PINGSOURCE_NAME" = "test-app-full-scheduled-ping-source" ] \
+            || { echo "FAIL: PingSource name is '$PINGSOURCE_NAME', expected test-app-full-scheduled-ping-source"; exit 1; }
+          PINGSOURCE_SINK=$(yq eval 'select(.kind == "PingSource") | .spec.sink.ref.name' "$RENDERED")
+          [ "$PINGSOURCE_SINK" = "test-app-full" ] \
+            || { echo "FAIL: PingSource sink.ref.name is '$PINGSOURCE_SINK', expected test-app-full"; exit 1; }
+
           # postRenderers are applied by Flux (not helm) — assert the generated
           # HelmRelease targets the chart's DLQ service by name.
           POSTRENDERERS=$(mktemp)
           yq eval '.spec.postRenderers' deploy/base/helmrelease.yaml > "$POSTRENDERERS"
           grep -q 'test-app-full-events-dlq' "$POSTRENDERERS" \
             || { echo "FAIL: HelmRelease postRenderers do not target the DLQ service"; exit 1; }
-          echo "✓ Helm render + DLQ postRenderer assertions passed"
+          echo "✓ Helm render + DLQ + PingSource assertions passed"
         shell: bash
 
       - name: Render environment overlays
@@ -522,6 +629,20 @@ jobs:
               echo "FAIL: unrendered template syntax in deploy/overlays/${env}"
               exit 1
             fi
+
+            # The overlay renders the HelmRelease, not the chart output, so the
+            # scheduled-work wiring is asserted in spec.values (no PingSource kind).
+            grep -q 'pingsources:' "$OUT" \
+              || { echo "FAIL: deploy/overlays/${env} HelmRelease missing pingsources values"; exit 1; }
+            PING_SCHEDULE=$(yq eval 'select(.kind == "HelmRelease") | .spec.values.pingsources.scheduled.schedule' "$OUT")
+            PING_TIMEZONE=$(yq eval 'select(.kind == "HelmRelease") | .spec.values.pingsources.scheduled.timezone' "$OUT")
+            PING_PAYLOAD=$(yq eval 'select(.kind == "HelmRelease") | .spec.values.pingsources.scheduled.data' "$OUT")
+            [ "$PING_SCHEDULE" = "0 * * * *" ] \
+              || { echo "FAIL: deploy/overlays/${env} cron_schedule is '$PING_SCHEDULE'"; exit 1; }
+            [ "$PING_TIMEZONE" = "UTC" ] \
+              || { echo "FAIL: deploy/overlays/${env} cron_timezone is '$PING_TIMEZONE'"; exit 1; }
+            printf '%s' "$PING_PAYLOAD" | grep -Fq '{"message":"generated"}' \
+              || { echo "FAIL: deploy/overlays/${env} cron_payload missing"; exit 1; }
           done
 
           # Dev overlay must keep the pooler host and preserve the base Kafka
