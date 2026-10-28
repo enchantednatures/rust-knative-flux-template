@@ -40,7 +40,8 @@ When generating a project from this template, you'll be prompted for a `project_
 - [Prerequisites](#prerequisites)
 - [Local Testing](#local-testing)
 - [Manual Kubernetes Deployment](#manual-kubernetes-deployment)
-- [FluxCD GitOps Deployment](#fluxcd-gitops-deployment)
+- [FluxCD GitOps Deployment](#fluxcd-gitops-deployment){% if feature_cluster_smoke %}
+- [Post-Deploy Verification (Cluster Smoke)](#post-deploy-verification-cluster-smoke){% endif %}
 - [Environment-Specific Deployment](#environment-specific-deployment)
 - [Rollback Procedures](#rollback-procedures)
 - [Traffic Splitting](#traffic-splitting)
@@ -389,6 +390,76 @@ flux get kustomizations --watch
 ```
 
 ---
+
+{% if feature_cluster_smoke %}
+## Post-Deploy Verification (Cluster Smoke)
+
+The local Kind suite (`make local-up`, `test-template-e2e-local.sh`) proves the manifests render and the service works against the fakes it ships with. It cannot prove the parts that only exist on a real cluster: ObjectBucketClaim binding to Ceph RGW, registry pulls with real credentials, DNS/cert issuance for `DomainMapping`, admission policies, or image automation committing tags back to git.
+
+`feature_cluster_smoke` generates `.github/workflows/smoke-deploy.yaml`, which closes that gap **without ever deploying**:
+
+- Trigger: `workflow_run` of `CI/CD Pipeline` on `{{ default_branch }}` (post-merge) and manual `workflow_dispatch`. It is never triggered by `pull_request`, so fork code cannot reach the cluster.
+- Flux stays the only deployer. The job reconciles the `{{ project_name | replace: "_", "-" }}-<env>` Kustomization, waits for the `HelmRelease` and Knative Service, then asserts the running image digest equals the digest of the `sha-<commit>` tag CI just pushed.
+- Endpoint checks run against the live URL: `/health/live`, `/health/ready`, `/metrics`, `/api/v1/hello`, plus a Postgres upsert/read-back and an S3 write/read/delete when those features are enabled.
+- Without `SMOKE_KUBECONFIG_B64` the job is a no-op (green), so enabling the prompt before wiring a cluster breaks nothing.
+
+The workflow targets the `{{ smoke_environment }}` GitHub environment (and the matching overlay). Protect that environment with required reviewers if the cluster is shared. When image updates are disabled, the commit-digest assertion degrades to a warning, because the deployed tag is only bumped by `make deploy`.
+
+### Credentials and RBAC
+
+Create a ServiceAccount with the minimum permissions and store its kubeconfig base64-encoded:
+
+```bash
+kubectl -n flux-system create serviceaccount ci-smoke
+
+# flux-system: read + request a reconcile (patching the requestedAt
+# annotation only; desired state still comes from git)
+kubectl -n flux-system create role ci-smoke-flux --verb=get,list,watch,patch --resource=kustomizations.kustomize.toolkit.fluxcd.io
+kubectl -n flux-system create role ci-smoke-flux-sources --verb=get,list,watch --resource=gitrepositories.source.toolkit.fluxcd.io
+kubectl -n flux-system create role ci-smoke-flux-images --verb=get,list,watch,patch --resource=imageupdateautomations.image.toolkit.fluxcd.io
+kubectl -n flux-system create rolebinding ci-smoke-flux \
+  --role=ci-smoke-flux --serviceaccount=flux-system:ci-smoke
+kubectl -n flux-system create rolebinding ci-smoke-flux-sources \
+  --role=ci-smoke-flux-sources --serviceaccount=flux-system:ci-smoke
+kubectl -n flux-system create rolebinding ci-smoke-flux-images \
+  --role=ci-smoke-flux-images --serviceaccount=flux-system:ci-smoke
+
+# app namespace: read the HelmRelease and Knative Service
+kubectl -n {{ target_namespace }} create role ci-smoke-app --verb=get,list,watch \
+  --resource=helmreleases.helm.toolkit.fluxcd.io,services.serving.knative.dev
+kubectl -n {{ target_namespace }} create rolebinding ci-smoke-app \
+  --role=ci-smoke-app --serviceaccount=flux-system:ci-smoke
+
+# Token-based kubeconfig for CI
+kubectl -n flux-system create token ci-smoke --duration=8760h
+```
+
+Build the kubeconfig from that token and the cluster's server/CA, then store it:
+
+```bash
+KUBECONFIG_RAW=$(base64 -w0 < ci-smoke.kubeconfig)
+gh secret set SMOKE_KUBECONFIG_B64 --body "$KUBECONFIG_RAW"
+```
+
+If the Knative `status.url` is not resolvable from the runner, set the public URL as a repository variable:
+
+```bash
+gh variable set SMOKE_SERVICE_URL --body "https://{{ project_name | replace: '_', '-' }}.example.com"
+```
+
+### Running it
+
+```bash
+# After a merge it runs automatically; to verify on demand:
+gh workflow run "Cluster Smoke" -f expected_sha="$(git rev-parse HEAD)"
+```
+
+`SMOKE_KUBECONFIG_B64` is the only required secret. Add registry credentials to the "Log in to the registry" step if you push to a private non-GHCR registry; otherwise the workflow warns and skips the digest assertion while still checking the endpoints.
+
+To disable the workflow, remove `.github/workflows/smoke-deploy.yaml` (or generate without `feature_cluster_smoke`).
+
+---
+{% endif %}
 
 ## Environment-Specific Deployment
 
