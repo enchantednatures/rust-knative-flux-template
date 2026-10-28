@@ -56,6 +56,7 @@ feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool",
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
 feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
 feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
+feature_cluster_smoke = { prompt = "Verify deployments on a real cluster after CI (smoke workflow)?", type = "bool", default = false }
 event_source_kafka = { prompt = "Enable Kafka event source (consumer)?", type = "bool", default = false }
 
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
@@ -225,6 +226,15 @@ ignore = [
   "deploy/flux/image-policy.yaml",
   "deploy/flux/image-update-automation.yaml",
   "deploy/flux/image-repository.yaml",
+]
+
+[conditional.'feature_cluster_smoke'.placeholders]
+# Environment (overlay + GitHub environment) verified by the smoke workflow.
+smoke_environment = { prompt = "Environment to verify after CI (dev, staging, prod)", type = "string", default = "staging" }
+
+[conditional.'!feature_cluster_smoke']
+ignore = [
+  ".github/workflows/smoke-deploy.yaml",
 ]
 
 [conditional.'!feature_gha_runner']
