@@ -150,7 +150,12 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ matrix.scenario }}-${{ hashFiles('**/Cargo.lock') }}
+          # One cache for every scenario: each row builds with --all-features,
+          # so the dependency set is identical and the per-scenario suffix only
+          # multiplied a 0.23 GB cache by 11 and rotated all of them on each
+          # lockfile bump — crowding the 10 GB repo budget that the E2E build
+          # cache (~4 min per deploy scenario) needs.
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
