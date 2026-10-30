@@ -615,7 +615,9 @@ jobs:
           # every run. Scoped per scenario because generated Cargo features
           # differ (kafka pulls extra system libs into the builder).
           cache-from: type=gha,scope=e2e-${{ matrix.scenario }}
-          cache-to: type=gha,mode=max,scope=e2e-${{ matrix.scenario }}
+          # Advisory only: a miss costs a cold build, but an export rejected at
+          # the repo's 10 GB cache quota must never fail the job.
+          cache-to: type=gha,mode=max,ignore-error=true,scope=e2e-${{ matrix.scenario }}
 
       - name: Load image into Kind
         if: matrix.deploy == 'true'
