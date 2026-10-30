@@ -7,8 +7,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A superseded run on the same ref would otherwise queue a full ~20m matrix
+# behind the run that replaced it.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
+  # Pinned so scenario timing stays reproducible (and so the renderer version
+  # cannot change under CI mid-flight). Prebuilt binary — see the install step.
+  CARGO_GENERATE_VERSION: 0.25.1
 
 jobs:
   e2e:
@@ -22,7 +31,12 @@ jobs:
 
     strategy:
       fail-fast: false
-      max-parallel: 1
+      # No max-parallel cap: every scenario gets its own GitHub-hosted VM, its
+      # own Kind cluster (e2e-<scenario>) and its own GHCR repos
+      # (${SERVICE_NAME} / manifests-${PROJECT_NAME}), so scenarios share no
+      # state. Wall clock becomes the slowest scenario instead of the sum.
+      # If these jobs are ever pinned to one self-hosted box, reinstate a cap
+      # of 2 — five Kind clusters and five Rust builds will thrash one machine.
       matrix:
         include:
           - scenario: with-s3
@@ -165,7 +179,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-generate
-        run: cargo install cargo-generate --locked
+        run: |
+          set -euo pipefail
+          curl -sSfL \
+            "https://github.com/cargo-generate/cargo-generate/releases/download/v${CARGO_GENERATE_VERSION}/cargo-generate-v${CARGO_GENERATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "${CARGO_HOME:-$HOME/.cargo}/bin" cargo-generate
+          cargo generate --version
 
       - name: Cache RustFS client (rc)
         if: (matrix.feature_s3 == 'true' || matrix.feature_postgres == 'true') && matrix.deploy == 'true'
@@ -577,19 +596,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build application image
+      - name: Set up Docker Buildx
         if: matrix.deploy == 'true'
-        run: |
-          GENERATED_DIR="./generated/${PROJECT_NAME}"
+        uses: docker/setup-buildx-action@v3
 
-          docker build \
-            -t ${{ steps.image-meta.outputs.app_image }} \
-            "${GENERATED_DIR}"
-
-      - name: Push application image to GHCR
+      - name: Build and push application image
         if: matrix.deploy == 'true'
-        run: |
-          docker push ${{ steps.image-meta.outputs.app_image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./generated/${{ env.PROJECT_NAME }}
+          # push for the Flux OCIRepository; load keeps the image in the local
+          # Docker daemon for `kind load docker-image` below.
+          push: true
+          load: true
+          tags: ${{ steps.image-meta.outputs.app_image }}
+          # The Dockerfile installs cargo-chef precisely so the dependency
+          # compile is one reusable layer; plain `docker build` discarded it
+          # every run. Scoped per scenario because generated Cargo features
+          # differ (kafka pulls extra system libs into the builder).
+          cache-from: type=gha,scope=e2e-${{ matrix.scenario }}
+          cache-to: type=gha,mode=max,scope=e2e-${{ matrix.scenario }}
 
       - name: Load image into Kind
         if: matrix.deploy == 'true'
@@ -763,12 +789,9 @@ jobs:
 
           # The canary metric gates need Prometheus scraping the kourier
           # gateway (annotation-based job in the dev observability config).
+          # Readiness is asserted in "Validate cluster dependencies" so this
+          # apply does not block the installs that follow it.
           kubectl apply -k "${GENERATED_DIR}/deploy/dev/observability"
-
-          kubectl wait --for=condition=available \
-            --timeout=300s \
-            -n observability \
-            deployment/prometheus deployment/jaeger deployment/otel-collector
 
       - name: Install Flagger operator (canary test)
         if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
@@ -846,11 +869,12 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo update
 
+          # No --wait: the pod keeps starting while the remaining installs run
+          # and "Validate cluster dependencies" asserts readiness before any
+          # workload depends on it.
           helm install redis bitnami/redis \
             --set auth.enabled=false \
-            --set architecture=standalone \
-            --wait \
-            --timeout 120s
+            --set architecture=standalone
 
       - name: Install RustFS (S3 API)
         if: (matrix.feature_s3 == 'true' || matrix.feature_postgres == 'true') && matrix.deploy == 'true'
@@ -951,6 +975,21 @@ jobs:
         run: |
           echo "✓ Checkpoint 4: Validating cluster dependencies"
 
+          # The install steps above are fire-and-forget, so a label selector
+          # can briefly match nothing — `kubectl wait -l` then fails instantly
+          # instead of waiting. Poll for existence first.
+          wait_for_pods() {
+            local ns="$1" sel="$2" deadline="$3" i=0
+            while [ "$i" -lt "$deadline" ]; do
+              if [ -n "$(kubectl get pods -n "$ns" -l "$sel" -o name 2>/dev/null)" ]; then
+                return 0
+              fi
+              sleep 2; i=$((i + 2))
+            done
+            echo "  ✗ no pod matching '$sel' in namespace '$ns' after ${deadline}s"
+            return 1
+          }
+
           echo "Checking Flux..."
           flux check || { echo "❌ Flux check failed"; exit 1; }
           echo "  ✓ Flux healthy"
@@ -966,27 +1005,33 @@ jobs:
 
           echo ""
           echo "Checking Redis..."
+          wait_for_pods default app.kubernetes.io/name=redis 120 \
+            || { echo "❌ Redis pod never appeared"; exit 1; }
           kubectl wait --for=condition=ready pod \
             -l app.kubernetes.io/name=redis \
-            --timeout=60s || { echo "❌ Redis not ready"; exit 1; }
+            --timeout=120s || { echo "❌ Redis not ready"; exit 1; }
           echo "  ✓ Redis healthy"
 
           if [ "${{ matrix.feature_s3 }}" = "true" ]; then
             echo ""
             echo "Checking RustFS..."
+            wait_for_pods default app=rustfs 120 \
+              || { echo "❌ RustFS pod never appeared"; exit 1; }
             kubectl wait --for=condition=ready pod \
               -l app=rustfs \
-              --timeout=60s || { echo "❌ RustFS not ready"; exit 1; }
+              --timeout=120s || { echo "❌ RustFS not ready"; exit 1; }
             echo "  ✓ RustFS healthy"
           fi
 
           if [ "${{ matrix.feature_flagger }}" = "true" ]; then
             echo ""
             echo "Checking Prometheus + Flagger stack..."
+            wait_for_pods observability app=prometheus 180 \
+              || { echo "❌ Prometheus pod never appeared"; exit 1; }
             kubectl wait --for=condition=ready pod \
               -l app=prometheus \
               -n observability \
-              --timeout=60s || { echo "❌ Prometheus not ready"; exit 1; }
+              --timeout=120s || { echo "❌ Prometheus not ready"; exit 1; }
             kubectl rollout status deployment/flagger-loadtester \
               -n flagger-system --timeout=60s \
               || { echo "❌ Flagger loadtester not ready"; exit 1; }
