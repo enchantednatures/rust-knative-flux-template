@@ -2,7 +2,7 @@
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (RustFS/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
-{% if feature_s3 or feature_kafka or event_source_kafka or feature_flagger or feature_cluster_smoke %}
+{% if feature_s3 or feature_kafka or event_source_kafka or feature_cron or feature_flagger or feature_cluster_smoke %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
@@ -18,6 +18,9 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 - 📤 **Kafka Event Publishing**: Optional event publishing from HTTP handlers
 - 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 spec compliance via vendored axum-cloudevents
 - 📊 **Publisher Metrics**: Built-in Prometheus metrics for event publishing
+{% endif %}
+{% if feature_cron %}
+- ⏰ **Scheduled Work**: Knative PingSource sends a fixed CloudEvent to the service on a cron schedule
 {% endif %}
 {% if feature_flagger %}
 - 🚦 **Canary Releases**: Automated progressive delivery with Flagger (Knative provider)
@@ -353,6 +356,18 @@ See [docs/KAFKA_PUBLISHING.md](./docs/KAFKA_PUBLISHING.md) for detailed Kafka ev
 - Prometheus metrics for publisher monitoring
 - Configuration and performance tuning
 - Cold start impact and optimization
+{% endif %}
+
+{% if feature_cron %}
+## Scheduled Work
+
+See [docs/SCHEDULED_WORK.md](./docs/SCHEDULED_WORK.md) for the scheduled-work guide covering:
+- PingSource schedule, timezone, and JSON payload configuration
+- The fixed `dev.knative.sources.ping` event type and root sink
+- Delivery limits, missed schedules, cold start, and idempotency
+- PingSource vs Kubernetes CronJob vs KEDA cron scaling
+- Operational commands and troubleshooting
+- Security and local-dev installation requirements
 {% endif %}
 
 ## Vendored Dependencies

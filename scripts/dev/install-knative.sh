@@ -113,3 +113,12 @@ fi
 echo ""
 echo -e "${GREEN}✓ Knative Serving v${KNATIVE_VERSION} installed successfully${NC}"
 echo ""
+
+{% if feature_cron %}
+# Scheduled work uses Knative PingSource, which needs Eventing.
+"${SCRIPT_DIR}/install-knative-eventing.sh"
+
+echo -e "${YELLOW}→${NC} Eventing status:"
+kubectl get deployments -n knative-eventing
+echo ""
+{% endif %}

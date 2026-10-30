@@ -38,7 +38,7 @@ patches:
             memory: "{% if use_default_scaling %}512Mi{% else %}{{ prod_memory_limit }}{% endif %}"
 
       {% if feature_postgres or feature_s3 %}
-      # Chart-provisioned ObjectBucketClaims (ksvc 0.7.0 `objectBuckets`). The
+      # Chart-provisioned ObjectBucketClaims (ksvc 0.9.0 `objectBuckets`). The
       # cluster bucket provisioner creates the bucket plus a claim-named Secret
       # (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) and ConfigMap
       # (BUCKET_HOST/BUCKET_PORT/BUCKET_NAME) in the release namespace.

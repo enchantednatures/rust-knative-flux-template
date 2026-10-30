@@ -89,3 +89,46 @@ async fn test_cloudevent_with_custom_message() {
         "event_id": "test-456"
     }));
 }
+
+{% if feature_cron %}
+#[tokio::test]
+async fn test_scheduled_cloudevent() {
+    let state = common::create_test_state().await;
+    let server = common::create_test_server(state);
+
+    let response = server
+        .post("/")
+        .add_header("ce-specversion", "1.0")
+        .add_header("ce-type", "dev.knative.sources.ping")
+        .add_header("ce-source", "/apis/v1/namespaces/default/pingsources/test")
+        .add_header("ce-id", "scheduled-123")
+        .json(&json!({
+            "message": "scheduled tick"
+        }))
+        .await;
+
+    response.assert_status_ok();
+    response.assert_json(&json!({
+        "received": true,
+        "event_id": "scheduled-123"
+    }));
+}
+
+#[tokio::test]
+async fn test_scheduled_missing_id() {
+    let state = common::create_test_state().await;
+    let server = common::create_test_server(state);
+
+    let response = server
+        .post("/")
+        .add_header("ce-specversion", "1.0")
+        .add_header("ce-type", "dev.knative.sources.ping")
+        .add_header("ce-source", "/apis/v1/namespaces/default/pingsources/test")
+        .json(&json!({
+            "message": "scheduled tick"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+{% endif %}

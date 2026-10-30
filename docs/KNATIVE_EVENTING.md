@@ -156,6 +156,18 @@ spec:
       name: default
 ```
 
+{% if feature_cron %}
+### Example: Scheduled Work with PingSource
+
+For cron-triggered work, this project uses a Knative PingSource instead of the
+removed CronJobSource. PingSource sends a fixed CloudEvent of type
+`dev.knative.sources.ping` to the service root on a schedule. It does not retry
+failed deliveries and has no delivery or dead letter sink spec.
+
+See [SCHEDULED_WORK.md](./SCHEDULED_WORK.md) for the schedule and payload
+configuration, delivery limits, idempotency guidance, and operational commands.
+{% endif %}
+
 ## Advanced: Custom Event Types
 
 ### Define Your Event Type

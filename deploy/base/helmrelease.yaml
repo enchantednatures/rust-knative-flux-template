@@ -205,3 +205,19 @@ spec:
                 cpu: "200m"
                 memory: "128Mi"
     {% endif %}
+
+    {% if feature_cron %}
+    # The ksvc chart validates that a PingSource sink references a services key,
+    # so the root sink `sink: "app"` is intentional: it targets the services.app
+    # Knative Service (there is no sink.uri or nested target path here). The
+    # PingSource event type is fixed by Knative at `dev.knative.sources.ping`;
+    # it is not configurable and no ceOverrides are set.
+    pingsources:
+      scheduled:
+        schedule: "{{ cron_schedule }}"
+        timezone: "{{ cron_timezone }}"
+        contentType: application/json
+        data: |
+          {{ cron_payload }}
+        sink: "app"
+    {% endif %}
