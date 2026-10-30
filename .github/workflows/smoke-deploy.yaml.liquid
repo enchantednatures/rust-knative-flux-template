@@ -1,0 +1,346 @@
+# =============================================================================
+# Cluster Smoke — post-deploy verification against a real cluster
+# =============================================================================
+#
+# This workflow NEVER deploys. Flux is the only deployer: it reconciles
+# deploy/overlays/{{ smoke_environment }}/ from git, and this job only reads
+# cluster state (plus a reconcile nudge) and exercises the running service.
+#
+# It runs after "CI/CD Pipeline" succeeds on {{ default_branch }} — never on
+# pull_request — so untrusted code cannot reach the cluster.
+#
+# One-time setup:
+#   1. Store a base64-encoded kubeconfig as the repository secret
+#      SMOKE_KUBECONFIG_B64. See docs/DEPLOYMENT.md ("Post-Deploy
+#      Verification") for the exact (minimal) RBAC it needs.
+#   2. Optional: set the SMOKE_SERVICE_URL repository variable when the
+#      Knative status URL is not reachable from the runner.
+#   3. Protect the "{{ smoke_environment }}" environment with required
+#      reviewers if the cluster is shared.
+#
+# Without SMOKE_KUBECONFIG_B64 the job is a no-op (green), so a project that
+# enables the prompt but has not wired a cluster yet is not broken.
+# =============================================================================
+
+name: Cluster Smoke
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types: [completed]
+    branches: ["{{ default_branch }}"]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Commit SHA to verify (defaults to the dispatched ref)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: read
+
+# A newer run supersedes an older one: the cluster moves forward to the newer
+# image, so a stale verification would compare against a revision that no
+# longer exists.
+concurrency:
+  group: cluster-smoke-{{ smoke_environment }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify {{ smoke_environment }} deployment
+    if: {% raw %}${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}{% endraw %}
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    environment: {{ smoke_environment }}
+    timeout-minutes: 30
+    env:
+      NAMESPACE: {{ target_namespace }}
+      SERVICE_NAME: {{ project_name | replace: "_", "-" }}
+      KUSTOMIZATION: {{ project_name | replace: "_", "-" }}-{{ smoke_environment }}
+      IMAGE_REPO: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: '_', '-' }}
+      IMAGE_UPDATE_AUTOMATION: {{ project_name | replace: "_", "-" }}
+      EXPECTED_SHA: {% raw %}${{ github.event.workflow_run.head_sha || inputs.expected_sha || github.sha }}{% endraw %}
+      KUBECONFIG_B64: {% raw %}${{ secrets.SMOKE_KUBECONFIG_B64 }}{% endraw %}
+      SERVICE_URL_OVERRIDE: {% raw %}${{ vars.SMOKE_SERVICE_URL }}{% endraw %}
+      REGISTRY_USERNAME: {% raw %}${{ github.actor }}{% endraw %}
+      REGISTRY_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+      # With image automation on, the cluster must converge on the digest
+      # built for this commit; without it the tag is only bumped by
+      # `make deploy`, so a mismatch is reported but not fatal.
+      DIGEST_STRICT: "{% if enable_image_updates %}true{% else %}false{% endif %}"
+      RECONCILE_TIMEOUT_SECONDS: "900"
+
+    steps:
+      - name: Preflight
+        id: preflight
+        run: |
+          set -euo pipefail
+          if [ -z "${KUBECONFIG_B64}" ]; then
+            echo "::notice::SMOKE_KUBECONFIG_B64 is not configured — skipping cluster verification (no-op)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${EXPECTED_SHA}" ]; then
+            echo "::error::Could not determine the commit to verify."
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Verifying ${SERVICE_NAME} in namespace ${NAMESPACE} ({{ smoke_environment }}) against ${EXPECTED_SHA}"
+
+      - name: Install kubectl and Flux CLI
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          BIN_DIR="${HOME}/.local/bin"
+          mkdir -p "$BIN_DIR"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          export PATH="$BIN_DIR:$PATH"
+
+          if ! command -v kubectl >/dev/null 2>&1; then
+            KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+            curl -fsSLo "$BIN_DIR/kubectl" \
+              "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+            chmod +x "$BIN_DIR/kubectl"
+          fi
+
+          if ! command -v flux >/dev/null 2>&1; then
+            FLUX_VERSION="$(curl -fsSL https://api.github.com/repos/fluxcd/flux2/releases/latest \
+              | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p')"
+            [ -n "$FLUX_VERSION" ] || { echo "::error::Could not determine the latest Flux version."; exit 1; }
+            curl -fsSL \
+              "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" \
+              | tar -xz -C "$BIN_DIR" flux
+          fi
+
+          kubectl version --client
+          flux --version
+
+      - name: Wait for Docker daemon
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          # The DinD sidecar's TLS setup can lag the runner container.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker info
+          exit 1
+
+      # Registry digest lookups use buildx `imagetools`, which queries the
+      # registry directly and does not need a running builder.
+      - name: Set up Docker Buildx
+        if: steps.preflight.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      {% if image_registry == "ghcr.io" %}
+      - name: Log in to the registry (read-only)
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          echo "${REGISTRY_TOKEN}" | docker login ghcr.io -u "${REGISTRY_USERNAME}" --password-stdin
+      {% else %}
+      - name: Registry login skipped
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          echo "::warning::image_registry is {{ image_registry }}, not ghcr.io — configure registry credentials here if the image is private, otherwise the digest check will be skipped."
+      {% endif %}
+
+      - name: Configure cluster access
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          umask 077
+          KUBECONFIG_FILE="${RUNNER_TEMP}/smoke-kubeconfig"
+          printf '%s' "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG_FILE"
+          echo "KUBECONFIG=${KUBECONFIG_FILE}" >> "$GITHUB_ENV"
+
+          kubectl config current-context
+
+          # Fail early with an actionable message instead of a wall of Forbidden
+          # errors halfway through the run.
+          kubectl auth can-i get kustomizations.kustomize.toolkit.fluxcd.io -n flux-system >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read Kustomizations in flux-system. See docs/DEPLOYMENT.md (smoke RBAC)."; exit 1; }
+          kubectl auth can-i patch kustomizations.kustomize.toolkit.fluxcd.io -n flux-system >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot request a Flux reconcile (patch on Kustomizations in flux-system). See docs/DEPLOYMENT.md (smoke RBAC)."; exit 1; }
+          kubectl auth can-i get gitrepositories.source.toolkit.fluxcd.io -n flux-system >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read GitRepositories in flux-system (needed by 'flux reconcile --with-source')."; exit 1; }
+          {% if enable_image_updates %}
+          kubectl auth can-i patch imageupdateautomations.image.toolkit.fluxcd.io -n flux-system >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot trigger the ImageUpdateAutomation (patch in flux-system)."; exit 1; }
+          {% endif %}
+          kubectl auth can-i get services.serving.knative.dev -n "${NAMESPACE}" >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read Knative Services in ${NAMESPACE}."; exit 1; }
+          kubectl auth can-i get helmreleases.helm.toolkit.fluxcd.io -n "${NAMESPACE}" >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read HelmReleases in ${NAMESPACE}."; exit 1; }
+
+      - name: Wait for the cluster to run the image built for this commit
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="${EXPECTED_SHA:0:7}"
+          EXPECTED_REF="${IMAGE_REPO}:sha-${SHORT_SHA}"
+
+          resolve_digest() {
+            # Registry-side digest of a tag. Uses buildx imagetools so it works
+            # without pulling the image.
+            docker buildx imagetools inspect "$1" --format '{% raw %}{{.Manifest.Digest}}{% endraw %}' 2>/dev/null
+          }
+
+          echo "Expected image: ${EXPECTED_REF}"
+          if ! EXPECTED_DIGEST="$(resolve_digest "${EXPECTED_REF}")" || [ -z "${EXPECTED_DIGEST}" ]; then
+            echo "::error::Cannot resolve ${EXPECTED_REF} in the registry."
+            echo "  Check that the CI build pushed the sha-${SHORT_SHA} tag and that this job can read the package."
+            exit 1
+          fi
+          echo "Expected digest: ${EXPECTED_DIGEST}"
+
+          DEADLINE=$((SECONDS + RECONCILE_TIMEOUT_SECONDS))
+          DEPLOYED_REF=""
+          LAST_REF=""
+
+          while :; do
+            {% if enable_image_updates %}
+            # Nudge image automation so a new sha-* tag is picked up without
+            # waiting for its 5m interval. Best effort: the automation may
+            # legitimately live in an infrastructure repo instead.
+            flux reconcile image update "${IMAGE_UPDATE_AUTOMATION}" -n flux-system --timeout=120s >/dev/null 2>&1 || true
+            {% endif %}
+            flux reconcile kustomization "${KUSTOMIZATION}" -n flux-system --with-source --timeout=120s >/dev/null 2>&1 || true
+            kubectl -n "${NAMESPACE}" wait --for=condition=Ready "helmrelease/${SERVICE_NAME}" --timeout=90s >/dev/null 2>&1 || true
+            kubectl -n "${NAMESPACE}" wait --for=condition=Ready "ksvc/${SERVICE_NAME}" --timeout=90s >/dev/null 2>&1 || true
+
+            DEPLOYED_REF="$(kubectl -n "${NAMESPACE}" get ksvc "${SERVICE_NAME}" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+
+            if [ -n "${DEPLOYED_REF}" ] && [ "${DEPLOYED_REF}" != "${LAST_REF}" ]; then
+              echo "Deployed image: ${DEPLOYED_REF}"
+              LAST_REF="${DEPLOYED_REF}"
+              DEPLOYED_DIGEST="$(resolve_digest "${DEPLOYED_REF}" || true)"
+              if [ -n "${DEPLOYED_DIGEST}" ]; then
+                echo "  deployed digest: ${DEPLOYED_DIGEST}"
+                if [ "${DEPLOYED_DIGEST}" = "${EXPECTED_DIGEST}" ]; then
+                  echo "::notice::Cluster is running the digest built for ${EXPECTED_SHA}"
+                  break
+                fi
+                if [ "${DIGEST_STRICT}" != "true" ]; then
+                  echo "::warning::Deployed image does not match ${EXPECTED_SHA}, but image updates are disabled — the tag is only bumped by 'make deploy'. Continuing with health checks."
+                  break
+                fi
+              fi
+            fi
+
+            if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+              if [ "${DIGEST_STRICT}" = "true" ]; then
+                echo "::error::Cluster did not converge on the image for ${EXPECTED_SHA} within ${RECONCILE_TIMEOUT_SECONDS}s."
+                echo "  expected: ${EXPECTED_REF} (${EXPECTED_DIGEST})"
+                echo "  deployed: ${DEPLOYED_REF:-<none>}"
+                kubectl -n flux-system describe kustomization "${KUSTOMIZATION}" | tail -40 || true
+                kubectl -n "${NAMESPACE}" describe helmrelease "${SERVICE_NAME}" | tail -40 || true
+                exit 1
+              fi
+              echo "::warning::Cluster did not converge on ${EXPECTED_SHA} within ${RECONCILE_TIMEOUT_SECONDS}s (image updates disabled). Continuing with health checks."
+              break
+            fi
+
+            sleep 15
+          done
+
+      - name: Verify service endpoints
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          SERVICE_URL="${SERVICE_URL_OVERRIDE}"
+          if [ -z "${SERVICE_URL}" ]; then
+            SERVICE_URL="$(kubectl -n "${NAMESPACE}" get ksvc "${SERVICE_NAME}" -o jsonpath='{.status.url}')"
+          fi
+          if [ -z "${SERVICE_URL}" ]; then
+            echo "::error::Knative Service ${SERVICE_NAME} has no status.url (not ready?)."
+            exit 1
+          fi
+          echo "Service URL: ${SERVICE_URL}"
+          echo "SERVICE_URL=${SERVICE_URL}" >> "$GITHUB_ENV"
+
+          probe() {
+            local path="$1"; shift
+            # Knative cold start on the first request is expected.
+            curl -fsS --retry 5 --retry-delay 3 --max-time 30 "$@" "${SERVICE_URL}${path}"
+          }
+
+          FAILED=0
+          check() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  PASS  ${label}"
+            else
+              echo "  FAIL  ${label}"
+              FAILED=$((FAILED + 1))
+            fi
+          }
+
+          echo ""
+          check "liveness  /health/live"  probe /health/live
+          check "readiness /health/ready" probe /health/ready
+          check "hello     /api/v1/hello" probe /api/v1/hello
+
+          echo ""
+          # Capture first: 'probe /metrics | grep -q' makes curl die on SIGPIPE
+          # under pipefail even when the pattern matches.
+          METRICS_OUTPUT="$(probe /metrics || true)"
+          if [[ "${METRICS_OUTPUT}" == *"# HELP"* ]]; then
+            echo "  PASS  metrics   /metrics (Prometheus format)"
+          else
+            echo "  FAIL  metrics   /metrics (no '# HELP' found)"
+            FAILED=$((FAILED + 1))
+          fi
+
+          {% if feature_postgres %}
+          echo ""
+          # Idempotent upsert keyed on a fixed name: no row growth, and the
+          # value proves this revision wrote to the real database.
+          SMOKE_VALUE="run-${EXPECTED_SHA:0:7}-$(date +%s)"
+          UPSERT_OK=0
+          probe -X POST -H 'content-type: application/json' \
+            -d "{\"key\":\"ci-smoke\",\"value\":\"${SMOKE_VALUE}\"}" /api/v1/items >/dev/null && UPSERT_OK=1
+          ITEM_GET="$(probe /api/v1/items/ci-smoke || true)"
+          if [ "${UPSERT_OK}" -eq 1 ] && [[ "${ITEM_GET}" == *"${SMOKE_VALUE}"* ]]; then
+            echo "  PASS  postgres  upsert + read-back /api/v1/items/ci-smoke"
+          else
+            echo "  FAIL  postgres  upsert + read-back /api/v1/items/ci-smoke"
+            FAILED=$((FAILED + 1))
+          fi
+          {% endif %}
+
+          {% if feature_s3 %}
+          echo ""
+          if probe -X POST /api/v1/storage/example >/dev/null; then
+            echo "  PASS  storage   write + read + delete /api/v1/storage/example"
+          else
+            echo "  FAIL  storage   write + read + delete /api/v1/storage/example"
+            FAILED=$((FAILED + 1))
+          fi
+          {% endif %}
+
+          echo ""
+          if [ "${FAILED}" -ne 0 ]; then
+            echo "::error::${FAILED} endpoint check(s) failed against ${SERVICE_URL}"
+            exit 1
+          fi
+          echo "All endpoint checks passed against ${SERVICE_URL}"
+
+      - name: Summarize
+        if: always() && steps.preflight.outputs.skip != 'true'
+        run: |
+          {
+            echo "## Cluster smoke — {{ smoke_environment }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Commit | \`${EXPECTED_SHA}\` |"
+            echo "| Service | \`${NAMESPACE}/${SERVICE_NAME}\` |"
+            echo "| URL | ${SERVICE_URL:-<not resolved>} |"
+            echo "| Result | {% raw %}${{ job.status }}{% endraw %} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,7 @@
 
 A production-ready Rust microservice template for Knative Serverless and FluxCD GitOps, with optional S3-compatible storage support (RustFS/AWS S3), Apache Kafka event source integration, and event publishing capabilities.
 
-{% if feature_s3 or feature_kafka or event_source_kafka or feature_cron or feature_flagger %}
+{% if feature_s3 or feature_kafka or event_source_kafka or feature_cron or feature_flagger or feature_cluster_smoke %}
 ## Features
 
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
@@ -26,7 +26,8 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 - 🚦 **Canary Releases**: Automated progressive delivery with Flagger (Knative provider)
 {% endif %}
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
-- 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
+- 🔄 **GitOps Ready**: FluxCD manifests for automated deployments{% if feature_cluster_smoke %}
+- 🩺 **Post-Deploy Smoke Tests**: CI verifies the live cluster revision and endpoints after merge{% endif %}
 - 🏗️ **Infrastructure as Code**: Terraform modules for resource management
 - 🧪 **Fully Tested**: Integration tests with Redis{% if feature_s3 %}, RustFS{% endif %}{% if feature_kafka %}, and Kafka{% endif %}
 - 📝 **Type-Safe**: Rust with strict compiler checks

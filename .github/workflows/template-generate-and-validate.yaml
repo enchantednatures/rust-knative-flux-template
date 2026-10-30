@@ -560,6 +560,21 @@ jobs:
           ls "$GENERATED_DIR"
         shell: bash
 
+      - name: Validate cluster smoke workflow
+        run: |
+          set -euo pipefail
+          WF="${GENERATED_DIR}/.github/workflows/smoke-deploy.yaml"
+          test -f "$WF" || { echo "❌ smoke workflow missing"; exit 1; }
+          grep -q "runs-on: test-app-full-runner" "$WF" || { echo "❌ smoke workflow does not use the self-hosted runner"; exit 1; }
+          grep -q "environment: staging" "$WF" || { echo "❌ smoke workflow environment not rendered"; exit 1; }
+          grep -q "KUSTOMIZATION: test-app-full-staging" "$WF" || { echo "❌ smoke workflow Kustomization not rendered"; exit 1; }
+          grep -q "DIGEST_STRICT: \"false\"" "$WF" || { echo "❌ DIGEST_STRICT should be false when image updates are disabled"; exit 1; }
+          if grep -nE '\{%' "$WF"; then echo "❌ unrendered liquid syntax"; exit 1; fi
+          if grep -nE '\{\{ (project_name|smoke_environment|target_namespace)' "$WF"; then echo "❌ unrendered placeholders"; exit 1; fi
+          yq eval '.' "$WF" > /dev/null
+          echo "✓ cluster smoke workflow rendered and valid"
+        shell: bash
+
       - name: Lint and build generated project
         run: |
           set -euo pipefail
