@@ -614,10 +614,12 @@ jobs:
           # compile is one reusable layer; plain `docker build` discarded it
           # every run. Scoped per scenario because generated Cargo features
           # differ (kafka pulls extra system libs into the builder).
-          cache-from: type=gha,scope=e2e-${{ matrix.scenario }}
-          # Advisory only: a miss costs a cold build, but an export rejected at
-          # the repo's 10 GB cache quota must never fail the job.
-          cache-to: type=gha,mode=max,ignore-error=true,scope=e2e-${{ matrix.scenario }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/e2e-cache:${{ matrix.scenario }}
+          # Registry cache, not type=gha: five full BuildKit caches are ~10 GB,
+          # the entire Actions cache budget, and the gha backend is also scoped
+          # per branch so every PR would start cold. GHCR packages are free for
+          # this public repo and the login above already covers it.
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/e2e-cache:${{ matrix.scenario }},mode=max,ignore-error=true
 
       - name: Load image into Kind
         if: matrix.deploy == 'true'
