@@ -1,4 +1,7 @@
 {% if event_source_kafka %}
+# Kind fallback for managed Kafka mode: Kind has no Redpanda operator, so
+# deploy/dev/app-overlay reverts kafka_managed_cluster=true to this local
+# single-node StatefulSet. No functional change for the external Kafka path.
 apiVersion: v1
 kind: Namespace
 metadata:

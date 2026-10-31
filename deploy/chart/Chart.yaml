@@ -4,5 +4,8 @@ version: 0.1.0
 type: application
 dependencies:
   - name: ksvc
-    version: "0.9.0"
+    # Temporary pin: the managed Kafka cluster/Broker support is only on the
+    # ksvc PR #113 pre-release. Move back to a released version once
+    # https://github.com/enchantednatures/charts/pull/113 merges.
+    version: "0.10.0-pr.113.cfe87a8"
     repository: "oci://ghcr.io/enchantednatures/charts"

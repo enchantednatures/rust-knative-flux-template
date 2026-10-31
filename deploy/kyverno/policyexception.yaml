@@ -1,0 +1,28 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  # IMPORTANT: this exception MUST live in Kyverno's configured exception
+  # namespace (the cluster sets --exceptionNamespace=kyverno-system), NOT in
+  # the application namespace. Apply this file separately, outside the
+  # namespaced Kustomize overlay:
+  #
+  #   kubectl apply -f deploy/kyverno/policyexception.yaml
+  #
+  # Adjust the metadata.namespace below if your Kyverno install uses a
+  # different exception namespace.
+  name: {{ project_name | replace: '_', '-' }}-kafka-tuning
+  namespace: kyverno-system
+spec:
+  evaluationMode: Kubernetes
+  matchConditions:
+    - name: managed-redpanda-tuning
+      expression: >-
+        request.namespace == '{{ target_namespace }}' &&
+        (request.name == '{{ project_name | replace: '_', '-' }}-kafka' ||
+        request.name.startsWith('{{ project_name | replace: '_', '-' }}-kafka-'))
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-privileged-containers
+  properties:
+    reason: Redpanda operator injects a privileged tuning init container; tuning is disabled via CR values.
+  reportResult: skip

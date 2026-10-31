@@ -127,14 +127,18 @@ patches:
           {% endif %}
           {% if event_source_kafka %}
           - name: APP__KAFKA__BROKER_URL
-            value: "kafka.kafka.svc.cluster.local:9092"
+            value: "{% if kafka_managed_cluster %}{{ project_name | replace: '_', '-' }}-kafka:9093{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
           {% endif %}
 
       {% if event_source_kafka %}
+      {% if kafka_managed_cluster == false %}
+      # External Kafka only: managed mode derives the bootstrap from the
+      # chart-managed cluster and rejects an explicit value.
       - op: replace
         path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
         value:
           - "kafka.kafka.svc.cluster.local:9092"
+      {% endif %}
       - op: replace
         path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
         value: 1
