@@ -5,11 +5,16 @@ kind: Kustomization
 # Ceph buckets, but the local Kind cluster has no bucket provisioner. This
 # layer drops the ObjectBucketClaim values and points the CNPG ObjectStore
 # back at the in-cluster RustFS (whose init job stands in for the provisioner).
-# Always generated; a passthrough for projects without feature_s3/feature_postgres.
+#
+# It is also the Kind fallback for kafka_managed_cluster: Kind has no Redpanda
+# operator (and no Knative Kafka Broker), so managed mode is reverted to the
+# local Kafka StatefulSet rendered by deploy/dev/infrastructure/kafka.yaml.
+# Always generated; a passthrough for projects without these features.
 resources:
   - ../../overlays/dev
-{% if feature_s3 or feature_postgres %}
+{% if feature_s3 or feature_postgres or event_source_kafka and kafka_managed_cluster %}
 patches:
+{% if feature_s3 or feature_postgres %}
   # Kind has no ObjectBucketClaim CRDs/provisioner: drop the chart claims.
   - target:
       kind: HelmRelease
@@ -26,5 +31,35 @@ patches:
       - op: replace
         path: /spec/configuration/endpointURL
         value: "http://rustfs.rustfs.svc.cluster.local:9000"
+{% endif %}
+{% endif %}
+{% if event_source_kafka and kafka_managed_cluster %}
+  # Kind fallback for managed Kafka: remove the Redpanda cluster, Broker, and
+  # Trigger, and point the KafkaSource back at the local Kafka StatefulSet
+  # (`kafka.kafka.svc.cluster.local:9092`) with the app as its direct sink.
+  - target:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+    patch: |-
+      - op: remove
+        path: /spec/values/kafka/broker
+      - op: remove
+        path: /spec/values/kafka/cluster
+      - op: remove
+        path: /spec/values/kafka/triggers
+      - op: add
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
+        value:
+          - "kafka.kafka.svc.cluster.local:9092"
+      - op: add
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/sink
+        value: app
+      # The dev overlay replaced the env list with the managed short name;
+      # append the local broker override so Kind resolves the local Kafka.
+      - op: add
+        path: /spec/values/services/app/env/-
+        value:
+          name: APP__KAFKA__BROKER_URL
+          value: "kafka.kafka.svc.cluster.local:9092"
 {% endif %}
 {% endif %}

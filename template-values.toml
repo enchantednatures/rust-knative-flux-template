@@ -10,3 +10,4 @@ github_repo = "rust-knative-flux-template"
 default_branch = "main"
 image_registry = "ghcr.io"
 use_default_scaling = true
+kafka_managed_cluster = false

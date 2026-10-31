@@ -105,9 +105,31 @@ A production-ready Rust microservice template for Knative Serverless and FluxCD 
 
 The KafkaSource and DLQ handler are automatically deployed with the application.
 
+{% if kafka_managed_cluster %}
+This project was generated with `kafka_managed_cluster=true`: the app chart
+renders a **Redpanda Kafka cluster, a Knative Kafka Broker, a Trigger, and a
+KafkaSource** in the application namespace. The KafkaSource derives its
+bootstrap from the managed cluster (`<project>-kafka.<namespace>.svc.cluster.local:9093`)
+and sinks to the Broker; the Trigger routes `{{ kafka_topic }}` events to the
+app. The app's `APP__KAFKA__BROKER_URL` is set to the same-namespace short name
+`{{ project_name | replace: '_', '-' }}-kafka:9093`.
+
+Prerequisites before deploying to a real cluster:
+- The [Redpanda operator](https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/kubernetes-deploy/) (Redpanda CRDs) is installed.
+- The Knative Kafka Broker/controller is installed.
+- If Kyverno blocks privileged containers, apply the generated
+  `deploy/kyverno/policyexception.yaml` **in Kyverno's exception namespace**
+  (`kyverno-system` in the reference cluster), not in the app namespace.
+
+Kind has no Redpanda operator, so `deploy/dev/app-overlay` reverts managed mode
+to the local Kafka StatefulSet (`kafka.kafka.svc.cluster.local:9092`) for
+`make local-up`. The chart pin `0.10.0-pr.113.cfe87a8` is temporary until
+charts PR #113 merges.
+{% else %}
 For production/staging, ensure external Kafka is configured:
 - Update `deploy/overlays/staging/kafka-source-patch.yaml` with staging Kafka servers
 - Update `deploy/overlays/prod/kafka-source-patch.yaml` with production Kafka servers
+{% endif %}
 {% endif %}
 
 3. **Deploy Directly**
@@ -336,7 +358,11 @@ See [STORAGE.md](./STORAGE.md) for detailed S3/RustFS integration guide covering
 
 See [docs/KAFKA_EVENTING.md](./docs/KAFKA_EVENTING.md) for detailed Kafka event source guide covering:
 - Architecture and topic-per-source pattern
+{% if kafka_managed_cluster %}
+- Opt-in managed Redpanda cluster + Knative Kafka Broker/Trigger (with Kind fallback)
+{% else %}
 - Knative Kafka controller setup
+{% endif %}
 - Event type routing examples
 - Subscribing to multiple topics
 - Dead Letter Queue configuration

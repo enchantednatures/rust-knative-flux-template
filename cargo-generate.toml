@@ -121,6 +121,7 @@ kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events"
 kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "events-consumers" }
 kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
 kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
+kafka_managed_cluster = { prompt = "Self-deploy a chart-managed Redpanda Kafka cluster and Kafka Broker (requires the Redpanda operator and the Kyverno exception; Kind local-up falls back to the local broker)?", type = "bool", default = false }
 
 [conditional.'!event_source_kafka']
 ignore = [

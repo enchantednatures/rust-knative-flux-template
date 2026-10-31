@@ -157,6 +157,13 @@ spec:
           - name: APP__POSTGRES__HOST
             value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
           {% endif %}
+          {% if feature_kafka and kafka_managed_cluster %}
+          # Chart-managed Redpanda cluster: the operator publishes a
+          # same-namespace Service named "<project>-kafka" on the Kafka port
+          # 9093 (the internal listener, not the external 9092).
+          - name: APP__KAFKA__BROKER_URL
+            value: "{{ project_name | replace: '_', '-' }}-kafka:9093"
+          {% endif %}
         {% if feature_postgres %}
         # PostgreSQL server CA certificate. Generated and rotated automatically
         # by the CloudNativePG operator (secret <cluster>-ca, key ca.crt);
@@ -176,15 +183,129 @@ spec:
 
     {% if event_source_kafka %}
     kafka:
+      {% if kafka_managed_cluster %}
+      # Managed mode renders a Redpanda cluster plus a Knative Kafka Broker and
+      # Trigger. The chart derives the Kafka bootstrap address from the cluster
+      # name/namespace, so neither the sources nor the broker config may set
+      # `bootstrapServers`; with the Broker enabled the KafkaSource sinks to the
+      # Broker (a Trigger routes to services.app), so `sink` must not be set.
+      cluster:
+        enabled: true
+        provider: redpanda
+        name: "{{ project_name | replace: '_', '-' }}-kafka"
+        replicas: 1
+        storage:
+          size: "10Gi"
+          storageClassName: "ceph-block"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "2.5Gi"
+        tls:
+          enabled: false
+        auth:
+          type: none
+        topics:
+          create: true
+          partitions: 3
+        redpanda:
+          # Kyverno clusters commonly reject the operator's privileged tuning
+          # init container and pods without regular-container resources. Disable
+          # tuning and size every generated container explicitly. See
+          # deploy/kyverno/policyexception.yaml for the matching exception.
+          extraClusterSpec:
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "2Gi"
+              limits:
+                cpu: "2"
+                memory: "2.5Gi"
+            config:
+              cluster:
+                auto_create_topics_enabled: true
+            console:
+              enabled: false
+            monitoring:
+              enabled: false
+            auth:
+              sasl:
+                enabled: false
+            statefulset:
+              initContainers:
+                tuning:
+                  tune_aio_events: false
+                  apply_host_tuners: false
+                configurator:
+                  resources:
+                    requests:
+                      cpu: "10m"
+                      memory: "64Mi"
+                    limits:
+                      memory: "128Mi"
+              podTemplate:
+                spec:
+                  containers:
+                    - name: sidecar
+                      resources:
+                        requests:
+                          cpu: "10m"
+                          memory: "256Mi"
+                        limits:
+                          memory: "512Mi"
+              sideCars:
+                resources:
+                  requests:
+                    cpu: "10m"
+                    memory: "256Mi"
+                  limits:
+                    memory: "512Mi"
+            post_install_job:
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  memory: "128Mi"
+            post_upgrade_job:
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  memory: "128Mi"
+      broker:
+        enabled: true
+        config:
+          topicPartitions: 3
+        delivery:
+          retry: 5
+          backoffPolicy: exponential
+          backoffDelay: "PT1S"
+      triggers:
+        {{ kafka_topic }}:
+          subscriber: "app"
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+      {% endif %}
       sources:
         {{ kafka_topic }}:
           topic: "{{ kafka_topic }}"
           consumerGroup: "{{ kafka_consumer_group }}"
+          {% if kafka_managed_cluster == false %}
           bootstrapServers:
             - "kafka.kafka.svc.cluster.local:9092"
+          {% endif %}
           consumers: 3
           initialOffset: latest
+          {% if kafka_managed_cluster == false %}
           sink: "app"
+          {% endif %}
           delivery:
             retry: 5
             backoffPolicy: exponential
@@ -193,7 +314,7 @@ spec:
             enabled: true
             image:
               repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
-              tag: "latest"
+              tag: "{% if kafka_managed_cluster %}v1.23.0{% else %}latest{% endif %}"
             scaling:
               minScale: 0
               maxScale: 2
