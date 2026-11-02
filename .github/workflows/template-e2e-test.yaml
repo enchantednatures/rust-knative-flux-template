@@ -602,7 +602,7 @@ jobs:
 
       - name: Build and push application image
         if: matrix.deploy == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./generated/${{ env.PROJECT_NAME }}
           # push for the Flux OCIRepository; load keeps the image in the local
