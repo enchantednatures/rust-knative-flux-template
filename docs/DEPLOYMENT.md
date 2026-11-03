@@ -816,7 +816,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: |
@@ -853,7 +853,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and push release image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: |

@@ -86,7 +86,7 @@ Generation prompts (all default to `false` unless noted):
 Infrastructure and tooling:
 
 - Knative Serving v1.20.0 (Kourier), FluxCD `HelmRelease` rendering the local
-  `deploy/chart` wrapper around the `ksvc` chart 0.9.0.
+  `deploy/chart` wrapper around the `ksvc` chart 1.0.0.
 - CloudNativePG 1.28.0 + Barman Cloud plugin 0.11.0 installed cluster-wide by
   Flux, with `ScheduledBackup` retention per environment (7/14/30 days).
 - Local Kind lifecycle (`make local-up`, `make dev-restart`, `make dev-logs`,
