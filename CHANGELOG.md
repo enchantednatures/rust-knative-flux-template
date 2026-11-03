@@ -104,6 +104,20 @@ Compatibility contract:
   `rust-toolchain.toml`.
 - cargo-generate >= 0.23.0.
 
+Out of scope for 1.0.0 (tracked in the backlog, not blocking the tag):
+
+- JWT authentication (#118) and the event idempotency guard (#120).
+- Kubernetes Pod Security Standards enforcement (#119); the Trivy image scan
+  gate does ship in the generated `ci.yaml`/`release.yaml`.
+- Optional components that are not yet implemented: schema registry (#144),
+  cosign + Kyverno verification (#132), Strimzi dev operator (#131), KEDA
+  lag-based autoscaling (#130), Redis caching (#126), Knative config tuning
+  (#124), External Secrets Operator (#121), shared observability component
+  (#122).
+
+`feature_cron` (PR #163) is **in** 1.0.0: it ships as the `feature_cron` prompt
+with a Knative `PingSource`.
+
 ### Added
 
 - Complete Rust + Knative + FluxCD template with optional S3, Kafka (publisher
