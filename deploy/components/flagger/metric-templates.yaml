@@ -30,10 +30,10 @@ spec:
   query: vector(0)
 
   # Replace the placeholder above with your application-specific PromQL.
-  # Template variables: {{ target }} (canary revision name), {{ namespace }},
+  # {% raw %}Template variables: {{ target }} (canary revision name), {{ namespace }},
   # {{ interval }}. Example (error rate from the app's own counter):
   #   sum(rate(http_requests_total{job="app", status=~"5.."}[{{ interval }}]))
-  #   / sum(rate(http_requests_total{job="app"}[{{ interval }}]))
+  #   / sum(rate(http_requests_total{job="app"}[{{ interval }}])){% endraw %}
   #
   # IMPORTANT: keep the query free of '#' comment lines and trailing prose —
   # Flagger collapses the query to a single line (whitespace removal), so a

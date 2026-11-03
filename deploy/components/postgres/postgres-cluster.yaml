@@ -36,8 +36,10 @@ spec:
 
   storage:
     size: 20Gi   # dev-sized floor; overlays patch per env (staging/prod grow it)
-    # storageClass intentionally omitted: uses the cluster default
-    # StorageClass. Overlays may add one per env.
+    # StorageClass from the `postgres_storage_class` generate-time placeholder
+    # (default "standard"). Set it to the StorageClass your cluster provides;
+    # overlays may still patch it per environment.
+    storageClass: "{{ postgres_storage_class }}"
 
   # Pod-level requests/limits for the PostgreSQL instances. Required by
   # policy-enforcing clusters (e.g. require-pod-resources) which otherwise
