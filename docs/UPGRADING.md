@@ -36,6 +36,25 @@ cargo_generate_version = ">=0.23.0"   # minimum cargo-generate CLI
 bumped with each tagged release. `cargo_generate_version` is the minimum CLI
 version the config schema requires.
 
+### Generated project versions
+
+A generated project starts at `0.1.0` in both `Cargo.toml` and
+`deploy/chart/Chart.yaml`; those follow the *generated project's* release
+cadence, which is independent of the template's `[template] version`. Bump them
+with the project's first release, not when regenerating.
+
+Generate non-interactively from a values file:
+
+```bash
+# Lean project (every feature off); see template-values.toml in the template repo
+cargo generate --path <template> --name my-service \
+  --template-values-file template-values.toml --silent --allow-commands
+
+# All features; see ci/template-values-full.toml
+cargo generate --path <template> --name my-service \
+  --template-values-file ci/template-values-full.toml --silent --allow-commands
+```
+
 ### Finding Latest Version
 
 ```bash

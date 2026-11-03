@@ -622,6 +622,9 @@ How it fits (CNPG 1.28 automated integration):
   config (`max_connections`, timeouts) is unchanged. `pool_mode: transaction`
   and `max_prepared_statements: 200` keep sqlx's prepared statements sane in
   transaction pooling.
+- **Storage class**: `postgres_storage_class` (default `standard`) is rendered
+  into the Cluster's `spec.storage.storageClass`; per-env overlays may still
+  patch it.
 - **Pooling off**: set `postgres_pooler=false` at generate time and the CR
   (and the app env) is simply absent; the sqlx pool talks to `<cluster>-rw`
   directly.

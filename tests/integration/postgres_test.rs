@@ -185,6 +185,13 @@ async fn test_get_missing_item_returns_404() {
     let pool = sqlx::PgPool::connect(&url)
         .await
         .expect("Failed to connect to PostgreSQL");
+    // This test runs before the round-trip test alphabetically, so on a fresh
+    // database the schema would not exist yet and the handler would surface a
+    // 500 instead of the 404 under test.
+    sqlx::migrate!()
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
 
     let mut state = common::create_test_state().await;
     state.postgres = Some(Arc::new(pool));

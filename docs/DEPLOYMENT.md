@@ -252,6 +252,9 @@ Generation knobs that shape this flow:
 | `custom_domain` | Adds a `ClusterDomainClaim` + `DomainMapping` (dev overlay) for the given hostname |
 | `network_policy_allow_all` | Adds an allow-all NetworkPolicy to the dev namespace |
 | `target_namespace` | Namespace for every overlay (each renders a Namespace object when it is not `default`) |
+| `postgres_storage_class` | Sets `spec.storage.storageClass` on the CNPG `Cluster` (default `standard`) |
+| `postgres_instances_{dev,staging,prod}` | Replica count per environment (1/2/3) |
+| `postgres_pooler` | Adds the PgBouncer `Pooler` and routes the app through `APP__POSTGRES__HOST` |
 
 The Kubeconfig used by `make bootstrap`/`make deploy` is `$KUBECONFIG` when set, otherwise `CLUSTER_KUBECONFIG` (defaults to `~/.kube/config`). The local Kind cluster is `make local-up` / `make local-down`; SOPS configuration starts from the gitignored `.sops.yaml` (copy `.sops.yaml.example`); no Secret is SOPS-encrypted in the generated tree.
 
