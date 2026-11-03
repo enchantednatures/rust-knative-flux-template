@@ -710,7 +710,7 @@ jobs:
           # A duplicate env name is rejected by the API server, so the fallback
           # must rewrite the dev overlay entry, not append another one.
           require_value "kind fallback single broker env" "1" \
-            "$(yq 'select(.kind == "HelmRelease") | [.spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL")] | length' /tmp/managed-app-overlay.yaml)"
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL") | .name' /tmp/managed-app-overlay.yaml | wc -l | tr -d ' ')"
           if [[ "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka | has("broker")' /tmp/managed-app-overlay.yaml)" != "false" ]]; then
             echo "FAIL: Kind fallback kept kafka.broker"
             exit 1
