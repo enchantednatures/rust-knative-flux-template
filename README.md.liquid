@@ -15,6 +15,9 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 {%- if kafka_managed_cluster %}
 - 🐉 **Managed Kafka**: Chart-rendered Redpanda cluster, Knative Kafka Broker, and Trigger
 {%- endif %}
+{%- if feature_s3 and feature_bucket_notifications %}
+- 🪣 **Bucket Notifications**: Ceph RGW object events published to Kafka and routed to the app
+{%- endif %}
 {%- endif %}
 {%- if feature_kafka %}
 - 📤 **Kafka Event Publishing**: Non-blocking event publishing from HTTP handlers
@@ -175,6 +178,32 @@ Prerequisites on a real cluster:
 - If Kyverno blocks privileged containers, apply the generated
   `deploy/kyverno/policyexception.yaml` in Kyverno's exception namespace
   (`kyverno-system` in the reference cluster), not in the app namespace.
+
+{% if feature_s3 and feature_bucket_notifications %}
+### Bucket notifications
+
+The `<project>-app-data` bucket publishes `put` events to the managed Kafka
+cluster. The chart creates a `CephBucketTopic`, a `CephBucketNotification`, and
+the Kafka topic `<project>-app-data-put`. The HelmRelease adds an `s3-events`
+KafkaSource that sinks to the Broker, plus an `s3-events` Trigger filtered on
+the KafkaSource's CloudEvent `source`
+(`/apis/v1/namespaces/<namespace>/kafkasources/<project>-s3-events-kafka-source#<project>-app-data-put`)
+that routes the notification to the app.
+
+Prerequisites:
+
+- Rook's `CephBucketTopic` / `CephBucketNotification` CRDs.
+- A `CephObjectStore` named `{{ ceph_object_store_name }}` in
+  `{{ ceph_object_store_namespace }}`.
+- The managed Kafka cluster (plaintext/no-auth listeners), which this project
+  generates.
+
+The chart marks bucket notifications Experimental. Authenticated or TLS Kafka
+notifications are not supported yet.
+
+Kind does not run Rook/RGW or the Redpanda operator, so `make local-up` does not
+exercise this path; `deploy/dev/app-overlay` removes the bucket claims.
+{% endif %}
 
 Kind has no Redpanda operator, so `deploy/dev/app-overlay` reverts managed mode
 to the local Kafka StatefulSet (`kafka.kafka.svc.cluster.local:9092`) for

@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `feature_bucket_notifications` prompt (under managed Kafka, default `false`):
+  when `feature_s3` is also enabled, the app-data `ObjectBucketClaim` declares
+  its Rook `CephObjectStore` identity and a `put` notification. The chart
+  renders a `CephBucketTopic`, a `CephBucketNotification`, and the
+  `<project>-app-data-put` Kafka topic; the HelmRelease adds an `s3-events`
+  KafkaSource and a Trigger filtered on that source, routing the S3 payload to
+  the app. `ceph_object_store_name`/`ceph_object_store_namespace` identify the
+  Rook object store. Requires Rook's notification CRDs, the managed Kafka
+  cluster, and the plaintext/no-auth listener; Kind fallbacks drop the path.
 - `kafka_managed_cluster` prompt (under `event_source_kafka`, default `false`):
   the app chart renders a Redpanda `Redpanda` cluster + source `Topic`, a Knative
   Kafka `Broker` and `Trigger`, and a `KafkaSource` that derives its bootstrap

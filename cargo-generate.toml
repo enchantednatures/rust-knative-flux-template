@@ -128,6 +128,12 @@ kafka_managed_cluster = { prompt = "Self-deploy a chart-managed Redpanda Kafka c
 [conditional.'event_source_kafka && kafka_managed_cluster'.placeholders]
 # StorageClass for the managed Redpanda brokers' PVCs.
 kafka_storage_class = { prompt = "StorageClass for the managed Kafka brokers (empty = cluster default)", type = "string", default = "ceph-block" }
+# Publish Ceph RGW bucket notifications to the managed Kafka cluster. This
+# also requires feature_s3 (there must be a bucket to notify on) and the Rook
+# CephBucketTopic/CephBucketNotification CRDs on the cluster.
+feature_bucket_notifications = { prompt = "Publish Ceph RGW bucket notifications to the managed Kafka cluster (requires S3)?", type = "bool", default = false }
+ceph_object_store_name = { prompt = "Rook CephObjectStore name (used when bucket notifications are enabled)", type = "string", default = "ceph-objectstore" }
+ceph_object_store_namespace = { prompt = "Rook CephObjectStore namespace (used when bucket notifications are enabled)", type = "string", default = "rook-ceph" }
 
 [conditional.'!event_source_kafka']
 ignore = [

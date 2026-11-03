@@ -167,6 +167,14 @@ patches:
           app-data:
             storageClassName: "{{ ceph_bucket_storage_class }}"
             bucketName: "{{ project_name | replace: '_', '-' }}-app-data"
+            {%- if feature_bucket_notifications %}
+            objectStore:
+              name: "{{ ceph_object_store_name }}"
+              namespace: "{{ ceph_object_store_namespace }}"
+            notifications:
+              put:
+                enabled: true
+            {%- endif %}
           {%- endif %}
   {% endif %}
 

@@ -135,11 +135,46 @@ same-namespace short Service name) for publishing.
   `APP__KAFKA__BROKER_URL`. `make local-up` therefore uses the local Kafka
   StatefulSet from `deploy/dev/infrastructure/kafka.yaml`.
 
+{% if feature_s3 and feature_bucket_notifications %}
+### Bucket notifications
+
+The project was generated with `feature_bucket_notifications=true`, so Ceph RGW
+object events are routed through the managed Kafka cluster:
+
+```
+S3 object put -> CephBucketNotification -> <project>-app-data-put
+  -> KafkaSource s3-events -> Broker -> filtered Trigger -> app
+```
+
+- The chart renders a `CephBucketTopic`, a `CephBucketNotification`, and the
+  Kafka topic `{{ project_name | replace: "_", "-" }}-app-data-put` for the
+  `{{ project_name | replace: "_", "-" }}-app-data` bucket.
+- The HelmRelease adds a second KafkaSource
+  (`{{ project_name | replace: "_", "-" }}-s3-events-kafka-source`) and a
+  Trigger (`{{ project_name | replace: "_", "-" }}-s3-events-trigger`).
+- The Trigger filters on the S3 KafkaSource's CloudEvent `source`, which Knative
+  sets to
+  `/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: "_", "-" }}-s3-events-kafka-source#{{ project_name | replace: "_", "-" }}-app-data-put`.
+  Without the filter, the broker would deliver the main `{{ kafka_topic }}`
+  events to the app twice.
+- The source DLQ sets `env: []` because Knative >= 1.23 rejects the chart's
+  default `POD_NAME`/`POD_NAMESPACE` `fieldRef` entries.
+
+Prerequisites: Rook's `CephBucketTopic`/`CephBucketNotification` CRDs and a
+`CephObjectStore` named `{{ ceph_object_store_name }}` in
+`{{ ceph_object_store_namespace }}`. The chart marks the feature Experimental;
+the managed cluster is plaintext/no-auth by design, and authenticated or TLS
+notifications are not supported yet.
+
+Kind does not run Rook/RGW or the Redpanda operator, so `make local-up` does not
+exercise this path. `deploy/dev/app-overlay` removes the bucket claims.
+{% endif %}
+
 ### Chart support
 
 Managed Kafka requires the ksvc chart that ships the `kafka.cluster`,
 `kafka.broker`, and `kafka.triggers` values (`ksvc >= 0.10.0`; the template
-pins `1.0.0`).
+pins `1.2.0`). Bucket notifications require `ksvc >= 1.2.0`.
 {% endif %}
 
 ---

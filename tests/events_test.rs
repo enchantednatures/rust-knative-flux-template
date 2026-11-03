@@ -90,6 +90,41 @@ async fn test_cloudevent_with_custom_message() {
     }));
 }
 
+{% if feature_s3 and feature_bucket_notifications %}
+#[tokio::test]
+async fn test_bucket_notification_cloudevent() {
+    let state = common::create_test_state().await;
+    let server = common::create_test_server(state);
+
+    let response = server
+        .post("/")
+        .content_type("application/json")
+        .json(&json!({
+            "specversion": "1.0",
+            "id": "s3-123",
+            "type": "com.amazonaws.s3.objectcreated",
+            "source": "/s3",
+            "data": {
+                "Records": [{
+                    "eventName": "s3:ObjectCreated:Put",
+                    "s3": {
+                        "bucket": { "name": "bn-test-app-data" },
+                        "object": { "key": "uploads/example.txt" }
+                    }
+                }]
+            }
+        }))
+        .await;
+
+    response.assert_status_ok();
+    response.assert_json(&json!({
+        "received": true,
+        "event_id": "s3-123",
+        "records": 1
+    }));
+}
+{% endif %}
+
 {% if feature_cron %}
 #[tokio::test]
 async fn test_scheduled_cloudevent() {

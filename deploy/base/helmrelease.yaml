@@ -293,6 +293,21 @@ spec:
             retry: 5
             backoffPolicy: exponential
             backoffDelay: "PT1S"
+        {% if feature_s3 and feature_bucket_notifications %}
+        # Ceph RGW object events are published to their own Kafka topic. Filter
+        # on the S3 KafkaSource so the main trigger above is not duplicated and
+        # this trigger does not receive application events.
+        s3-events:
+          subscriber: "app"
+          filter:
+            # KafkaSource sets the CloudEvent source to
+            # /apis/v1/namespaces/<ns>/kafkasources/<name>#<topic>.
+            source: "/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: '_', '-' }}-s3-events-kafka-source#{{ project_name | replace: '_', '-' }}-app-data-put"
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+        {% endif %}
       {% endif %}
       sources:
         {{ kafka_topic }}:
@@ -326,6 +341,38 @@ spec:
               limits:
                 cpu: "200m"
                 memory: "128Mi"
+        {% if feature_s3 and feature_bucket_notifications %}
+        # Ceph RGW bucket notifications are published by Rook to this topic
+        # (the chart default for the app-data bucket's `put` event). The
+        # KafkaSource sinks to the Broker; the filtered `s3-events` Trigger
+        # routes it to the app. `dlq.env: []` opts out of the chart's
+        # POD_NAME/POD_NAMESPACE fieldRef env, which Knative >= 1.23 rejects.
+        s3-events:
+          topic: "{{ project_name | replace: '_', '-' }}-app-data-put"
+          consumerGroup: "{{ project_name | replace: '_', '-' }}-s3-events"
+          consumers: 1
+          initialOffset: latest
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+          dlq:
+            enabled: true
+            env: []
+            image:
+              repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
+              tag: "v1.23.0"
+            scaling:
+              minScale: 0
+              maxScale: 2
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "32Mi"
+              limits:
+                cpu: "200m"
+                memory: "128Mi"
+        {% endif %}
     {% endif %}
 
     {% if feature_cron %}
