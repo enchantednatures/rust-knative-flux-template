@@ -156,7 +156,6 @@ See `docs/STORAGE.md` for the full contract and the external-S3 escape hatch.
 
 {% if event_source_kafka %}
 ## Kafka Event Source
-
 {% if kafka_managed_cluster %}
 This project was generated with `kafka_managed_cluster=true`, so the app chart
 deploys Kafka itself: a **Redpanda cluster** (`{{ project_name | replace: "_", "-" }}-kafka`),
@@ -185,6 +184,7 @@ The KafkaSource and DLQ handler are deployed with the application. Topic,
 consumer group, and bootstrap servers are generation-time values; per-environment
 broker overrides live in the staging/prod overlay patches.
 {% endif %}
+
 See `docs/KAFKA_EVENTING.md`.
 {% endif %}
 

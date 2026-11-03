@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `kafka_managed_cluster` prompt (under `event_source_kafka`, default `false`):
+  the app chart renders a Redpanda `Redpanda` cluster + source `Topic`, a Knative
+  Kafka `Broker` and `Trigger`, and a `KafkaSource` that derives its bootstrap
+  from the managed cluster (`<project>-kafka.<namespace>.svc.cluster.local:9093`)
+  and sinks to the Broker. The app's `APP__KAFKA__BROKER_URL` points at
+  `<project>-kafka:9093`. Managed mode also ships
+  `deploy/kyverno/policyexception.yaml` for the operator's privileged `tuning`
+  init container; `deploy/dev/app-overlay` reverts to the local Kafka
+  StatefulSet for `make local-up`.
 - `axum-cloudevents` and `axum-cloudevents-macros` now have unit tests covering
   structured/binary extraction, header and metadata parsing, error-to-HTTP
   mapping, and the `CloudEventTagged` derive.
