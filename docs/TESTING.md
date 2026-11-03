@@ -286,116 +286,44 @@ async fn test_with_fixture() {
 ### Running Integration Tests
 
 ```bash
-# Start development environment
+# Start the local Kind environment (Redis, RustFS, PostgreSQL, Kafka as enabled)
 make local-up
 
-# Wait for services to be ready
-sleep 5
+# Run the ignored, infrastructure-backed suites
+cargo test --all-features -- --ignored --test-threads=1
 
-# Run integration tests
-cargo test --test '*' -- --ignored
+# Run one suite only
+cargo test --all-features --test integration -- --ignored
 
-# Run specific integration test
-cargo test --test storage_test -- --ignored
-
-# Run with output
-cargo test --test '*' -- --ignored --nocapture
+# Run directly against a deployed service
+make dev-test
 ```
 
 ---
 
 ## E2E Testing
 
-### Kind Cluster Setup
+End-to-end testing is owned by CI; there is no local E2E suite to keep in sync
+with the template anymore.
 
-**Install Kind**:
-```bash
-go install sigs.k8s.io/kind@v0.20.0
-```
+| Layer | Where | What it proves |
+|-------|-------|----------------|
+| Template generation matrix (template repo CI) | `.github/workflows/template-generate-and-validate.yaml` (`generate-and-validate` job) | 12 feature combinations generate, format, lint, and compile |
+| Full-stack validation | same workflow, `full-stack` job | All-features project builds (debug + release), Docker image builds, Helm chart and overlays render, Flux config renders |
+| Live E2E (template repo CI) | `.github/workflows/template-e2e-test.yaml` | Kind + Knative + Flux deploy of the generated project, health/event/storage assertions per scenario |
+| Local smoke | `make local-up` then `make dev-test` | The service runs in a real Kind cluster with the same manifests |
 
-**Create Cluster** (`tests/e2e/kind-config.yaml`):
-```yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-    protocol: TCP
-  - containerPort: 443
-    hostPort: 443
-    protocol: TCP
-```
-
-**Create cluster**:
-```bash
-kind create cluster --config tests/e2e/kind-config.yaml
-```
-
-### E2E Test Script
-
-**Example** (`tests/e2e/test-deployment.sh`):
-```bash
-#!/bin/bash
-set -e
-
-NAMESPACE="{{ project_name }}"
-SERVICE="{{ project_name }}"
-
-echo "Creating namespace..."
-kubectl create namespace $NAMESPACE || true
-
-echo "Applying base manifests..."
-kubectl apply -f deploy/base -n $NAMESPACE
-
-echo "Waiting for service to be ready..."
-kubectl wait --for=condition=ready ksvc/$SERVICE -n $NAMESPACE --timeout=300s
-
-echo "Getting service URL..."
-URL=$(kubectl get ksvc $SERVICE -n $NAMESPACE -o jsonpath='{.status.url}')
-echo "Service URL: $URL"
-
-echo "Testing health endpoint..."
-curl -f $URL/health/live || exit 1
-
-echo "Testing readiness endpoint..."
-curl -f $URL/health/ready || exit 1
-
-{% if feature_s3 %}
-echo "Testing S3 upload..."
-curl -f -X POST $URL/api/upload \
-  -H "Content-Type: application/json" \
-  -d '{"key":"test.txt","data":"aGVsbG8="}' || exit 1
-
-echo "Testing S3 download..."
-curl -f $URL/api/download/test.txt || exit 1
-
-echo "Testing S3 delete..."
-curl -f -X DELETE $URL/api/delete/test.txt || exit 1
-{% endif %}
-
-echo "All E2E tests passed!"
-```
-
-### Running E2E Tests
+To reproduce a live cluster locally, use the same path the E2E job uses:
 
 ```bash
-# Make script executable
-chmod +x tests/e2e/test-deployment.sh
-
-# Run E2E tests
-./tests/e2e/test-deployment.sh
-
-# Cleanup
-kind delete cluster
+make local-up        # Kind + Knative + Flux + app
+make dev-status      # confirm the Knative service is Ready
+make dev-test        # run the integration suite against the cluster
+make local-down      # tear it down
 ```
+
+The CI-run scenarios are listed in the workflow matrix; add a row there rather
+than a bespoke script.
 
 ---
 

@@ -40,7 +40,7 @@ fails, the rollout is automatically rolled back.
 
 ```
 New image pushed
-  → Flux ImageUpdateAutomation updates knative-service.yaml
+  → Flux ImageUpdateAutomation updates the image tag in deploy/base/helmrelease.yaml
   → Flux reconciles → Knative creates new revision
   → Flagger detects new revision → starts canary analysis
 

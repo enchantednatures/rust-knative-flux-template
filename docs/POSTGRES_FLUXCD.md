@@ -29,7 +29,7 @@ The PostgreSQL feature uses FluxCD to manage:
    - The chart renders an `ObjectBucketClaim` per entry; the cluster's bucket provisioner creates the bucket and writes a claim-named Secret (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) and ConfigMap (`BUCKET_HOST` / `BUCKET_PORT` / `BUCKET_NAME`) into the release namespace
    - The CNPG `ObjectStore` and the app both consume those objects; nothing is created by hand
 
-The standalone `deploy/flux/postgres-kustomization.yaml` from earlier drafts was removed: resources flow through the per-env app Kustomization so the overlay's `namespace:` transformer places everything in the right namespace and reconciliation pins to the same revision as the application.
+There is no standalone Flux Kustomization for PostgreSQL: resources flow through the per-env app Kustomization so the overlay's `namespace:` transformer places everything in the right namespace and reconciliation pins to the same revision as the application.
 
 ## Prerequisites
 

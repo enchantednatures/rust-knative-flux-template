@@ -169,7 +169,7 @@ brew install grype  # macOS
 grype {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
 ```
 
-**CI Integration** (`.github/workflows/security-scan.yaml`):
+**CI Integration** (`.github/workflows/ci.yaml`):
 ```yaml
 name: Security Scan
 
@@ -185,7 +185,7 @@ jobs:
       run: docker build -t test-image .
     
     - name: Run Trivy
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@v0.36.0
       with:
         image-ref: test-image
         format: 'sarif'

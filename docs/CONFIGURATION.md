@@ -12,7 +12,7 @@ The application loads configuration in this priority order (highest to lowest):
 4. **Compile-Time Defaults** - Hard-coded values in code
 
 This hierarchy allows:
-- Local development with `development.toml`
+- Local development with `config/development.toml`
 - Production secrets via environment variables
 - Team overrides via shared config files
 - Safe defaults for all settings
@@ -122,10 +122,10 @@ export RUST_LOG=info,{{ crate_name }}=debug
 ### Application Configuration
 
 ```bash
-# Environment name (used to select config file)
-# - development (selects config/development.toml)
-# - staging (selects config/staging.toml)
-# - production (selects config/production.toml)
+# Environment name (selects config/<APP_ENV>.toml; the file is optional)
+# - development (config/development.toml)
+# - production (config/production.toml); staging deployments use production
+# - any other value falls back to config/default.toml + env overrides
 export APP_ENV=development
 
 # Graceful shutdown timeout (default: 30s)
@@ -186,31 +186,10 @@ log_level = "debug"
 # (optional: use RUST_LOG env var instead)
 ```
 
-### Staging Configuration (`config/staging.toml`)
-
-```toml
-[server]
-# Listen on all interfaces
-host = "0.0.0.0"
-port = 8080
-
-[redis]
-# Use managed Redis in staging
-url = "redis://redis-staging.example.com:6379"
-
-{% if feature_s3 %}[s3]
-# Use S3 staging bucket
-endpoint = "https://s3.us-east-1.amazonaws.com"
-bucket = "my-app-staging"
-region = "us-east-1"
-path_style = false
-
-{% endif %}[telemetry]
-log_level = "info"
-
-# Use staging collector
-otlp_endpoint = "http://opentelemetry-collector-staging:4317"
-```
+> There is no `config/staging.toml` in the template. `APP_ENV` selects
+> `config/<env>.toml`; staging deployments use `config/production.toml` (or set
+> `APP_ENV=production`) and override the per-environment values through the
+> HelmRelease environment variables.
 
 ### Production Configuration (`config/production.toml`)
 
@@ -422,7 +401,7 @@ kubectl apply -f my-secret.sealed.yaml
     docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0
    ```
 
-2. **Deploy with Kustomize** (uses `config/staging.toml`):
+2. **Deploy with Kustomize** (the app runs with `APP_ENV=production`, so `config/production.toml` applies):
    ```bash
    kubectl apply -k deploy/overlays/staging
    ```
