@@ -754,24 +754,21 @@ jobs:
           # has a dangling entry again (see issue #177).
           LEAKS=(
             AGENTS.md
+            CONTRIBUTING.md
             docs/FEATURE_ANALYSIS.md
             docs/IMPROVEMENTS_SUMMARY.md
             docs/CLOUDEVENTS_KAFKA_RESEARCH.md
             docs/CLOUDEVENTS_KAFKA_RESEARCH_SUMMARY.md
             docs/CLOUDEVENTS_KAFKA_QUICK_REFERENCE.md
-            docs/CHANGELOG-LOCAL-E2E.md
             docs/TEMPLATE_GUIDE.md
-            docs/LOCAL_E2E_TESTING.md
-            docs/E2E_TROUBLESHOOTING.md
             .github/workflows/opencode.yml
             .github/workflows/dev-setup-validation.yaml
             .github/workflows/template-e2e-test.yaml
             .github/workflows/template-generate-and-validate.yaml
             .github/workflows/naming-convention-tests.yaml
             ci/template-values-full.toml
-            scripts/test-template-matrix.sh
+            scripts/README.md
             template-values.toml
-            tests/e2e
           )
           failed=0
           for f in "${LEAKS[@]}"; do
