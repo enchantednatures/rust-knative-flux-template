@@ -1,10 +1,29 @@
-# PostgreSQL Integration Tests
+# Integration Tests
 
-This directory contains integration tests for PostgreSQL database operations using the `sqlx` library.
+This directory holds the suites compiled into the `integration` cargo test
+target by `tests/integration.rs`:
 
-## Overview
+| File | Feature gate | Infrastructure |
+|------|--------------|----------------|
+| `postgres_test.rs` | `feature_postgres` | Redis; the `#[ignore]`d cases also need `DATABASE_URL` |
+| `postgres_integration_test.rs` | `feature_postgres` | PostgreSQL via `POSTGRES_URL`/`POSTGRES_*` (all cases `#[ignore]`d) |
+| `kafka_publishing_test.rs` | `feature_kafka` | none (pure CloudEvent/publisher unit tests) |
 
-The integration tests validate CRUD (Create, Read, Update, Delete) operations against a CloudNativePG-managed PostgreSQL cluster. Tests are designed to run in both local development environments and CI/CD pipelines.
+Nothing in this directory is dead code: every file is `#[path]`-included by
+`tests/integration.rs` under the matching feature gate, and `cargo test --list`
+enumerates them.
+
+Run the infrastructure-backed suites with:
+
+```bash
+cargo test --all-features -- --ignored --test-threads=1
+```
+
+## PostgreSQL Integration Tests
+
+The PostgreSQL suites validate CRUD (Create, Read, Update, Delete) operations
+against a CloudNativePG-managed PostgreSQL cluster. Tests are designed to run in
+both local development environments and CI/CD pipelines.
 
 ## Test Coverage
 
@@ -57,7 +76,7 @@ The integration tests validate CRUD (Create, Read, Update, Delete) operations ag
 kubectl port-forward svc/postgres-test-postgres-rw -n postgres-test 5432:5432
 
 # In another terminal: run tests
-cargo test --test postgres_integration_test -- --nocapture --test-threads=1
+cargo test --test integration -- --ignored --nocapture --test-threads=1
 ```
 
 #### Option 2: Environment Variables
@@ -69,7 +88,7 @@ export POSTGRES_USER=app
 export POSTGRES_PASSWORD=<your-password>
 export POSTGRES_DB=app
 
-cargo test --test postgres_integration_test -- --nocapture --test-threads=1
+cargo test --test integration -- --ignored --nocapture --test-threads=1
 ```
 
 #### Option 3: Full Connection URL
@@ -77,14 +96,14 @@ cargo test --test postgres_integration_test -- --nocapture --test-threads=1
 ```bash
 export POSTGRES_URL="postgres://app:password@localhost:5432/app"
 
-cargo test --test postgres_integration_test -- --nocapture --test-threads=1
+cargo test --test integration -- --ignored --nocapture --test-threads=1
 ```
 
 ### CI/CD Environment
 
 ```bash
 # Test setup handles cluster provisioning automatically
-cargo test --test postgres_integration_test -- --test-threads=1 --nocapture
+cargo test --test integration -- --ignored --test-threads=1 --nocapture
 ```
 
 ## Environment Variables

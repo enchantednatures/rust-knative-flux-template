@@ -1,6 +1,25 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Meta};
+use syn::{parse_macro_input, Data, DeriveInput, Expr, ExprLit, Lit, Meta};
+
+/// Read a `#[attr = "value"]` or `#[attr("value")]` string attribute.
+fn string_attr(attrs: &[syn::Attribute], ident: &str) -> Option<String> {
+    attrs.iter().find_map(|attr| {
+        if !attr.path().is_ident(ident) {
+            return None;
+        }
+        match &attr.meta {
+            Meta::NameValue(nv) => match &nv.value {
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(s), ..
+                }) => Some(s.value()),
+                _ => None,
+            },
+            Meta::List(list) => list.parse_args::<syn::LitStr>().ok().map(|s| s.value()),
+            Meta::Path(_) => None,
+        }
+    })
+}
 
 #[proc_macro_derive(CloudEventTagged, attributes(cloud_event_prefix, cloud_event_type))]
 pub fn derive_cloud_event_tagged(input: TokenStream) -> TokenStream {
@@ -12,40 +31,15 @@ pub fn derive_cloud_event_tagged(input: TokenStream) -> TokenStream {
         _ => panic!("CloudEventTagged can only be derived for enums"),
     };
 
-    let mut prefix = String::new();
-
-    for attr in &input.attrs {
-        if attr.path().is_ident("cloud_event_prefix") {
-            if let Meta::NameValue(nv) = &attr.meta {
-                if let syn::Expr::Lit(expr_lit) = &nv.value {
-                    if let syn::Lit::Str(s) = &expr_lit.lit {
-                        prefix = s.value();
-                    }
-                }
-            }
-        }
-    }
+    let prefix = string_attr(&input.attrs, "cloud_event_prefix").unwrap_or_default();
 
     let mut variant_match_arms = Vec::new();
     let mut variant_types = Vec::new();
 
     for variant in enum_data {
         let variant_name = &variant.ident;
-        let mut event_type = None;
 
-        for attr in &variant.attrs {
-            if attr.path().is_ident("cloud_event_type") {
-                if let Meta::NameValue(nv) = &attr.meta {
-                    if let syn::Expr::Lit(expr_lit) = &nv.value {
-                        if let syn::Lit::Str(s) = &expr_lit.lit {
-                            event_type = Some(s.value());
-                        }
-                    }
-                }
-            }
-        }
-
-        let event_type = event_type.unwrap_or_else(|| {
+        let event_type = string_attr(&variant.attrs, "cloud_event_type").unwrap_or_else(|| {
             panic!(
                 "Variant {} missing #[cloud_event_type(\"...\")]",
                 variant_name

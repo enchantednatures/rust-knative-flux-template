@@ -94,3 +94,99 @@ fn get_header(headers: &HeaderMap, name: &str) -> Option<String> {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderValue;
+
+    fn headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(CE_ID, HeaderValue::from_static("evt-1"));
+        headers.insert(CE_SOURCE, HeaderValue::from_static("/api/v1/things"));
+        headers.insert(
+            CE_TYPE,
+            HeaderValue::from_static("com.example.thing.created"),
+        );
+        headers.insert(CE_SPECVERSION, HeaderValue::from_static("1.0"));
+        headers.insert(
+            CE_DATACONTENTTYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            CE_DATASCHEMA,
+            HeaderValue::from_static("https://schema/thing"),
+        );
+        headers.insert(CE_SUBJECT, HeaderValue::from_static("things/1"));
+        headers.insert(CE_TIME, HeaderValue::from_static("2026-01-02T03:04:05Z"));
+        headers
+    }
+
+    #[test]
+    fn from_headers_parses_every_optional_field() {
+        let meta = CloudEventMetadata::from_headers(&headers()).expect("valid headers");
+
+        assert_eq!(meta.id, "evt-1");
+        assert_eq!(meta.source, "/api/v1/things");
+        assert_eq!(meta.r#type, "com.example.thing.created");
+        assert_eq!(meta.spec_version, "1.0");
+        assert_eq!(meta.data_content_type.as_deref(), Some("application/json"));
+        assert_eq!(meta.data_schema.as_deref(), Some("https://schema/thing"));
+        assert_eq!(meta.subject.as_deref(), Some("things/1"));
+        assert_eq!(meta.time.as_deref(), Some("2026-01-02T03:04:05Z"));
+    }
+
+    #[test]
+    fn from_headers_defaults_spec_version_and_leaves_optional_fields_empty() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CE_ID, HeaderValue::from_static("evt-2"));
+        headers.insert(CE_SOURCE, HeaderValue::from_static("src"));
+        headers.insert(CE_TYPE, HeaderValue::from_static("t"));
+
+        let meta = CloudEventMetadata::from_headers(&headers).expect("valid headers");
+
+        assert_eq!(meta.spec_version, "1.0");
+        assert!(meta.data_content_type.is_none());
+        assert!(meta.data_schema.is_none());
+        assert!(meta.subject.is_none());
+        assert!(meta.time.is_none());
+    }
+
+    #[test]
+    fn from_headers_reports_the_missing_required_header() {
+        for (missing, expected) in [
+            (CE_ID, "ce-id"),
+            (CE_SOURCE, "ce-source"),
+            (CE_TYPE, "ce-type"),
+        ] {
+            let mut headers = headers();
+            headers.remove(missing);
+
+            match CloudEventMetadata::from_headers(&headers) {
+                Err(CloudEventError::MissingHeader(name)) => assert_eq!(name, expected),
+                other => panic!("expected MissingHeader({expected}), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn from_headers_ignores_non_utf8_header_values() {
+        let mut headers = headers();
+        headers.insert(CE_SUBJECT, HeaderValue::from_bytes(b"\xff\xfe").unwrap());
+
+        let meta = CloudEventMetadata::from_headers(&headers).expect("valid headers");
+        assert!(
+            meta.subject.is_none(),
+            "invalid utf-8 must be treated as absent"
+        );
+    }
+
+    #[test]
+    fn type_matches_uses_the_event_type_prefix() {
+        let meta = CloudEventMetadata::new("id", "src", "com.example.thing.created");
+
+        assert!(meta.type_matches("com.example."));
+        assert!(!meta.type_matches("dev.knative."));
+        assert!(meta.type_matches(""));
+    }
+}

@@ -5,7 +5,6 @@
 //! Uses testcontainers to provide an embedded Kafka broker for testing.
 
 use serde_json::json;
-use std::time::Duration;
 
 #[cfg(test)]
 mod kafka_tests {
@@ -69,7 +68,12 @@ mod kafka_tests {
 
         // Each event should have a unique ID (UUID v4)
         assert_ne!(event1.id(), event2.id());
-        assert_ne!(event1.time, event2.time);
+
+        // Timestamps are RFC 3339 with second resolution, so two events created
+        // in the same second may legitimately share a value. Assert the field
+        // is populated rather than unique.
+        assert!(!event1.time.is_empty());
+        assert!(!event2.time.is_empty());
     }
 
     /// Test dummy event creation
@@ -269,26 +273,26 @@ mod kafka_tests {
         assert_eq!(c1, c2);
     }
 
-    /// Metrics Integration Notes
-    ///
-    /// The KafkaPublisher records the following Prometheus metrics:
-    ///
-    /// **Success Metrics:**
-    /// - `kafka_events_published_total{topic="..."}` - Counter incremented on successful publish
-    /// - `kafka_publish_latency_ms{topic="..."}` - Histogram recording publish latency
-    ///
-    /// **Failure Metrics:**
-    /// - `kafka_events_failed_total{topic="...", error_type="..."}` - Counter for failures
-    /// - `kafka_publish_latency_ms{topic="...", error="true"}` - Latency of failed attempts
-    ///
-    /// Metrics are:
-    /// 1. Exported via Prometheus `/metrics` endpoint
-    /// 2. Integrated with OpenTelemetry OTLP when configured
-    /// 3. Tagged with topic and error information for alerting and dashboards
-    ///
-    /// Example Prometheus queries:
-    /// - `rate(kafka_events_published_total[5m])` - Events/sec publish rate
-    /// - `kafka_publish_latency_ms` - Publish latency distribution
-    /// - `rate(kafka_events_failed_total[5m])` - Failure rate by error type
+    // Metrics integration notes
+    //
+    // The KafkaPublisher records the following Prometheus metrics:
+    //
+    // Success metrics:
+    // - `kafka_events_published_total{topic="..."}` - counter incremented on successful publish
+    // - `kafka_publish_latency_ms{topic="..."}` - histogram recording publish latency
+    //
+    // Failure metrics:
+    // - `kafka_events_failed_total{topic="...", error_type="..."}` - counter for failures
+    // - `kafka_publish_latency_ms{topic="...", error="true"}` - latency of failed attempts
+    //
+    // Metrics are:
+    // 1. Exported via the Prometheus `/metrics` endpoint
+    // 2. Integrated with OpenTelemetry OTLP when configured
+    // 3. Tagged with topic and error information for alerting and dashboards
+    //
+    // Example Prometheus queries:
+    // - `rate(kafka_events_published_total[5m])` - events/sec publish rate
+    // - `kafka_publish_latency_ms` - publish latency distribution
+    // - `rate(kafka_events_failed_total[5m])` - failure rate by error type
 }
 {%- endif %}
