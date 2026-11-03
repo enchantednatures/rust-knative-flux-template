@@ -1,12 +1,30 @@
+# Non-interactive generation example: a lean project with every optional
+# feature disabled (the same shape as answering "no" to every feature prompt).
+#
+#   cargo generate --path . --name my-service --template-values-file template-values.toml
+#
+# Every placeholder is provided explicitly, so cargo-generate never prompts and
+# the command works in a non-interactive shell. For an all-features example see
+# `ci/template-values-full.toml`.
 [values]
-project_name = "audio-exporter"
-project_author = "CI Bot <ci@github.com>"
-features = ["s3"]
-event_sources = []
-enable_image_updates = true
+project_name = "example-app"
+project_author = "Your Name <you@example.com>"
+feature_s3 = false
+feature_postgres = false
+feature_kafka = false
+event_source_kafka = false
+feature_cron = false
+feature_flagger = false
+feature_gha_runner = false
+feature_cluster_smoke = false
+enable_image_updates = false
 target_namespace = "default"
-github_org = "enchantednatures"
-github_repo = "rust-knative-flux-template"
+github_org = "your-org"
+github_repo = "your-repo"
 default_branch = "main"
 image_registry = "ghcr.io"
+git_auth_secret = ""
+image_pull_secret = ""
+custom_domain = ""
+network_policy_allow_all = false
 use_default_scaling = true

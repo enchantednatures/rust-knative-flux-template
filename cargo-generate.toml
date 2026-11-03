@@ -1,33 +1,35 @@
 [template]
+# Template release version (metadata only; bumped with each Git tag).
+version = "1.0.0"
 cargo_generate_version = ">=0.23.0"
 subfolder = "."
 ignore = [
   ".git",
   ".sisyphus",
-  "tests/e2e",
   ".opencode",
   ".specify",
   "target",
+  "generated",
   "docs/TEMPLATE_GUIDE.md",
   "Cargo.lock",
   "specs",
-  "audio-stream-exporter",
   "crates/axum-cloudevents/target",
   "crates/axum-cloudevents-macros/target",
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
-  ".github/workflows/LOCAL_TESTING_QUICK_REF.md",
-  "docs/LOCAL_E2E_TESTING.md",
-  "docs/E2E_TROUBLESHOOTING.md",
-  "docs/VERSION_COMPATIBILITY.md",
-  "scripts/test-template-e2e-local.sh",
-  "scripts/cleanup-e2e-local.sh",
+  ".github/workflows/opencode.yml",
+  "docs/FEATURE_ANALYSIS.md",
+  "docs/IMPROVEMENTS_SUMMARY.md",
+  "docs/CLOUDEVENTS_KAFKA_RESEARCH.md",
+  "docs/CLOUDEVENTS_KAFKA_RESEARCH_SUMMARY.md",
+  "docs/CLOUDEVENTS_KAFKA_QUICK_REFERENCE.md",
+  # Template-authoring guidance (the generated project gets docs/CONTRIBUTING.md).
+  "AGENTS.md",
+  "CONTRIBUTING.md",
   "scripts/README.md",
-  "CHANGELOG-LOCAL-E2E.md",
-  "scripts/test-template-matrix.sh",
   "template-values.toml",
-  "ci/template-values-full.toml",
+  "ci",
   ".github/workflows/dev-setup-validation.yaml",
   ".sops.yaml",
   ".omo",
@@ -112,7 +114,7 @@ prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
 ignore = [
   "src/handlers/storage.rs",
   "tests/storage_test.rs",
-  "STORAGE.md",
+  "docs/STORAGE.md",
   "terraform/modules/minio",
 ]
 
@@ -176,7 +178,6 @@ ignore = [
   "deploy/components/postgres-pooler",
   "deploy/infrastructure/cnpg-operator",
   "deploy/flux/cnpg-operator-kustomization.yaml",
-  "deploy/flux/postgres-kustomization.yaml",
   "scripts/dev/deploy-postgres.sh",
   "scripts/dev/check-postgres-status.sh",
   "scripts/dev/port-forward-postgres.sh",
@@ -188,6 +189,10 @@ ignore = [
   "docs/POSTGRES.md",
   "docs/POSTGRES_BACKUP_RESTORE.md",
   "docs/POSTGRES_MONITORING.md",
+  "docs/POSTGRES_FLUXCD.md",
+  "tests/integration/postgres_test.rs",
+  "tests/integration/postgres_integration_test.rs",
+  "tests/integration/README.md",
   "specs/001-cloudnative-postgres-backups",
   "src/handlers/items.rs",
   "build.rs",
@@ -200,7 +205,11 @@ kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string
 kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.example.service.event.published" }
 
 [conditional.'!feature_kafka']
-ignore = ["src/handlers/kafka.rs", "tests/integration/kafka_publishing_test.rs"]
+ignore = [
+  "src/handlers/kafka.rs",
+  "tests/integration/kafka_publishing_test.rs",
+  "docs/KAFKA_PUBLISHING.md",
+]
 
 [conditional.'feature_flagger'.placeholders]
 # Minimum HTTP success rate % to allow canary promotion (rollback if below this)
@@ -256,6 +265,7 @@ ignore = [
 ignore = [
   "deploy/infrastructure/gha-runner",
   "deploy/flux/gha-runner-kustomization.yaml",
+  "docs/SELF_HOSTED_RUNNERS.md",
 ]
 
 [conditional.'!postgres_pooler']
