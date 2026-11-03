@@ -401,8 +401,6 @@ jobs:
               || { echo "FAIL: README.md missing SCHEDULED_WORK link"; exit 1; }
             grep -q 'SCHEDULED_WORK.md' docs/KNATIVE_EVENTING.md \
               || { echo "FAIL: docs/KNATIVE_EVENTING.md missing SCHEDULED_WORK link"; exit 1; }
-            grep -q 'Scheduled Work (feature_cron)' AGENTS.md \
-              || { echo "FAIL: AGENTS.md missing Scheduled Work section"; exit 1; }
 
             ! grep -rq 'kind: PingSource' deploy/ \
               || { echo "FAIL: raw PingSource manifest found in deploy/ (expected HelmRelease values only)"; exit 1; }
@@ -428,8 +426,8 @@ jobs:
             [ ! -f docs/SCHEDULED_WORK.md ] \
               || { echo "FAIL: docs/SCHEDULED_WORK.md present when feature_cron=false"; exit 1; }
 
-            ! grep -q 'feature_cron' AGENTS.md \
-              || { echo "FAIL: AGENTS.md retains feature_cron content when feature_cron=false"; exit 1; }
+            ! grep -q 'feature_cron' src/handlers/events.rs \
+              || { echo "FAIL: events handler retains feature_cron content when feature_cron=false"; exit 1; }
             ! grep -q 'SCHEDULED_WORK' README.md docs/KNATIVE_EVENTING.md \
               || { echo "FAIL: README.md/docs/KNATIVE_EVENTING.md retain SCHEDULED_WORK links when feature_cron=false"; exit 1; }
 
@@ -580,14 +578,18 @@ jobs:
           echo "✓ cluster smoke workflow rendered and valid"
         shell: bash
 
-      - name: Lint and build generated project
+      - name: Lint, format, and build generated project
         run: |
           set -euo pipefail
           cd "$GENERATED_DIR"
+          echo "Running formatting check"
+          cargo fmt --all -- --check
           echo "Running Clippy"
           cargo clippy --all-targets --all-features -- -D warnings
-          echo "Building"
+          echo "Building (debug)"
           cargo build --all-features
+          echo "Building (release profile, the profile the Docker image ships)"
+          cargo build --release --all-features
         shell: bash
 
       - name: Build generated container image
@@ -721,8 +723,6 @@ jobs:
           #   - deploy/chart/templates   legitimate Helm {{ }}
           #   - docs/FLAGGER.md / TESTING.md / MONITORING.md
           #                              intentional runtime {{ }} examples
-          #   - scripts/dev/build-and-deploy.sh
-          #                              literal template-detection probe
           if grep -rnIE 'test-org|test-repo|\{\{ (project_name|crate_name|github_org|github_repo|image_registry|kafka_|postgres_)|\{\{project_name|\{% ' . \
               --exclude-dir=.git \
               --exclude-dir=target \
@@ -730,8 +730,7 @@ jobs:
               --exclude-dir=templates \
               --exclude=FLAGGER.md \
               --exclude=TESTING.md \
-              --exclude=MONITORING.md \
-              --exclude=build-and-deploy.sh; then
+              --exclude=MONITORING.md; then
             echo "FAIL: unrendered template syntax or CI placeholders leaked into the generated tree"
             exit 1
           fi
@@ -744,3 +743,206 @@ jobs:
           cd "$GENERATED_DIR"
           ./scripts/validate-postgres-manifests.sh
         shell: bash
+
+      - name: Assert no template-internal files leaked
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          # Files that exist only to author/validate the template. If one of
+          # these shows up in generated output, the cargo-generate ignore list
+          # has a dangling entry again (see issue #177).
+          LEAKS=(
+            AGENTS.md
+            docs/FEATURE_ANALYSIS.md
+            docs/IMPROVEMENTS_SUMMARY.md
+            docs/CLOUDEVENTS_KAFKA_RESEARCH.md
+            docs/CLOUDEVENTS_KAFKA_RESEARCH_SUMMARY.md
+            docs/CLOUDEVENTS_KAFKA_QUICK_REFERENCE.md
+            docs/CHANGELOG-LOCAL-E2E.md
+            docs/TEMPLATE_GUIDE.md
+            docs/LOCAL_E2E_TESTING.md
+            docs/E2E_TROUBLESHOOTING.md
+            .github/workflows/opencode.yml
+            .github/workflows/dev-setup-validation.yaml
+            .github/workflows/template-e2e-test.yaml
+            .github/workflows/template-generate-and-validate.yaml
+            .github/workflows/naming-convention-tests.yaml
+            ci/template-values-full.toml
+            scripts/test-template-matrix.sh
+            template-values.toml
+            tests/e2e
+          )
+          failed=0
+          for f in "${LEAKS[@]}"; do
+            if [ -e "$f" ]; then
+              echo "FAIL: template-internal path leaked into generated project: $f"
+              failed=1
+            fi
+          done
+          [ "$failed" = "0" ] || exit 1
+          echo "✓ no template-internal files in generated output"
+        shell: bash
+
+  cloudevents-crates:
+    name: "axum-cloudevents crates (unit tests)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-cloudevents-${{ hashFiles('crates/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # The crates are standalone packages (own Cargo.lock), not workspace
+      # members, so each one is checked in its own directory.
+      - name: Format, lint, and test axum-cloudevents
+        run: |
+          set -euo pipefail
+          cd crates/axum-cloudevents
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --all-targets
+        shell: bash
+
+      - name: Format, lint, and test axum-cloudevents-macros
+        run: |
+          set -euo pipefail
+          cd crates/axum-cloudevents-macros
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --all-targets
+        shell: bash
+
+  integration-tests:
+    name: "Integration tests (ignored suites, live infra)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (librdkafka toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libssl-dev cmake \
+            libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev postgresql-client
+        shell: bash
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Generate all-features project
+        run: |
+          set -euo pipefail
+          TEMPLATE_SRC=$(mktemp -d)
+          rsync -a --exclude='.git' --exclude='target' "$GITHUB_WORKSPACE/" "$TEMPLATE_SRC/"
+          TEMP_DIR=$(mktemp -d)
+          cargo generate \
+            --path "$TEMPLATE_SRC" \
+            --name "test-app-full" \
+            --template-values-file "$GITHUB_WORKSPACE/ci/template-values-full.toml" \
+            --destination "$TEMP_DIR" \
+            --silent \
+            --allow-commands
+          echo "GENERATED_DIR=$TEMP_DIR/test-app-full" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Start Redis, RustFS, and PostgreSQL
+        run: |
+          set -euo pipefail
+          # GitHub service containers are unsupported on ARC-style runners, so
+          # every dependency runs on the runner's Docker daemon instead.
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+          docker run -d --name redis -p 6379:6379 redis:7-alpine
+          docker run -d --name postgres \
+            -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=app \
+            -p 5432:5432 postgres:18
+          docker run -d --name rustfs \
+            -e RUSTFS_ACCESS_KEY=rustfsadmin -e RUSTFS_SECRET_KEY=rustfsadmin \
+            -p 9000:9000 -p 9001:9001 \
+            rustfs/rustfs:1.0.1 /data
+
+          for i in $(seq 1 60); do
+            docker exec redis redis-cli ping >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec redis redis-cli ping
+
+          for i in $(seq 1 60); do
+            docker exec postgres pg_isready -U app -d app >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec postgres pg_isready -U app -d app
+
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:9000/health/live >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:9000/health/live
+
+          # The storage suite writes to the `data` bucket with the local-dev
+          # credentials; create it exactly like the Kind init job does.
+          docker run --rm --network host --entrypoint /bin/sh rustfs/rc:v0.1.36 -c '
+            set -e
+            until rc alias set local http://localhost:9000 rustfsadmin rustfsadmin >/dev/null 2>&1; do sleep 2; done
+            rc bucket create -p local/data
+          ' || true
+          echo "✓ Redis, PostgreSQL, and RustFS are up"
+        shell: bash
+
+      - name: Run ignored integration tests
+        env:
+          DATABASE_URL: postgres://app:app@localhost:5432/app
+          POSTGRES_URL: postgres://app:app@localhost:5432/app
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+          APP__REDIS__URL: redis://localhost:6379
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          cargo test --all-features -- --ignored --test-threads=1
+        shell: bash
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          docker logs redis || true
+          docker logs postgres || true
+          docker logs rustfs || true
+        shell: bash
+

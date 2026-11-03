@@ -1,0 +1,72 @@
+name: Bug report
+description: Something generated, built, or deployed incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do **not** use this form for security
+        issues — see [SECURITY.md](https://github.com/enchantednatures/rust-knative-flux-template/blob/main/SECURITY.md).
+
+  - type: input
+    id: template-version
+    attributes:
+      label: Template version
+      description: The `v*` tag you generated from, or the `[template] version` in cargo-generate.toml (append `-dirty` if you modified it).
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prompts
+    attributes:
+      label: Generation answers
+      description: The feature flags and values you passed. A values file is ideal.
+      render: toml
+      placeholder: |
+        [values]
+        project_name = "my-service"
+        feature_s3 = true
+        feature_postgres = false
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the failing command and the full error output.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        OS, Rust version (`rustc --version`), cargo-generate version
+        (`cargo generate --version`), cluster type and Knative version if the
+        failure is at deploy time.
+      placeholder: |
+        OS: Ubuntu 24.04
+        rustc: 1.99.0
+        cargo-generate: 0.23.8
+        cluster: Kind v0.31.0 / Knative Serving v1.20.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: shell
+    validations:
+      required: false

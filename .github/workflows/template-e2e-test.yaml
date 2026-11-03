@@ -194,7 +194,7 @@ jobs:
           key: rustfs-cli-0.1.36-${{ runner.os }}
 
       - name: Install Flux CLI
-        uses: fluxcd/flux2/action@main
+        uses: fluxcd/flux2/action@v2.10.0
 
       - name: Setup Kind cluster
         if: matrix.deploy == 'true'

@@ -1,0 +1,58 @@
+name: Feature request
+description: Propose a new feature flag, manifest, workflow, or documentation change
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are prioritised by how many generated projects need them
+        and whether CI can verify the result.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today? Describe the generated project's situation, not just the missing file.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        If this is a new generation prompt, describe the flag name, default value,
+        and which files it gates.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Generation (cargo-generate prompts, ignore lists)
+        - Application runtime (Rust)
+        - Kubernetes / Knative manifests
+        - Flux / GitOps
+        - CI workflows
+        - Documentation
+        - Local development (Kind)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: Verification
+      options:
+        - label: I can help test this in a generated project
+          required: false

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/enchantednatures/rust-knative-flux-template/security/advisories/new
+    about: Report security issues privately, never as a public issue.
+  - name: Question or usage help
+    url: https://github.com/enchantednatures/rust-knative-flux-template/blob/main/docs/FAQ.md
+    about: Check the FAQ and the docs/ guides before opening an issue.
+  - name: OpenCode agent
+    url: https://github.com/enchantednatures/rust-knative-flux-template/blob/main/CONTRIBUTING.md
+    about: How to work on the template and what CI checks before merge.
