@@ -194,7 +194,7 @@ jobs:
           key: rustfs-cli-0.1.36-${{ runner.os }}
 
       - name: Install Flux CLI
-        uses: fluxcd/flux2/action@main
+        uses: fluxcd/flux2/action@v2.10.0
 
       - name: Setup Kind cluster
         if: matrix.deploy == 'true'
@@ -598,11 +598,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: matrix.deploy == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push application image
         if: matrix.deploy == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./generated/${{ env.PROJECT_NAME }}
           # push for the Flux OCIRepository; load keeps the image in the local

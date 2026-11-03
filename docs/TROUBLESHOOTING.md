@@ -809,7 +809,7 @@ Where it shows up:
 - The local dev overlay uses the mutable `dev` tag.
 
 What to do:
-- Enable Flux image updates (the generated `deploy/flux/image-policy.yaml` and `image-update-automation.yaml` when `enable_image_updates` is on). On the first reconcile, `ImageUpdateAutomation` rewrites the marker to a pinned tag or digest.
+- Enable Flux image updates (the generated `deploy/flux/image-policy.yaml`, `image-repository.yaml`, and `image-update-automation.yaml` when `enable_image_updates` is on). On the first reconcile, `ImageUpdateAutomation` rewrites the marker to a pinned tag or digest.
 - Or pin explicitly: set `spec.values.services.app.image.tag` (and the DLQ `dlq.image.tag`) to a digest (`@sha256:...`) or an immutable semver tag. A digest is the safest choice because a registry cannot move it.
 - The `dev` tag is only used by the local Kind overlay, which you do not ship to a policy-enforcing cluster.
 

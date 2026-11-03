@@ -112,12 +112,12 @@ pub use my_handler::my_handler;
 # Unit tests
 cargo test
 
-# Integration tests (requires dev environment)
+# Integration tests (requires the local environment: Redis, RustFS, PostgreSQL)
 make local-up
-cargo test -- --ignored --nocapture
+cargo test --all-features -- --ignored --test-threads=1
 
-# E2E tests
-./tests/e2e/scripts/06-run-tests.sh
+# End-to-end tests run in CI (see docs/TESTING.md); reproduce locally with
+# make local-up && make dev-test
 ```
 
 ### What IDE do you recommend?
@@ -456,7 +456,7 @@ annotations:
 
 ## Additional Resources
 
-- **Getting Started**: `docs/GETTING_STARTED.md`
+- **Getting Started**: `README.md` and `docs/DEVELOPMENT.md`
 - **Development**: `docs/DEVELOPMENT.md`
 - **Deployment**: `docs/DEPLOYMENT.md`
 - **API**: `docs/API.md`

@@ -12,7 +12,7 @@ PostgreSQL metrics are exposed through:
 
 ### PodMonitor Configuration
 
-The `postgres-podmonitor.yaml` deploys two PodMonitors:
+The `Cluster`'s `monitoring.enablePodMonitor` deploys two PodMonitors:
 
 1. **postgres-metrics**: Scrapes metrics from PostgreSQL pods in the `default` namespace
    - Target: Pods with `postgresql={{ project_name }}-postgres` label
@@ -64,7 +64,7 @@ The `postgres-podmonitor.yaml` deploys two PodMonitors:
 
 ## Alert Rules
 
-All alerts are defined in `postgres-alerts.yaml` and organized by category:
+Alert rules can be added as a `PrometheusRule` next to the component and are organized by category:
 
 ### Backup Health Alerts
 

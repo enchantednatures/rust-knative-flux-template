@@ -1,206 +1,155 @@
 # Scripts Directory
 
-This directory contains utility scripts for development and testing.
+Utility scripts for local development, bootstrapping, and manifest validation.
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 scripts/
-├── test-template-e2e-local.sh    # Run E2E tests locally (mirrors CI)
-├── cleanup-e2e-local.sh          # Clean up E2E test artifacts
-├── validate-*.sh                 # Validation scripts for manifests
-├── setup-github-runners.sh       # GitHub self-hosted runner setup
-└── dev/                          # Development environment scripts
-    ├── setup-kind.sh             # Create Kind cluster
-    ├── install-knative.sh        # Install Knative Serving
-    ├── deploy-infrastructure.sh  # Deploy Redis, RustFS, etc.
+├── bootstrap-git-auth.sh         # Create the Flux SSH deploy-key Secret
+├── setup-github-runners.sh       # Register the ARC runner scale set secrets
+├── validate-postgres-manifests.sh # Validate CloudNativePG manifests
+└── dev/                          # Local Kind lifecycle
+    ├── setup-kind.sh             # Create the Kind cluster + local registry
+    ├── install-knative.sh        # Install Knative Serving + Kourier
+    ├── install-knative-eventing.sh # Install Eventing core (PingSource)
+    ├── install-knative-kafka.sh  # Install Knative Kafka controller
+    ├── deploy-infrastructure.sh  # Deploy Redis, RustFS, Kafka
     ├── deploy-observability.sh   # Deploy Jaeger, Prometheus, OTel
-    ├── build-and-deploy.sh       # Build and deploy application
-    └── port-forward.sh           # Port forward all services
+    ├── deploy-postgres.sh        # Deploy the CNPG cluster
+    ├── build-and-deploy.sh       # Build the image and deploy the Knative service
+    └── port-forward.sh           # Port-forward every service
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-### Local E2E Testing (Recommended)
-
-Run the full E2E test suite locally instead of waiting for CI:
+Use the Makefile for the normal workflow; the scripts are the implementation.
 
 ```bash
-# Run all scenarios
-./scripts/test-template-e2e-local.sh
-
-# Run specific scenario
-./scripts/test-template-e2e-local.sh no-s3
-./scripts/test-template-e2e-local.sh with-s3
-
-# Clean up
-./scripts/cleanup-e2e-local.sh
-```
-
-**Benefits:**
-- 🚀 60-70% faster than CI (8-12 min vs 30 min)
-- 💾 Uses local caching for speed
-- 🐛 Easier debugging with direct cluster access
-- ✅ Test before pushing to avoid CI failures
-
-**Documentation:**
-- [Local E2E Testing Guide](../docs/LOCAL_E2E_TESTING.md) - Complete guide
-- [Troubleshooting](../docs/E2E_TROUBLESHOOTING.md) - Fix common issues
-- [Quick Reference](../.github/workflows/LOCAL_TESTING_QUICK_REF.md) - Cheat sheet
-
-### Development Environment
-
-Use the Makefile for common development tasks:
-
-```bash
-# Start full dev environment (cluster + all services + app)
+# Start the full environment (cluster + infrastructure + app)
 make local-up
 
-# View logs
+# Application logs, status, redeploy
 make dev-logs
-
-# Rebuild and redeploy after code changes
+make dev-status
 make dev-restart
 
-# Stop everything
+# Tear down
 make local-down
 ```
 
-See the [main README](../README.md) for more Makefile targets.
+See the [main README](../README.md) for every Makefile target and
+[docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for the workflow.
 
-## 📖 Script Documentation
+## Script Documentation
 
-### E2E Testing Scripts
+### Bootstrap
 
-#### `test-template-e2e-local.sh`
+#### `bootstrap-git-auth.sh`
 
-Runs end-to-end tests for template generation locally. Mirrors the CI workflow in `.github/workflows/template-e2e-test.yaml`.
+Creates the `flux-system` SSH deploy-key Secret used by the Flux
+`GitRepository` for private repositories. Invoked by `make git-auth`.
 
-**Usage:**
-```bash
-./scripts/test-template-e2e-local.sh [scenario]
-```
+#### `setup-github-runners.sh`
 
-**Scenarios:**
-- `no-s3` - Test without S3 features
-- `with-s3` - Test with S3/RustFS features
-- `all` - Test both scenarios (default)
-
-**Requirements:**
-- Docker Desktop running
-- kind, kubectl, helm, kustomize, flux, cargo installed
-
-**What it does:**
-1. Creates Kind cluster with local registry
-2. Generates project from template
-3. Builds Docker image
-4. Installs Knative, Flux, infrastructure
-5. Deploys application via GitOps
-6. Runs health checks and API tests
-
-**On failure:**
-- Cluster stays running for debugging
-- Shows kubeconfig path for kubectl access
-- Displays debugging commands
-
-#### `cleanup-e2e-local.sh`
-
-Removes all E2E test artifacts:
-- Kind clusters (e2e-no-s3, e2e-with-s3)
-- Local registry container
-- Generated project directories
-- Temporary files
-
-**Usage:**
-```bash
-./scripts/cleanup-e2e-local.sh
-```
+Creates the `github-auth-secret` the ARC runner scale set needs. Only relevant
+when the project was generated with `feature_gha_runner`.
 
 ### Development Scripts
 
-See the [dev/](dev/) subdirectory for development environment scripts.
-
 #### `dev/setup-kind.sh`
-Creates a Kind cluster with local registry for development.
+Creates a Kind cluster with a local registry on `localhost:5001`.
 
 #### `dev/install-knative.sh`
-Installs Knative Serving v1.20.0 with Kourier ingress.
+Installs Knative Serving v1.20.0 with the Kourier ingress.
+
+#### `dev/install-knative-eventing.sh`
+Installs Knative Eventing core and the PingSource CRD (needed by
+`feature_cron`). Requires cluster-admin.
+
+#### `dev/install-knative-kafka.sh`
+Installs the Knative Kafka controller and broker (needed by
+`event_source_kafka` / `feature_kafka`).
 
 #### `dev/deploy-infrastructure.sh`
-Deploys Redis, RustFS, Kafka (optional) infrastructure services.
+Deploys Redis, RustFS, and (when enabled) Kafka, then creates the RustFS
+buckets and the claim-named Secret/ConfigMap.
 
 #### `dev/deploy-observability.sh`
-Deploys Jaeger, Prometheus, and OpenTelemetry collector.
+Deploys Jaeger, Prometheus, and the OpenTelemetry collector.
+
+#### `dev/deploy-postgres.sh`
+Deploys the CloudNativePG operator resources and the PostgreSQL cluster.
 
 #### `dev/build-and-deploy.sh`
-Builds Docker image and deploys application to Kind cluster.
+Builds the Docker image, pushes it to the local registry, renders the chart
+with the dev overlay values, and applies the Knative service.
 
 #### `dev/port-forward.sh`
-Port forwards all services for local access:
+Port-forwards every service for local access:
+
 - Application: http://localhost:8080
 - Jaeger: http://localhost:16686
 - Prometheus: http://localhost:9090
-- RustFS Console: http://localhost:9001
+- RustFS console: http://localhost:9001
 
-### Validation Scripts
-
-#### `validate-knative-service.sh`
-Validates Knative Service YAML syntax and structure.
+### Validation
 
 #### `validate-postgres-manifests.sh`
-Validates PostgreSQL CloudNativePG manifests.
+Validates the CloudNativePG manifests (Cluster, ObjectStore, ScheduledBackup)
+and the per-environment patches. Run by CI for every `feature_postgres` row.
 
-## 🐛 Troubleshooting
+## E2E Testing
 
-### Common Issues
+There is no local E2E runner any more; the suites that used to live in
+`scripts/` drifted out of sync with the manifests and were removed. End-to-end
+coverage runs in CI:
+
+- `.github/workflows/template-generate-and-validate.yaml` — generation matrix,
+  lint, build, release build, overlay/chart render, and the live-infra
+  integration suites.
+- `.github/workflows/template-e2e-test.yaml` — Kind + Knative deploy per
+  scenario with health/event/storage assertions.
+
+## Troubleshooting
 
 **Docker not running:**
 ```bash
-# macOS
-# Open Docker Desktop from Applications
-
 # Linux
 sudo systemctl start docker
+# macOS: start Docker Desktop
 ```
 
 **Script not executable:**
 ```bash
-chmod +x ./scripts/test-template-e2e-local.sh
+chmod +x ./scripts/dev/*.sh
 ```
 
 **Port conflicts:**
 ```bash
-# Check what's using port 5001
-lsof -i :5001
-
-# Stop conflicting service
-docker stop kind-registry-e2e
+lsof -i :5001        # local registry
+docker stop kind-registry-dev
 ```
 
 **Out of disk space:**
 ```bash
 docker system prune -a -f
-./scripts/cleanup-e2e-local.sh
+make local-down
 ```
 
-For detailed troubleshooting, see:
-- **[E2E Troubleshooting Guide](../docs/E2E_TROUBLESHOOTING.md)** - Comprehensive guide
-- **[Local E2E Testing Guide](../docs/LOCAL_E2E_TESTING.md)** - Usage and debugging
+## Contributing
 
-## 🤝 Contributing
+When adding a new script:
 
-When adding new scripts:
-
-1. Make them executable: `chmod +x script.sh`
-2. Add shebang: `#!/usr/bin/env bash`
-3. Use `set -euo pipefail` for safety
+1. Make it executable: `chmod +x script.sh`
+2. Add a shebang: `#!/usr/bin/env bash`
+3. Use `set -euo pipefail`
 4. Add usage documentation in comments
-5. Update this README
+5. Update this README and expose it through a Makefile target
 
-## 📚 Related Documentation
+## Related Documentation
 
-- [Main README](../README.md) - Project overview
-- [Local E2E Testing](../docs/LOCAL_E2E_TESTING.md) - Complete E2E testing guide
-- [E2E Troubleshooting](../docs/E2E_TROUBLESHOOTING.md) - Fix common issues
-- [Development Guide](../docs/DEVELOPMENT.md) - Local development workflow
-- [Makefile](../Makefile) - Common development commands
+- [Main README](../README.md)
+- [Development Guide](../docs/DEVELOPMENT.md)
+- [Testing Guide](../docs/TESTING.md)
+- [Makefile](../Makefile)

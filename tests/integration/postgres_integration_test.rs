@@ -24,7 +24,7 @@
 //! cargo test --test postgres_integration_test
 //! ```
 
-use sqlx::postgres::{PgPool, PgPoolOptions, PgQueryResult};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Row, Error as SqlxError};
 use std::env;
 use std::time::Duration;
@@ -151,6 +151,7 @@ fn build_connection_string() -> Result<String, Box<dyn std::error::Error>> {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_insert_basic_record() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -180,6 +181,7 @@ async fn test_insert_basic_record() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_insert_with_json_metadata() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -218,6 +220,7 @@ async fn test_insert_with_json_metadata() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_insert_multiple_records() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -234,10 +237,10 @@ async fn test_insert_multiple_records() {
         )
         .bind(format!("record_{}", i))
         .bind(format!("Description for record {}", i))
-        .bind(i as i32)
+        .bind(i)
         .execute(&mut *tx)
         .await
-        .expect(&format!("Failed to insert record {}", i));
+        .unwrap_or_else(|e| panic!("Failed to insert record {}: {}", i, e));
     }
 
     tx.commit().await.expect("Failed to commit transaction");
@@ -256,6 +259,7 @@ async fn test_insert_multiple_records() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_select_by_id() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -303,6 +307,7 @@ async fn test_select_by_id() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_select_with_filtering() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -320,7 +325,7 @@ async fn test_select_with_filtering() {
         .bind(i % 2 == 0) // alternate active/inactive
         .execute(&db.pool)
         .await
-        .expect(&format!("Failed to insert record {}", i));
+        .unwrap_or_else(|e| panic!("Failed to insert record {}: {}", i, e));
     }
 
     // Select active records with count > 15
@@ -350,6 +355,7 @@ async fn test_select_with_filtering() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_select_range_query() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -363,10 +369,10 @@ async fn test_select_range_query() {
             "#,
         )
         .bind(format!("range_record_{}", i))
-        .bind(i as i32)
+        .bind(i)
         .execute(&db.pool)
         .await
-        .expect(&format!("Failed to insert record {}", i));
+        .unwrap_or_else(|e| panic!("Failed to insert record {}: {}", i, e));
     }
 
     // Select records created in the last hour
@@ -383,6 +389,7 @@ async fn test_select_range_query() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_update_single_field() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -431,6 +438,7 @@ async fn test_update_single_field() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_update_multiple_fields() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -488,6 +496,7 @@ async fn test_update_multiple_fields() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_update_with_json() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -549,6 +558,7 @@ async fn test_update_with_json() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_delete_single_record() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -591,6 +601,7 @@ async fn test_delete_single_record() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_delete_multiple_records() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -604,11 +615,11 @@ async fn test_delete_multiple_records() {
             "#,
         )
         .bind(format!("delete_record_{}", i))
-        .bind(i as i32)
+        .bind(i)
         .bind(i % 2 == 0)
         .execute(&db.pool)
         .await
-        .expect(&format!("Failed to insert record {}", i));
+        .unwrap_or_else(|e| panic!("Failed to insert record {}: {}", i, e));
     }
 
     // Delete inactive records
@@ -651,6 +662,7 @@ async fn test_connection_error_handling() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_constraint_violation() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");
@@ -684,6 +696,7 @@ async fn test_constraint_violation() {
 }
 
 #[tokio::test]
+#[ignore = "requires live PostgreSQL (POSTGRES_URL)"]
 async fn test_transaction_rollback_on_error() {
     let db = TestDb::connect().await.expect("Failed to connect to database");
     db.setup_schema().await.expect("Failed to setup schema");

@@ -132,7 +132,7 @@ jobs:
       # registry directly and does not need a running builder.
       - name: Set up Docker Buildx
         if: steps.preflight.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       {% if image_registry == "ghcr.io" %}
       - name: Log in to the registry (read-only)

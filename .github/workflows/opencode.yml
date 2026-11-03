@@ -24,7 +24,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run opencode
-        uses: sst/opencode/github@latest
+        # Pinned to the commit behind the upstream `latest` tag (repo now
+        # redirects to anomalyco/opencode); floating refs are not used in this
+        # repo. Bump deliberately.
+        uses: sst/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:

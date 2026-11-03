@@ -69,9 +69,11 @@ RUN cargo build --release
 # ==============================================================================
 FROM debian:trixie-slim AS runtime
 
-# Install CA certificates for TLS connections (Redis TLS, OTLP, etc.)
-RUN apt-get update && apt-get install -y \
+# Install CA certificates for TLS connections (Redis TLS, OTLP, etc.) and curl,
+# which the Docker HEALTHCHECK below uses (slim images ship neither curl nor wget)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     tzdata \
     && rm -rf /var/lib/apt/lists/* && \
     useradd -m -u 10001 appuser
@@ -96,8 +98,10 @@ EXPOSE 8080
 # Set production environment
 ENV APP_ENV=production
 
-# Health check (Docker native, not used in K8s but useful for local testing)
+# Health check (Docker native, not used in K8s but useful for local testing).
+# Uses curl, installed in the runtime stage above; Knative probes use HTTP and
+# ignore this instruction entirely.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health/live || exit 1
+    CMD curl -fsS http://localhost:8080/health/live || exit 1
 
 ENTRYPOINT ["./{{ crate_name }}"]

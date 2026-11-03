@@ -5,7 +5,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::CloudEventError;
-use crate::headers::CE_ID;
 use crate::metadata::CloudEventMetadata;
 
 #[derive(Debug)]
@@ -97,7 +96,11 @@ where
         let (parts, body) = req.into_parts();
         let headers = &parts.headers;
 
-        let is_binary_mode = headers.contains_key(CE_ID);
+        // Binary mode is signalled by any CloudEvents header, not just `ce-id`:
+        // a request that carries `ce-source`/`ce-type` but forgot `ce-id` is a
+        // malformed binary event, and must report the missing header instead of
+        // falling back to structured mode and failing on the body as JSON.
+        let is_binary_mode = headers.keys().any(|name| name.as_str().starts_with("ce-"));
 
         if is_binary_mode {
             extract_binary_mode(parts, body, state).await
@@ -171,4 +174,203 @@ where
     let data: T = serde_json::from_slice(&bytes)?;
 
     Ok(CloudEvent::new(metadata, data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::extract::FromRequest;
+    use axum::http::Request;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Ping {
+        message: String,
+    }
+
+    fn structured(body: serde_json::Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .header("content-type", "application/cloudevents+json")
+            .body(Body::from(body.to_string()))
+            .expect("valid request")
+    }
+
+    async fn extract<T: DeserializeOwned + Send>(
+        req: Request<Body>,
+    ) -> Result<CloudEvent<T>, CloudEventError> {
+        CloudEvent::<T>::from_request(req, &()).await
+    }
+
+    #[tokio::test]
+    async fn structured_mode_parses_metadata_and_data() {
+        let req = structured(serde_json::json!({
+            "specversion": "1.0",
+            "id": "evt-1",
+            "source": "/api/v1/ping",
+            "type": "com.example.ping",
+            "datacontenttype": "application/json",
+            "dataschema": "https://schema/ping",
+            "subject": "pings/1",
+            "time": "2026-01-02T03:04:05Z",
+            "data": { "message": "pong" }
+        }));
+
+        let event = extract::<Ping>(req).await.expect("structured event");
+
+        assert_eq!(event.id(), "evt-1");
+        assert_eq!(event.source(), "/api/v1/ping");
+        assert_eq!(event.r#type(), "com.example.ping");
+        assert_eq!(event.subject(), Some("pings/1"));
+        assert_eq!(event.time(), Some("2026-01-02T03:04:05Z"));
+        assert_eq!(event.content_type(), Some("application/json"));
+        assert_eq!(
+            event.data,
+            Ping {
+                message: "pong".to_string()
+            }
+        );
+        assert_eq!(
+            event.metadata.data_schema.as_deref(),
+            Some("https://schema/ping")
+        );
+    }
+
+    #[tokio::test]
+    async fn structured_mode_defaults_specversion_when_omitted() {
+        let req = structured(serde_json::json!({
+            "id": "evt-2",
+            "source": "src",
+            "type": "com.example.ping",
+            "data": { "message": "hi" }
+        }));
+
+        let event = extract::<Ping>(req).await.expect("structured event");
+        assert_eq!(event.metadata.spec_version, "1.0");
+    }
+
+    #[tokio::test]
+    async fn structured_mode_rejects_invalid_json() {
+        let req = Request::builder()
+            .method("POST")
+            .body(Body::from("{not json"))
+            .expect("valid request");
+
+        match extract::<Ping>(req).await {
+            Err(CloudEventError::InvalidJson(_)) => {}
+            other => panic!("expected InvalidJson, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn structured_mode_rejects_empty_required_fields() {
+        for (field, payload) in [
+            (
+                "id",
+                serde_json::json!({"id": "", "source": "s", "type": "t"}),
+            ),
+            (
+                "source",
+                serde_json::json!({"id": "i", "source": "", "type": "t"}),
+            ),
+            (
+                "type",
+                serde_json::json!({"id": "i", "source": "s", "type": ""}),
+            ),
+        ] {
+            match extract::<Ping>(structured(payload)).await {
+                Err(CloudEventError::MissingField(name)) => assert_eq!(name, field),
+                other => panic!("expected MissingField({field}), got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn structured_mode_rejects_a_missing_required_field() {
+        let req = structured(serde_json::json!({"source": "s", "type": "t"}));
+
+        match extract::<Ping>(req).await {
+            Err(CloudEventError::InvalidJson(_)) => {}
+            other => panic!("expected InvalidJson for a missing field, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn binary_mode_parses_metadata_from_headers() {
+        let req = Request::builder()
+            .method("POST")
+            .header("ce-id", "evt-3")
+            .header("ce-source", "/api/v1/ping")
+            .header("ce-type", "com.example.ping")
+            .header("ce-specversion", "1.0")
+            .header("ce-subject", "pings/3")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"from headers"}"#))
+            .expect("valid request");
+
+        let event = extract::<Ping>(req).await.expect("binary event");
+
+        assert_eq!(event.id(), "evt-3");
+        assert_eq!(event.source(), "/api/v1/ping");
+        assert_eq!(event.r#type(), "com.example.ping");
+        assert_eq!(event.subject(), Some("pings/3"));
+        assert_eq!(event.time(), None);
+        assert_eq!(
+            event.data,
+            Ping {
+                message: "from headers".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn binary_mode_reports_missing_required_headers() {
+        let req = Request::builder()
+            .method("POST")
+            .header("ce-source", "/api/v1/ping")
+            .header("ce-type", "com.example.ping")
+            .body(Body::from(r#"{"message":"x"}"#))
+            .expect("valid request");
+
+        match extract::<Ping>(req).await {
+            Err(CloudEventError::MissingHeader(name)) => assert_eq!(name, "ce-id"),
+            other => panic!("expected MissingHeader(ce-id), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn binary_mode_rejects_a_body_that_does_not_match_the_payload_type() {
+        let req = Request::builder()
+            .method("POST")
+            .header("ce-id", "evt-4")
+            .header("ce-source", "/api/v1/ping")
+            .header("ce-type", "com.example.ping")
+            .body(Body::from(r#"{"unexpected":true}"#))
+            .expect("valid request");
+
+        match extract::<Ping>(req).await {
+            Err(CloudEventError::InvalidJson(_)) => {}
+            other => panic!("expected InvalidJson, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accessors_and_into_parts_expose_metadata_and_data() {
+        let metadata = CloudEventMetadata::new("id", "src", "com.example.ping");
+        let event = CloudEvent::new(
+            metadata,
+            Ping {
+                message: "x".to_string(),
+            },
+        );
+
+        assert_eq!(event.id(), "id");
+        assert_eq!(event.source(), "src");
+        assert_eq!(event.r#type(), "com.example.ping");
+
+        let (meta, data) = event.into_parts();
+        assert_eq!(meta.id, "id");
+        assert_eq!(data.message, "x");
+    }
 }

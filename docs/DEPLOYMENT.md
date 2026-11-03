@@ -32,7 +32,7 @@ When generating a project from this template, you'll be prompted for a `project_
 
 **Why This Matters**: Knative Services **cannot** contain underscores in their names. Using underscores will cause `ImagePullBackOff` errors because the image tag won't match the service name. The template handles this normalization automatically.
 
-> **For Detailed Information**: See the "Naming Conventions" section in [`../AGENTS.md`](../AGENTS.md) for comprehensive documentation on how naming works across all template files, common issues, and solutions.
+> **For Detailed Information**: Naming is normalized at generation time: Rust uses underscores, Kubernetes and Docker use hyphens. See the naming checks in `.github/workflows/naming-convention-tests.yaml` in the template repository.
 
 ## Table of Contents
 
@@ -251,9 +251,12 @@ Generation knobs that shape this flow:
 | `image_pull_secret` | Adds `imagePullSecrets` to the app image; create the encrypted Secret from `deploy/overlays/dev/image-pull-secret.sops.yaml.example` |
 | `custom_domain` | Adds a `ClusterDomainClaim` + `DomainMapping` (dev overlay) for the given hostname |
 | `network_policy_allow_all` | Adds an allow-all NetworkPolicy to the dev namespace |
-| `target_namespace` | Namespace for every overlay (each generates `namespace.yaml` when it is not `default`) |
+| `target_namespace` | Namespace for every overlay (each renders a Namespace object when it is not `default`) |
+| `postgres_storage_class` | Sets `spec.storage.storageClass` on the CNPG `Cluster` (default `standard`) |
+| `postgres_instances_{dev,staging,prod}` | Replica count per environment (1/2/3) |
+| `postgres_pooler` | Adds the PgBouncer `Pooler` and routes the app through `APP__POSTGRES__HOST` |
 
-The Kubeconfig used by `make bootstrap`/`make deploy` is `$KUBECONFIG` when set, otherwise `CLUSTER_KUBECONFIG` (defaults to `~/.kube/config`). The local Kind cluster is `make local-up` / `make local-down`; SOPS configuration starts from the gitignored `.sops.yaml` (copy `.sops.yaml.example`).
+The Kubeconfig used by `make bootstrap`/`make deploy` is `$KUBECONFIG` when set, otherwise `CLUSTER_KUBECONFIG` (defaults to `~/.kube/config`). The local Kind cluster is `make local-up` / `make local-down`; SOPS configuration starts from the gitignored `.sops.yaml` (copy `.sops.yaml.example`); no Secret is SOPS-encrypted in the generated tree.
 
 ### Step 1: Create GitRepository
 
@@ -394,7 +397,7 @@ flux get kustomizations --watch
 {% if feature_cluster_smoke %}
 ## Post-Deploy Verification (Cluster Smoke)
 
-The local Kind suite (`make local-up`, `test-template-e2e-local.sh`) proves the manifests render and the service works against the fakes it ships with. It cannot prove the parts that only exist on a real cluster: ObjectBucketClaim binding to Ceph RGW, registry pulls with real credentials, DNS/cert issuance for `DomainMapping`, admission policies, or image automation committing tags back to git.
+The local Kind suite (`make local-up`, `make dev-test`) proves the manifests render and the service works against the fakes it ships with. It cannot prove the parts that only exist on a real cluster: ObjectBucketClaim binding to Ceph RGW, registry pulls with real credentials, DNS/cert issuance for `DomainMapping`, admission policies, or image automation committing tags back to git.
 
 `feature_cluster_smoke` generates `.github/workflows/smoke-deploy.yaml`, which closes that gap **without ever deploying**:
 
@@ -797,7 +800,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Run Clippy
@@ -806,7 +809,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run tests
         run: cargo test --all-features
   
@@ -814,9 +817,9 @@ jobs:
     needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: |
@@ -851,9 +854,9 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build and push release image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: |

@@ -28,8 +28,9 @@ fi
 echo "Building and deploying application..."
 echo ""
 
-# Check if this is a template project (Cargo.toml.liquid with template variables)
-if [[ -f "${PROJECT_ROOT}/Cargo.toml.liquid" ]] && grep -q {% raw %} "{{ crate_name }}" {% endraw %} "${PROJECT_ROOT}/Cargo.toml.liquid"; then
+# The template repository ships Cargo.toml.liquid (unrendered placeholders)
+# instead of a concrete Cargo.toml; there is nothing to build from it.
+if [[ -f "${PROJECT_ROOT}/Cargo.toml.liquid" ]]; then
 	echo -e "${YELLOW}⚠ Template Project Detected${NC}"
 	echo "This is a cargo-generate template repository."
 	echo ""

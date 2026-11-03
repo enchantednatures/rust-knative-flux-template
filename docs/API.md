@@ -514,13 +514,50 @@ All error responses follow a consistent format:
 
 ## Rate Limiting
 
-Currently not implemented. Rate limiting can be added via middleware:
+The API is rate limited by [`tower_governor`](https://crates.io/crates/tower-governor),
+applied in `src/routes.rs` to the `/api/v1/*` router only:
+
+| Setting | Value | Meaning |
+|---------|-------|---------|
+| `per_second` | 100 | Tokens replenished per second, per client |
+| `burst_size` | 50 | Maximum tokens a client may accumulate (burst) |
+
+The client key is the connection's peer IP address (the Knative activator or
+Kourier gateway address in-cluster), so limits apply per upstream connection.
+
+**Exceeding the limit** returns `429 Too Many Requests` with rate-limit
+headers:
+
+```
+HTTP/1.1 429 Too Many Requests
+x-ratelimit-limit: 50
+x-ratelimit-remaining: 0
+x-ratelimit-after: 1
+content-type: text/plain; charset=utf-8
+
+Too Many Requests
+```
+
+`x-ratelimit-after` is the number of seconds to wait before retrying.
+
+Health (`/health/live`, `/health/ready`), `/metrics`, `/` (CloudEvents sink)
+and the Swagger UI are **not** rate limited, so probes and Knative event
+delivery are never throttled.
+
+`AppError::RateLimit` exists for handlers that apply their own admission
+control (it maps to `429` with the standard error body); the router-level
+governor does not use it.
+
+To tune the limit, change the values in `create_router`:
 
 ```rust
-use tower_http::limit::ConcurrencyLimitLayer;
-
-let app = Router::new()
-    .layer(ConcurrencyLimitLayer::max(100));
+let governor_conf = Arc::new(
+    GovernorConfigBuilder::default()
+        .per_second(100)
+        .burst_size(50)
+        .finish()
+        .expect("Failed to build rate limiter configuration"),
+);
 ```
 
 ---

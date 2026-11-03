@@ -32,36 +32,30 @@ bundled RustFS, which mimics the same contract. See
 
 ### Local Development (RustFS)
 
-RustFS is provided in `docker-compose.yaml` for development:
+Local development runs RustFS inside the Kind cluster
+(`deploy/dev/infrastructure/rustfs.yaml.liquid`). `make local-up` deploys it
+along with an init Job that creates the buckets:
 
-```yaml
-services:
-  rustfs:
-    image: rustfs/rustfs:1.0.1
-    command: ["/data"]
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web Console
-    environment:
-      RUSTFS_ACCESS_KEY: rustfsadmin
-      RUSTFS_SECRET_KEY: rustfsadmin
-```
-
-Start it with:
 ```bash
-docker-compose up -d rustfs rustfs-init
+make local-up          # Kind + RustFS + the rustfs-init bucket job
+make dev-forward       # expose the API on :9000 and the console on :9001
 ```
 
-This automatically:
-1. Starts RustFS on http://localhost:9000
-2. Creates the `data` bucket via the `rustfs-init` service (using the `rc` CLI)
-3. Makes web console available at http://localhost:9001
+The init Job uses the `rc` CLI to create:
 
-> **Local development only.** The docker-compose flow uses the bundled `data`
-> bucket and the `rustfsadmin` / `rustfsadmin` credentials above. Deployed
-> environments never use these literals: the provisioner creates the
-> `<project>-app-data` bucket, Secret and ConfigMap, and the app consumes those
-> (see [Kubernetes Deployment](#kubernetes-deployment)).
+1. `<project>-app-data`, named after the `ObjectBucketClaim` the chart creates
+   in a real cluster
+2. `<project>-postgres-backups`, the barman backup destination
+
+and writes the claim-named Secret (`AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`) and ConfigMap (`BUCKET_HOST` / `BUCKET_PORT` /
+`BUCKET_NAME`) that the app reads, mimicking the provisioner contract.
+
+> **Local development only.** The Kind RustFS uses the `rustfsadmin` /
+> `rustfsadmin` credentials defined in the dev manifest. Deployed environments
+> never use these literals: the provisioner creates the bucket, Secret and
+> ConfigMap, and the app consumes those (see
+> [Kubernetes Deployment](#kubernetes-deployment)).
 
 ### Configuration Priority
 
@@ -179,14 +173,14 @@ async fn delete_handler(
 Integration tests are provided in `tests/storage_test.rs`:
 
 ```bash
-# Start RustFS
-docker-compose up -d rustfs rustfs-init
+# Start the local environment (Kind + RustFS + buckets)
+make local-up
 
-# Run tests
+# Run the storage suite (bucket `data`, rustfsadmin credentials)
 cargo test --test storage_test -- --ignored --nocapture
 
-# Run all tests (including integration tests)
-cargo test -- --ignored
+# Run every infrastructure-backed suite
+cargo test --all-features -- --ignored --test-threads=1
 ```
 
 Test operations covered:
@@ -437,10 +431,9 @@ Key points:
 
 ## Troubleshooting
 
-> The steps below target the local docker-compose / Kind RustFS (`rustfsadmin`
-> credentials, `data` bucket). Deployed environments get their bucket and
-> credentials from the ObjectBucketClaim; check the provisioner Secret/ConfigMap
-> instead.
+> The steps below target the local Kind RustFS (`rustfsadmin` credentials).
+> Deployed environments get their bucket and credentials from the
+> ObjectBucketClaim; check the provisioner Secret/ConfigMap instead.
 
 ### Connection refused error
 

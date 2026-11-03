@@ -133,12 +133,11 @@ same-namespace short Service name) for publishing.
   `APP__KAFKA__BROKER_URL`. `make local-up` therefore uses the local Kafka
   StatefulSet from `deploy/dev/infrastructure/kafka.yaml`.
 
-### Pre-release chart pin
+### Chart support
 
-`deploy/chart/Chart.yaml` pins the ksvc chart to the PR pre-release
-`0.10.0-pr.113.cfe87a8`. This is temporary until
-[charts PR #113](https://github.com/enchantednatures/charts/pull/113) merges;
-switch back to a released version afterwards.
+Managed Kafka requires the ksvc chart that ships the `kafka.cluster`,
+`kafka.broker`, and `kafka.triggers` values (`ksvc >= 0.10.0`; the template
+pins `1.0.0`).
 {% endif %}
 
 ---
@@ -373,9 +372,11 @@ pub fn parse_event(ce_type: &str, body: &str) -> Result<EventPayload, AppError> 
 
 The template generates **one KafkaSource for one topic**. To subscribe to additional topics:
 
-### 1. Create Additional KafkaSource YAML
+### 1. Model the additional source
 
-**Example: `deploy/base/kafka-source-orders.yaml`**
+The chart renders one KafkaSource per `kafka.sources` entry. The equivalent
+manifest for an `orders` source looks like this (the chart fills in the sink and
+DLQ service names from the values):
 ```yaml
 apiVersion: sources.knative.dev/v1beta1
 kind: KafkaSource
@@ -406,16 +407,39 @@ spec:
   initialOffset: latest
 ```
 
-### 2. Add to Kustomization
+### 2. Add the source to the HelmRelease values
 
-**Update `deploy/base/kustomization.yaml`:**
+KafkaSources are rendered by the chart, not applied as raw manifests. Add a
+second entry under `spec.values.kafka.sources` in `deploy/base/helmrelease.yaml`
+and point `sink` at the named `services` key (`app`). Flux renders it on the next
+reconcile — there is no kustomization resource to add.
+
 ```yaml
-resources:
-  - knative-service.yaml
-  - kafka-source.yaml
-  - kafka-source-orders.yaml  # Add new source
-  - dlq-handler.yaml
+spec:
+  values:
+    kafka:
+      sources:
+        orders:
+          topic: "orders"
+          consumerGroup: "<project-name>-orders-consumers"
+          bootstrapServers:
+            - "kafka.kafka.svc.cluster.local:9092"
+          consumers: 3
+          initialOffset: latest
+          sink: "app"
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+          dlq:
+            enabled: true
+            image:
+              repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
+              tag: "latest"
 ```
+
+Each source gets its own `<project>-<source>-dlq` Service; the HelmRelease
+postRenderer strips the `fieldRef` env list Knative >= 1.23 rejects.
 
 ### 3. Create Topic
 
@@ -549,7 +573,7 @@ The template uses Knative's `event_display` container as a simple DLQ handler. T
 
 **For production**, replace the DLQ handler with a custom service:
 
-**Edit `deploy/base/dlq-handler.yaml`:**
+**Edit the DLQ settings under `spec.values.kafka.sources.<name>.dlq` in `deploy/base/helmrelease.yaml`:**
 ```yaml
 spec:
   template:
@@ -608,7 +632,7 @@ the staging/prod overlays are not rendered. Those overlays still tune
 
 For staging/prod environments, configure external Kafka clusters via overlay patches.
 
-**Staging:** `deploy/overlays/staging/kafka-source-patch.yaml`
+**Staging:** the `kafka.sources` values patched in `deploy/overlays/staging/kustomization.yaml`
 ```yaml
 spec:
   bootstrapServers:
@@ -617,7 +641,7 @@ spec:
   initialOffset: earliest  # Don't miss events
 ```
 
-**Production:** `deploy/overlays/prod/kafka-source-patch.yaml`
+**Production:** the `kafka.sources` values patched in `deploy/overlays/prod/kustomization.yaml`
 ```yaml
 spec:
   bootstrapServers:

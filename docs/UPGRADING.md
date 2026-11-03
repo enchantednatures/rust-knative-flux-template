@@ -24,17 +24,42 @@ Template uses Semantic Versioning: `MAJOR.MINOR.PATCH`
 
 ### Current Version
 
-Check template version in `cargo-generate.toml`:
+The template version is declared in `cargo-generate.toml`:
+
 ```toml
 [template]
-cargo_generate_version = ">=0.18.0"
+version = "1.0.0"                # template release (this repo)
+cargo_generate_version = ">=0.23.0"   # minimum cargo-generate CLI
+```
+
+`version` is template metadata (cargo-generate ignores unknown keys), and is
+bumped with each tagged release. `cargo_generate_version` is the minimum CLI
+version the config schema requires.
+
+### Generated project versions
+
+A generated project starts at `0.1.0` in both `Cargo.toml` and
+`deploy/chart/Chart.yaml`; those follow the *generated project's* release
+cadence, which is independent of the template's `[template] version`. Bump them
+with the project's first release, not when regenerating.
+
+Generate non-interactively from a values file:
+
+```bash
+# Lean project (every feature off); see template-values.toml in the template repo
+cargo generate --path <template> --name my-service \
+  --template-values-file template-values.toml --silent --allow-commands
+
+# All features; see ci/template-values-full.toml
+cargo generate --path <template> --name my-service \
+  --template-values-file ci/template-values-full.toml --silent --allow-commands
 ```
 
 ### Finding Latest Version
 
 ```bash
 # Check GitHub releases
-gh release list --repo your-org/rust-knative-flux-template
+gh release list --repo enchantednatures/rust-knative-flux-template
 
 # Or check git tags
 git tag --list 'v*'
@@ -50,9 +75,8 @@ git tag --list 'v*'
 
 Edit `cargo-generate.toml`:
 ```toml
-# Add version variable
 [template]
-version = "1.0.0"  # Update this
+version = "1.1.0"  # Update this and tag the release
 ```
 
 #### 2. Update CHANGELOG.md
@@ -153,7 +177,7 @@ Check `CHANGELOG.md` in template repository:
 ```bash
 git clone https://github.com/your-org/rust-knative-flux-template.git
 cd rust-knative-flux-template
-cat docs/CHANGELOG.md
+cat CHANGELOG.md
 ```
 
 Look for:
@@ -578,7 +602,7 @@ kubectl logs deployment/my-service -n my-service-prod --tail=100
 
 ## Additional Resources
 
-- **CHANGELOG**: See `docs/CHANGELOG.md` in template repository
+- **CHANGELOG**: See `CHANGELOG.md` in template repository
 - **Template Issues**: https://github.com/your-org/rust-knative-flux-template/issues
 - **Migration Discussions**: Check GitHub Discussions
 - **Contributing**: See `docs/CONTRIBUTING.md`

@@ -4,13 +4,19 @@ This document outlines Knative-specific constraints, limitations, and best pract
 
 ## Running Local Validation
 
-Before deploying, always run the validation script to catch configuration errors early:
+Before deploying, render the chart and check the resulting Knative Service:
 
 ```bash
-./scripts/validate-knative-service.sh
+# Local chart + the HelmRelease values it is rendered with
+helm dependency build deploy/chart
+yq eval '.spec.values' deploy/base/helmrelease.yaml > /tmp/values.yaml
+helm template my-service deploy/chart -f /tmp/values.yaml -n default > /tmp/rendered.yaml
+
+# Overlay render (HelmRelease + Flux wiring)
+kubectl kustomize deploy/overlays/dev > /tmp/overlay.yaml
 ```
 
-This script checks for:
+CI runs both of these for every generated project. This catches:
 - ✓ Unsupported field references (fieldRef)
 - ✓ Invalid kustomize configurations  
 - ✓ Missing security contexts
@@ -71,7 +77,7 @@ kind: Kustomization
 
 # Remove commonLabels! ✓
 resources:
-  - knative-service.yaml
+  - helmrelease.yaml
 ```
 
 **Why:** Knative Services handle their own label selectors. Labels should be defined directly in the Service manifest, not via Kustomize's commonLabels.
@@ -326,9 +332,10 @@ error: trouble configuring builtin PatchTransformer
 2. **Missing or extra fields** - typos in patch paths
 3. **Invalid base paths** - kustomization can't find base resources
 
-**Solution:** Run validation script
+**Solution:** Render the chart and overlays
 ```bash
-./scripts/validate-knative-service.sh
+helm template my-service deploy/chart -f <(yq eval '.spec.values' deploy/base/helmrelease.yaml) -n default
+kubectl kustomize deploy/overlays/dev
 ```
 
 ---

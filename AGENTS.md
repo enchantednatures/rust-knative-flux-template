@@ -695,7 +695,7 @@ deploy/
 │   ├── secret.yaml.example
 │   └── object-storage-secret.yaml.example
 ├── chart/                       # Local Helm chart wrapping the ksvc chart dependency
-│   ├── Chart.yaml               # ksvc 0.9.0 (oci://ghcr.io/enchantednatures/charts)
+│   ├── Chart.yaml               # ksvc 1.0.0 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
 │   └── flagger/                 # Canary + metric templates (staging/prod)
@@ -868,7 +868,7 @@ Per-env instance numbers are patched by overlays (1/2/4), and the CR is
 entirely absent when the prompt answers `false`.
 
 ## Active Technologies
-- Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
+- Rust 1.92+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage backed by chart-provisioned ObjectBucketClaims (Ceph RGW in dev/staging/prod, RustFS for local Kind) (001-cloudnative-postgres-backups)
 - Flagger >=1.41.0 (optional, `flagger` feature flag — 1.41 introduced the Knative provider), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
 - GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
@@ -1061,6 +1061,7 @@ deploy/
 ```
 
 ## Recent Changes
+- v1.0.0-readiness: Tagged `v1.0.0`. Fixed the LICENSE/metadata mismatch (MIT), the Docker HEALTHCHECK (install `curl`; `wget` was absent), Flagger metric-template variables being eaten by Liquid (`{% raw %}`), a generated README documenting a nonexistent docker-compose flow, and `postgres_storage_class` being a dead prompt (now sets the CNPG Cluster `storage.storageClass`). Wired the orphaned `tests/integration/{kafka_publishing_test,postgres_integration_test}.rs` into `tests/integration.rs` (live-DB cases `#[ignore]`d) and added a CI job that runs them against Redis/RustFS/PostgreSQL; added 22 unit tests for the `axum-cloudevents` crates (which found two real bugs: the derive only accepted the `=` attribute form, and a missing `ce-id` fell through to JSON parsing). CI now runs `cargo fmt --check` and a release-profile build, pins every floating action ref, retargets the naming tests to the HelmRelease/chart on PR/push, and asserts template-internal files never leak. Deleted the stale local test surface (`scripts/test-template-matrix.sh`, `tests/e2e`, `validate-knative-service.sh`, …); E2E lives in `template-e2e-test.yaml`. Root `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue/PR templates added; `AGENTS.md` is excluded from generated projects.
 {% if feature_cron %}
 - feature-cron-scheduled-work: Added opt-in `feature_cron` scheduled work with a Knative PingSource (`pingsources.scheduled`, fixed type `dev.knative.sources.ping`, root `sink: "app"`), a `dev.knative.sources.ping` handler branch, and a local-dev Eventing install script. CronJobSource was removed in Knative Eventing v0.14, so the template does not use it. Deliveries are not retried and missed schedules are not replayed; see `docs/SCHEDULED_WORK.md`.
 {% endif %}
@@ -1073,6 +1074,6 @@ deploy/
 - shipped-cnpg-stack: Built the full shipped `feature_postgres` stack — `deploy/components/postgres` holds the CNPG Cluster (TLS enforced via pg_hba, SCRAM, plugin WAL archiver), barman-cloud ObjectStore and ScheduledBackup; per-env JSON6902 patches in overlays set instances (1/2/3) and retention (7/14/30d); per-env app Flux Kustomizations gained `dependsOn: cnpg-operator`, Cluster healthChecks and SOPS decryption (the dangling `deploy/flux/postgres-kustomization.yaml` was removed)
 - shipped-postgres-runtime: sqlx 0.8.6 pool + embedded migrations run at startup (advisory locked); `PostgresConfig` (figment APP__POSTGRES__*), demo items upsert/get handlers, `AppError::Database`, DB SELECT 1 in `/health/ready` only, CA cert mounted at `/etc/secrets/pg-ca/ca.crt`, `APP__POSTGRES__URL` from the auto-generated `<cluster>-app` secret
 - cnpg-operator-cluster-wide: Moved CNPG operator 1.28.0 + Barman plugin v0.11.0 from dev-only Kustomize Component (`deploy/components/operator`, deleted) to cluster-wide FluxCD install (`deploy/infrastructure/cnpg-operator` + `deploy/flux/cnpg-operator-kustomization.yaml`), wired into all env flux configs gated by `feature_postgres`
-- 001-cloudnative-postgres-backups: Added Rust 1.75+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen
+- 001-cloudnative-postgres-backups: Added Rust 1.92+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen
 - flagger-canary: Added opt-in Flagger canary release promotion with Knative provider, Prometheus metric gates (success rate + p99 latency + custom), and FluxCD HelmRelease operator lifecycle management
 - gha-runner: Added opt-in per-repo GitHub Actions self-hosted runner (ARC gha-runner-scale-set) with Docker-in-Docker sidecar, scale-to-zero, and FluxCD lifecycle management
