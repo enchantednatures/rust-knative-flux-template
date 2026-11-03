@@ -435,6 +435,37 @@ jobs:
           fi
         shell: bash
 
+      - name: Assert no Kafka residue when disabled
+        if: matrix.event_source_kafka == 'false'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          [ ! -f deploy/dev/infrastructure/kafka.yaml ] \
+            || { echo "FAIL: Kind Kafka StatefulSet present when event_source_kafka=false"; exit 1; }
+          [ ! -d deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno present when event_source_kafka=false"; exit 1; }
+
+          echo "✓ no Kafka residue (event_source_kafka=false)"
+        shell: bash
+
+      - name: Assert no managed-Kafka residue
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          # The matrix never sets kafka_managed_cluster, so it defaults to
+          # false: no managed cluster, no Broker/Trigger, no tuning exception.
+          [ ! -d deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno present with kafka_managed_cluster=false"; exit 1; }
+          ! grep -q 'kafka_managed_cluster' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: kafka_managed_cluster leaked into the HelmRelease"; exit 1; }
+          ! grep -q 'triggers:' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: managed Kafka triggers present with kafka_managed_cluster=false"; exit 1; }
+
+          echo "✓ no managed-Kafka residue"
+        shell: bash
+
       - name: Validate Flagger per-env metric gates
         if: matrix.feature_flagger == 'true'
         run: |
@@ -639,6 +670,14 @@ jobs:
             exit 1
           fi
 
+          # The Kyverno exception only makes sense for a managed cluster.
+          [ -f deploy/kyverno/policyexception.yaml ] \
+            || { echo "FAIL: deploy/kyverno/policyexception.yaml missing in managed mode"; exit 1; }
+          require_value "kyverno exception name" "marrakesh-kafka-tuning" \
+            "$(yq '.metadata.name' deploy/kyverno/policyexception.yaml)"
+          require_value "kyverno exception namespace" "kyverno-system" \
+            "$(yq '.metadata.namespace' deploy/kyverno/policyexception.yaml)"
+
           # The dev overlay must not pin an external bootstrap/sink in managed mode.
           kubectl kustomize deploy/overlays/dev > /tmp/managed-dev.yaml
           require_value "dev cluster enabled" "true" \
@@ -664,6 +703,12 @@ jobs:
             "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.bootstrapServers[0]' /tmp/managed-app-overlay.yaml)"
           require_value "kind fallback source sink" "app" \
             "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.sink' /tmp/managed-app-overlay.yaml)"
+          require_value "kind fallback app broker URL" "kafka.kafka.svc.cluster.local:9092" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL") | .value' /tmp/managed-app-overlay.yaml | head -1)"
+          # A duplicate env name is rejected by the API server, so the fallback
+          # must rewrite the dev overlay entry, not append another one.
+          require_value "kind fallback single broker env" "1" \
+            "$(yq 'select(.kind == "HelmRelease") | [.spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL")] | length' /tmp/managed-app-overlay.yaml)"
           if [[ "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka | has("broker")' /tmp/managed-app-overlay.yaml)" != "false" ]]; then
             echo "FAIL: Kind fallback kept kafka.broker"
             exit 1
@@ -797,6 +842,14 @@ jobs:
             || { echo "FAIL: deadLetterSink missing from rendered chart"; exit 1; }
           grep -q 'test-app-full-events-dlq' "$RENDERED" \
             || { echo "FAIL: DLQ service name missing from rendered chart"; exit 1; }
+
+          # kafka_managed_cluster=false in ci/template-values-full.toml: the
+          # managed Redpanda cluster, Broker, Trigger, and Kyverno exception
+          # must all be absent.
+          ! grep -qE '^kind: (Redpanda|Broker|Trigger)$' "$RENDERED" \
+            || { echo "FAIL: managed Kafka objects rendered with kafka_managed_cluster=false"; exit 1; }
+          [ ! -e deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno shipped with kafka_managed_cluster=false"; exit 1; }
 
           PINGSOURCE_COUNT=$(grep -c '^kind: PingSource$' "$RENDERED" || true)
           [ "$PINGSOURCE_COUNT" = "1" ] \
