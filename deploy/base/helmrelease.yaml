@@ -196,7 +196,8 @@ spec:
         replicas: 1
         storage:
           size: "10Gi"
-          storageClassName: "ceph-block"
+          # Empty falls back to the cluster's default StorageClass.
+          storageClassName: "{{ kafka_storage_class }}"
         resources:
           requests:
             cpu: "500m"

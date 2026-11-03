@@ -85,8 +85,10 @@ application namespace.
 
 ### What gets rendered
 
-- **Redpanda** cluster `<project>-kafka` (1 replica, 10Gi `ceph-block`, no
-  TLS/SASL) plus the source **Topic** (`{{ kafka_topic }}`).
+- **Redpanda** cluster `<project>-kafka` (1 replica, 10Gi on the
+  `{{ kafka_storage_class }}` StorageClass, no TLS/SASL) plus the source
+  **Topic** (`{{ kafka_topic }}`). Set `kafka_storage_class` at generation time;
+  leave it empty to use the cluster's default StorageClass.
 - **Knative Kafka Broker** `<project>-kafka-broker` with its ConfigMap
   `<project>-kafka-broker-config`.
 - **Trigger** `<project>-{{ kafka_topic }}-trigger` that routes Broker events to

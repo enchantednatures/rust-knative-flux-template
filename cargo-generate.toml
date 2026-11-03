@@ -125,6 +125,10 @@ kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)"
 kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
 kafka_managed_cluster = { prompt = "Self-deploy a chart-managed Redpanda Kafka cluster and Kafka Broker (requires the Redpanda operator and the Kyverno exception; Kind local-up falls back to the local broker)?", type = "bool", default = false }
 
+[conditional.'event_source_kafka && kafka_managed_cluster'.placeholders]
+# StorageClass for the managed Redpanda brokers' PVCs.
+kafka_storage_class = { prompt = "StorageClass for the managed Kafka brokers (empty = cluster default)", type = "string", default = "ceph-block" }
+
 [conditional.'!event_source_kafka']
 ignore = [
   # Ignore entries match the RENDERED filename, not the `.liquid` source.

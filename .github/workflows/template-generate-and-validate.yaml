@@ -664,6 +664,8 @@ jobs:
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.initContainers.tuning.tune_aio_events' /tmp/managed-render.yaml | head -1)"
           require_value "sidecar memory limit" "512Mi" \
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.podTemplate.spec.containers[] | select(.name == "sidecar") | .resources.limits.memory' /tmp/managed-render.yaml | head -1)"
+          require_value "managed broker StorageClass" "ceph-block" \
+            "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.storage.persistentVolume.storageClass' /tmp/managed-render.yaml | head -1)"
 
           if grep -qE 'redpanda-cluster|kafka\.kafka' /tmp/managed-render.yaml; then
             echo "FAIL: managed render still references an external Kafka cluster"
