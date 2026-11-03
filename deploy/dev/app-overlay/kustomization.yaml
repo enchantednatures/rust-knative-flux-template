@@ -54,12 +54,25 @@ patches:
       - op: add
         path: /spec/values/kafka/sources/{{ kafka_topic }}/sink
         value: app
-      # The dev overlay replaced the env list with the managed short name;
-      # append the local broker override so Kind resolves the local Kafka.
-      - op: add
-        path: /spec/values/services/app/env/-
-        value:
-          name: APP__KAFKA__BROKER_URL
-          value: "kafka.kafka.svc.cluster.local:9092"
 {% endif %}
+{% endif %}
+
+{% if event_source_kafka and kafka_managed_cluster %}
+# The dev overlay sets APP__KAFKA__BROKER_URL to the managed short name
+# (`<project>-kafka:9093`) inside its wholesale env replace. A JSON6902 `add`
+# would append a second entry with the same name, which the API server rejects
+# ("Duplicate value"); a replacement rewrites the existing entry in place.
+# The source is the KafkaSource bootstrap patched above, so the publisher and
+# the consumer always point at the same broker.
+replacements:
+  - source:
+      kind: HelmRelease
+      name: {{ project_name | replace: "_", "-" }}
+      fieldPath: spec.values.kafka.sources.{{ kafka_topic }}.bootstrapServers.0
+    targets:
+      - select:
+          kind: HelmRelease
+          name: {{ project_name | replace: "_", "-" }}
+        fieldPaths:
+          - spec.values.services.app.env.[name=APP__KAFKA__BROKER_URL].value
 {% endif %}
