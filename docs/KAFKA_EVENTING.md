@@ -183,7 +183,7 @@ exercise this path. `deploy/dev/app-overlay` removes the bucket claims.
 
 Managed Kafka requires the ksvc chart that ships the `kafka.cluster`,
 `kafka.broker`, and `kafka.triggers` values (`ksvc >= 0.10.0`; the template
-pins `1.2.0`). Bucket notifications require `ksvc >= 1.2.0`.
+pins `1.2.1`). Bucket notifications require `ksvc >= 1.2.1`.
 {% endif %}
 
 ---
