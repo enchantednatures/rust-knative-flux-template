@@ -582,6 +582,7 @@ jobs:
           feature_flagger = false
           event_source_kafka = true
           kafka_managed_cluster = true
+          kafka_managed_provider = "redpanda"
           feature_bucket_notifications = true
           ceph_object_store_name = "ceph-objectstore"
           ceph_object_store_namespace = "rook-ceph"

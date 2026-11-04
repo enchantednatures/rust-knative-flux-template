@@ -160,24 +160,38 @@ See `docs/STORAGE.md` for the full contract and the external-S3 escape hatch.
 {% if event_source_kafka %}
 ## Kafka Event Source
 {% if kafka_managed_cluster %}
-This project was generated with `kafka_managed_cluster=true`, so the app chart
-deploys Kafka itself: a **Redpanda cluster** (`{{ project_name | replace: "_", "-" }}-kafka`),
-a **Knative Kafka Broker** (`{{ project_name | replace: "_", "-" }}-kafka-broker`),
-a **Trigger** routing `{{ kafka_topic }}` to the app, and the **KafkaSource**.
-The chart derives the bootstrap address from the cluster name and namespace
-(`{{ project_name | replace: "_", "-" }}-kafka.{{ target_namespace }}.svc.cluster.local:9093`),
-so no overlay sets `bootstrapServers`; with the Broker enabled the KafkaSource
-sinks to the Broker instead of the app, and the app's
-`APP__KAFKA__BROKER_URL` is `{{ project_name | replace: "_", "-" }}-kafka:9093`.
+This project was generated with `kafka_managed_cluster=true` and
+`kafka_managed_provider={{ kafka_managed_provider }}`, so the app chart deploys
+Kafka itself: a **{{ kafka_managed_provider }} cluster**
+(`{{ project_name | replace: "_", "-" }}-kafka`), a **Knative Kafka Broker**
+(`{{ project_name | replace: "_", "-" }}-kafka-broker`), a **Trigger** routing
+`{{ kafka_topic }}` to the app, and the **KafkaSource**.
+
+{% if kafka_managed_provider == "strimzi" %}
+The Strimzi bootstrap Service is
+`{{ project_name | replace: "_", "-" }}-kafka-kafka-bootstrap:9092`, and the app's
+`APP__KAFKA__BROKER_URL` uses the same short name.
+{% else %}
+The Redpanda bootstrap Service is
+`{{ project_name | replace: "_", "-" }}-kafka:9093`, and the app's
+`APP__KAFKA__BROKER_URL` uses the same short name.
+{% endif %}
+The chart derives the bootstrap address from the cluster name and namespace, so
+no overlay sets `bootstrapServers`; with the Broker enabled the KafkaSource
+sinks to the Broker instead of the app.
 
 Prerequisites on a real cluster:
 
+{% if kafka_managed_provider == "strimzi" %}
+- The [Strimzi operator](https://strimzi.io/documentation/) is installed.
+{% else %}
 - The [Redpanda operator](https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/kubernetes-deploy/)
   (Redpanda CRDs) is installed.
-- The Knative Kafka Broker/controller is installed.
 - If Kyverno blocks privileged containers, apply the generated
   `deploy/kyverno/policyexception.yaml` in Kyverno's exception namespace
   (`kyverno-system` in the reference cluster), not in the app namespace.
+{% endif %}
+- The Knative Kafka Broker/controller is installed.
 
 {% if feature_s3 and feature_bucket_notifications %}
 ### Bucket notifications

@@ -127,7 +127,7 @@ patches:
           {% endif %}
           {% if event_source_kafka %}
           - name: APP__KAFKA__BROKER_URL
-            value: "{% if kafka_managed_cluster %}{{ project_name | replace: '_', '-' }}-kafka:9093{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
+            value: "{% if kafka_managed_cluster %}{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
           {% endif %}
 
       {% if event_source_kafka %}

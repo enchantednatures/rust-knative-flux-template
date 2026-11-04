@@ -158,11 +158,11 @@ spec:
             value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
           {% endif %}
           {% if feature_kafka and kafka_managed_cluster %}
-          # Chart-managed Redpanda cluster: the operator publishes a
-          # same-namespace Service named "<project>-kafka" on the Kafka port
-          # 9093 (the internal listener, not the external 9092).
+          # Chart-managed Kafka: Redpanda exposes a same-namespace Service
+          # named "<project>-kafka" on 9093; Strimzi exposes the bootstrap
+          # Service "<project>-kafka-kafka-bootstrap" on the plaintext 9092.
           - name: APP__KAFKA__BROKER_URL
-            value: "{{ project_name | replace: '_', '-' }}-kafka:9093"
+            value: "{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}"
           {% endif %}
         {% if feature_postgres %}
         # PostgreSQL server CA certificate. Generated and rotated automatically
@@ -184,14 +184,15 @@ spec:
     {% if event_source_kafka %}
     kafka:
       {% if kafka_managed_cluster %}
-      # Managed mode renders a Redpanda cluster plus a Knative Kafka Broker and
-      # Trigger. The chart derives the Kafka bootstrap address from the cluster
-      # name/namespace, so neither the sources nor the broker config may set
-      # `bootstrapServers`; with the Broker enabled the KafkaSource sinks to the
-      # Broker (a Trigger routes to services.app), so `sink` must not be set.
+      # Managed mode renders a Strimzi or Redpanda cluster plus a Knative Kafka
+      # Broker and Trigger. The chart derives the Kafka bootstrap address from
+      # the cluster name/namespace, so neither the sources nor the broker config
+      # may set `bootstrapServers`; with the Broker enabled the KafkaSource sinks
+      # to the Broker (a Trigger routes to services.app), so `sink` must not be
+      # set.
       cluster:
         enabled: true
-        provider: redpanda
+        provider: "{{ kafka_managed_provider }}"
         name: "{{ project_name | replace: '_', '-' }}-kafka"
         replicas: 1
         storage:
@@ -212,6 +213,7 @@ spec:
         topics:
           create: true
           partitions: 3
+        {% if kafka_managed_provider == "redpanda" %}
         redpanda:
           # Kyverno clusters commonly reject the operator's privileged tuning
           # init container and pods without regular-container resources. Disable
@@ -278,6 +280,7 @@ spec:
                   memory: "64Mi"
                 limits:
                   memory: "128Mi"
+        {% endif %}
       broker:
         enabled: true
         config:

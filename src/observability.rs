@@ -39,6 +39,12 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     // even before any requests are made
     describe_counter!("http_requests_total", "Total number of HTTP requests");
     describe_counter!("app_info", "Application information and version");
+    {%- if feature_s3 and feature_bucket_notifications %}
+    describe_counter!(
+        "bucket_notifications_received_total",
+        "Total number of Ceph RGW bucket notifications received"
+    );
+    {%- endif %}
     {%- if feature_kafka %}
     describe_counter!(
         "kafka_events_published_total",

@@ -121,6 +121,7 @@ async fn handle_bucket_notification(
     event: CloudEvent<serde_json::Value>,
     records: usize,
 ) -> Response {
+    metrics::counter!("bucket_notifications_received_total").increment(1);
     info!(
         event_id = %event.id(),
         event_type = %event.r#type(),

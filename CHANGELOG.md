@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `kafka_managed_provider` prompt (under `kafka_managed_cluster`, default
+  `redpanda`; set `strimzi` for a Strimzi operator). The generated HelmRelease
+  renders the chosen provider, and `APP__KAFKA__BROKER_URL` uses the Redpanda
+  service (`<project>-kafka:9093`) or the Strimzi bootstrap service
+  (`<project>-kafka-kafka-bootstrap:9092`).
 - `feature_bucket_notifications` prompt (under managed Kafka, default `false`):
   when `feature_s3` is also enabled, the app-data `ObjectBucketClaim` declares
   its Rook `CephObjectStore` identity and a `put` notification. The chart

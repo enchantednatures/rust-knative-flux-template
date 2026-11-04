@@ -79,14 +79,15 @@ To subscribe to multiple topics, create additional KafkaSource YAML files (see [
 
 ## Managed Kafka Cluster (opt-in)
 
-This project was generated with `kafka_managed_cluster=true`. Instead of using
-an external Kafka cluster, the app chart deploys and manages Kafka in the
+This project was generated with `kafka_managed_cluster=true` and
+`kafka_managed_provider={{ kafka_managed_provider }}`. Instead of using an
+external Kafka cluster, the app chart deploys and manages Kafka in the
 application namespace.
 
 ### What gets rendered
 
-- **Redpanda** cluster `<project>-kafka` (1 replica, 10Gi on the
-  `{{ kafka_storage_class }}` StorageClass, no TLS/SASL) plus the source
+- **{{ kafka_managed_provider }}** cluster `<project>-kafka` (1 replica, 10Gi on
+  the `{{ kafka_storage_class }}` StorageClass, no TLS/SASL) plus the source
   **Topic** (`{{ kafka_topic }}`). Set `kafka_storage_class` at generation time;
   leave it empty to use the cluster's default StorageClass.
 - **Knative Kafka Broker** `<project>-kafka-broker` with its ConfigMap
@@ -96,21 +97,28 @@ application namespace.
 - **KafkaSource** `<project>-{{ kafka_topic }}-kafka-source` that consumes the
   topic and sinks to the Broker.
 
-The chart derives the bootstrap automatically:
-`<project>-kafka.<namespace>.svc.cluster.local:9093`. Neither the KafkaSource
-nor the Broker config sets `bootstrapServers`, and the KafkaSource does not set
-`sink` — the Broker is the sink and the Trigger routes events to the app.
+The chart derives the bootstrap automatically. The KafkaSource and Broker
+config do not set `bootstrapServers`, and the KafkaSource does not set `sink` —
+the Broker is the sink and the Trigger routes events to the app.
 
-The app receives `APP__KAFKA__BROKER_URL=<project>-kafka:9093` (the
-same-namespace short Service name) for publishing.
+{% if kafka_managed_provider == "strimzi" %}
+The Strimzi bootstrap Service is
+`<project>-kafka-kafka-bootstrap.<namespace>.svc.cluster.local:9092`, and the
+app receives `APP__KAFKA__BROKER_URL=<project>-kafka-kafka-bootstrap:9092`.
+{% else %}
+The Redpanda bootstrap Service is
+`<project>-kafka.<namespace>.svc.cluster.local:9093`, and the app receives
+`APP__KAFKA__BROKER_URL=<project>-kafka:9093`.
+{% endif %}
 
 **Flow:** `Kafka topic -> KafkaSource -> Broker -> Trigger -> app Knative Service`
 
 ### Prerequisites
 
-1. **Redpanda operator** (and its `Redpanda`/`Topic` CRDs) installed.
+1. The operator for `{{ kafka_managed_provider }}` is installed.
 2. **Knative Kafka Broker/controller** installed (Eventing core + Kafka broker
    and source data planes).
+{% if kafka_managed_provider == "redpanda" %}
 3. **Kyverno exception** when Kyverno runs with a privileged-container policy.
    The Redpanda operator always injects a privileged `tuning` init container.
    The generated `deploy/kyverno/policyexception.yaml` exempts the managed
@@ -123,12 +131,13 @@ same-namespace short Service name) for publishing.
    The exception **must live in Kyverno's configured exception namespace**
    (the reference cluster sets `--exceptionNamespace=kyverno-system`), not the
    application namespace. Adjust `metadata.namespace` if your install differs.
+{% endif %}
 
 ### Environment overlays
 
 - `deploy/overlays/dev`, `staging`, and `prod` keep the managed cluster/Broker
   and do not patch an external `bootstrapServers`.
-- `deploy/dev/app-overlay` is the **Kind fallback**: Kind has no Redpanda
+- `deploy/dev/app-overlay` is the **Kind fallback**: Kind has no Redpanda/Strimzi
   operator or Kafka Broker, so it removes `kafka.cluster`, `kafka.broker`, and
   `kafka.triggers`, restores the KafkaSource `bootstrapServers` to
   `kafka.kafka.svc.cluster.local:9092`, sets `sink: app`, and appends the local
