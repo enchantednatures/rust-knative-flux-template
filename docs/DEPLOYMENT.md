@@ -404,6 +404,9 @@ The local Kind suite (`make local-up`, `make dev-test`) proves the manifests ren
 - Trigger: `workflow_run` of `CI/CD Pipeline` on `{{ default_branch }}` (post-merge) and manual `workflow_dispatch`. It is never triggered by `pull_request`, so fork code cannot reach the cluster.
 - Flux stays the only deployer. The job reconciles the `{{ project_name | replace: "_", "-" }}-<env>` Kustomization, waits for the `HelmRelease` and Knative Service, then asserts the running image digest equals the digest of the `sha-<commit>` tag CI just pushed.
 - Endpoint checks run against the live URL: `/health/live`, `/health/ready`, `/metrics`, `/api/v1/hello`, plus a Postgres upsert/read-back and an S3 write/read/delete when those features are enabled.
+{% if feature_s3 and feature_bucket_notifications %}
+- Bucket notifications: the S3 check writes an object, then the job polls `/metrics` for `bucket_notifications_received_total`. The cluster must have Rook Ceph (`CephObjectStore` + bucket StorageClass) and the `{{ kafka_managed_provider }}` operator installed.
+{% endif %}
 - Without `SMOKE_KUBECONFIG_B64` the job is a no-op (green), so enabling the prompt before wiring a cluster breaks nothing.
 
 The workflow targets the `{{ smoke_environment }}` GitHub environment (and the matching overlay). Protect that environment with required reviewers if the cluster is shared. When image updates are disabled, the commit-digest assertion degrades to a warning, because the deployed tag is only bumped by `make deploy`.
