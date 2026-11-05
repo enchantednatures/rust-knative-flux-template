@@ -127,7 +127,7 @@ patches:
           {% endif %}
           {% if event_source_kafka %}
           - name: APP__KAFKA__BROKER_URL
-            value: "{% if kafka_managed_cluster %}{{ project_name | replace: '_', '-' }}-kafka:9093{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
+            value: "{% if kafka_managed_cluster %}{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
           {% endif %}
 
       {% if event_source_kafka %}
@@ -167,6 +167,14 @@ patches:
           app-data:
             storageClassName: "{{ ceph_bucket_storage_class }}"
             bucketName: "{{ project_name | replace: '_', '-' }}-app-data"
+            {%- if feature_bucket_notifications %}
+            objectStore:
+              name: "{{ ceph_object_store_name }}"
+              namespace: "{{ ceph_object_store_namespace }}"
+            notifications:
+              put:
+                enabled: true
+            {%- endif %}
           {%- endif %}
   {% endif %}
 

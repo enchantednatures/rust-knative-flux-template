@@ -17,6 +17,14 @@
 #      Knative status URL is not reachable from the runner.
 #   3. Protect the "{{ smoke_environment }}" environment with required
 #      reviewers if the cluster is shared.
+{% if feature_s3 and feature_bucket_notifications %}
+#
+# Bucket notifications are enabled: the cluster must have Rook Ceph with a
+# CephObjectStore and the bucket StorageClass, plus the chart-managed Kafka
+# operator ({{ kafka_managed_provider }}). The storage check below writes an
+# object; the app's bucket_notifications_received_total metric proves the Rook
+# notification reached the s3-events KafkaSource/Trigger.
+{% endif %}
 #
 # Without SMOKE_KUBECONFIG_B64 the job is a no-op (green), so a project that
 # enables the prompt but has not wired a cluster yet is not broken.
@@ -320,6 +328,28 @@ jobs:
             echo "  PASS  storage   write + read + delete /api/v1/storage/example"
           else
             echo "  FAIL  storage   write + read + delete /api/v1/storage/example"
+            FAILED=$((FAILED + 1))
+          fi
+          {% endif %}
+
+          {% if feature_s3 and feature_bucket_notifications %}
+          echo ""
+          # The storage check above writes an object. Rook publishes the put
+          # event, the s3-events KafkaSource delivers it, and the app increments
+          # bucket_notifications_received_total.
+          BUCKET_NOTIFICATION_OK=0
+          for attempt in $(seq 1 30); do
+            METRICS_OUTPUT="$(probe /metrics || true)"
+            if grep -Eq '^bucket_notifications_received(_total)?(\{[^}]*\})? [1-9]' <<<"${METRICS_OUTPUT}"; then
+              BUCKET_NOTIFICATION_OK=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "${BUCKET_NOTIFICATION_OK}" -eq 1 ]; then
+            echo "  PASS  bucket notifications received"
+          else
+            echo "  FAIL  bucket notifications received (counter not observed after 150s)"
             FAILED=$((FAILED + 1))
           fi
           {% endif %}

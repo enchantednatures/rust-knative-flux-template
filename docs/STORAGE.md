@@ -320,6 +320,52 @@ spec:
         key: /prod/{{ project_name }}/redis-url
 ```
 
+{% if feature_bucket_notifications %}
+### Bucket notifications
+
+The project was generated with `feature_bucket_notifications=true`, so the
+`{{ project_name | replace: "_", "-" }}-app-data` bucket publishes Ceph RGW
+object events to the managed Kafka cluster.
+
+The chart adds to the bucket entry:
+
+```yaml
+objectStore:
+  name: "{{ ceph_object_store_name }}"
+  namespace: "{{ ceph_object_store_namespace }}"
+notifications:
+  put:
+    enabled: true
+```
+
+That renders a `CephBucketTopic`, a `CephBucketNotification`, and a Kafka topic
+`{{ project_name | replace: "_", "-" }}-app-data-put`. The HelmRelease adds:
+
+- **KafkaSource** `{{ project_name | replace: "_", "-" }}-s3-events-kafka-source`
+  consuming `{{ project_name | replace: "_", "-" }}-app-data-put` and sinking
+  to the Broker.
+- **Trigger** `{{ project_name | replace: "_", "-" }}-s3-events-trigger` with a
+  filter on the KafkaSource's CloudEvent `source`
+  (`/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: "_", "-" }}-s3-events-kafka-source#{{ project_name | replace: "_", "-" }}-app-data-put`),
+  routing the notification to the app. The filter is required: an unfiltered
+  trigger would also deliver the main `{{ kafka_topic }}` events a second time.
+
+Prerequisites:
+
+- Rook's `CephBucketTopic` and `CephBucketNotification` CRDs.
+- A `CephObjectStore` named `{{ ceph_object_store_name }}` in
+  `{{ ceph_object_store_namespace }}`.
+- The managed Kafka cluster (plaintext, no auth). The chart rejects bucket
+  notifications against external, authenticated, or TLS Kafka.
+- `kafka.cluster.topics.create=true` (the generated managed cluster).
+
+The app handler accepts the S3 notification JSON (`Records[]`) in addition to
+the normal ping payload. The chart marks the feature Experimental; authenticated
+or TLS Kafka notifications are not supported yet. Kind does not run Rook/RGW or
+the Redpanda operator, so `deploy/dev/app-overlay` removes the bucket claims and
+this path is not exercised by `make local-up`.
+
+{% endif %}
 ### RustFS in Kubernetes
 
 Deploy RustFS on Kubernetes for production:
