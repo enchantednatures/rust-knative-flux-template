@@ -694,7 +694,7 @@ jobs:
           require_value "CephBucketNotification event" "s3:ObjectCreated:Put" \
             "$(yq 'select(.kind == "CephBucketNotification") | .spec.events[0]' /tmp/managed-dev-render.yaml | head -1)"
           require_value "OBC notification label" "marrakesh-app-data-put" \
-            "$(yq 'select(.kind == "ObjectBucketClaim" and .metadata.name == "marrakesh-app-data") | .metadata.labels["bucket-notification-put"]' /tmp/managed-dev-render.yaml | head -1)"
+            "$(yq 'select(.kind == "ObjectBucketClaim" and .metadata.name == "marrakesh-app-data") | .metadata.labels["bucket-notification-marrakesh-app-data-put"]' /tmp/managed-dev-render.yaml | head -1)"
           require_value "notification Kafka topic" "marrakesh-app-data-put" \
             "$(yq 'select(.kind == "Topic" and .metadata.name == "marrakesh-app-data-put") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
           require_value "notification KafkaSource" "marrakesh-s3-events-kafka-source" \
