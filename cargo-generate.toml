@@ -123,15 +123,37 @@ kafka_topic = { prompt = "Kafka topic name", type = "string", default = "events"
 kafka_consumer_group = { prompt = "Kafka consumer group", type = "string", default = "events-consumers" }
 kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
 kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
+kafka_managed_cluster = { prompt = "Self-deploy a chart-managed Kafka cluster and Kafka Broker (requires the operator for the chosen provider; Kind local-up falls back to the local broker)?", type = "bool", default = false }
+kafka_managed_provider = { prompt = "Managed Kafka provider (redpanda or strimzi)", type = "string", default = "redpanda" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster'.placeholders]
+# StorageClass for the managed Redpanda brokers' PVCs.
+kafka_storage_class = { prompt = "StorageClass for the managed Kafka brokers (empty = cluster default)", type = "string", default = "ceph-block" }
+# Publish Ceph RGW bucket notifications to the managed Kafka cluster. This
+# also requires feature_s3 (there must be a bucket to notify on) and the Rook
+# CephBucketTopic/CephBucketNotification CRDs on the cluster.
+feature_bucket_notifications = { prompt = "Publish Ceph RGW bucket notifications to the managed Kafka cluster (requires S3)?", type = "bool", default = false }
+ceph_object_store_name = { prompt = "Rook CephObjectStore name (used when bucket notifications are enabled)", type = "string", default = "ceph-objectstore" }
+ceph_object_store_namespace = { prompt = "Rook CephObjectStore namespace (used when bucket notifications are enabled)", type = "string", default = "rook-ceph" }
 
 [conditional.'!event_source_kafka']
 ignore = [
-  "deploy/dev/infrastructure/kafka.yaml.liquid",
+  # Ignore entries match the RENDERED filename, not the `.liquid` source.
+  "deploy/dev/infrastructure/kafka.yaml",
   "scripts/dev/install-knative-kafka.sh",
   "scripts/dev/send-kafka-event.sh",
   "scripts/dev/create-kafka-topic.sh",
   "docs/KAFKA_EVENTING.md",
   "tests/e2e/fixtures/kafka",
+  # Only a managed Redpanda cluster needs the Kyverno tuning exception.
+  "deploy/kyverno",
+]
+
+# `kafka_managed_cluster` is only defined when `event_source_kafka` is on, so
+# the expression must tolerate it being undefined.
+[conditional.'event_source_kafka && kafka_managed_cluster == false']
+ignore = [
+  "deploy/kyverno",
 ]
 
 [conditional.'feature_cron'.placeholders]

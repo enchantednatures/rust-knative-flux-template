@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `kafka_managed_provider` prompt (under `kafka_managed_cluster`, default
+  `redpanda`; set `strimzi` for a Strimzi operator). The generated HelmRelease
+  renders the chosen provider, and `APP__KAFKA__BROKER_URL` uses the Redpanda
+  service (`<project>-kafka:9093`) or the Strimzi bootstrap service
+  (`<project>-kafka-kafka-bootstrap:9092`).
+- `feature_bucket_notifications` prompt (under managed Kafka, default `false`):
+  when `feature_s3` is also enabled, the app-data `ObjectBucketClaim` declares
+  its Rook `CephObjectStore` identity and a `put` notification. The chart
+  renders a `CephBucketTopic`, a `CephBucketNotification`, and the
+  `<project>-app-data-put` Kafka topic; the HelmRelease adds an `s3-events`
+  KafkaSource and a Trigger filtered on that source, routing the S3 payload to
+  the app. `ceph_object_store_name`/`ceph_object_store_namespace` identify the
+  Rook object store. Requires Rook's notification CRDs, the managed Kafka
+  cluster, and the plaintext/no-auth listener; Kind fallbacks drop the path.
+- `kafka_managed_cluster` prompt (under `event_source_kafka`, default `false`):
+  the app chart renders a Redpanda `Redpanda` cluster + source `Topic`, a Knative
+  Kafka `Broker` and `Trigger`, and a `KafkaSource` that derives its bootstrap
+  from the managed cluster (`<project>-kafka.<namespace>.svc.cluster.local:9093`)
+  and sinks to the Broker. The app's `APP__KAFKA__BROKER_URL` points at
+  `<project>-kafka:9093`. Broker PVCs use `kafka_storage_class` (default
+  `ceph-block`; empty falls back to the cluster default). Managed mode also ships
+  `deploy/kyverno/policyexception.yaml` for the operator's privileged `tuning`
+  init container; `deploy/dev/app-overlay` reverts to the local Kafka
+  StatefulSet for `make local-up`.
 - `axum-cloudevents` and `axum-cloudevents-macros` now have unit tests covering
   structured/binary extraction, header and metadata parsing, error-to-HTTP
   mapping, and the `CloudEventTagged` derive.

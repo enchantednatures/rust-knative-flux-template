@@ -9,6 +9,7 @@ feature_gha_runner = true
 feature_cluster_smoke = true
 smoke_environment = "staging"
 event_source_kafka = true
+kafka_managed_cluster = false
 feature_cron = true
 enable_image_updates = false
 target_namespace = "default"

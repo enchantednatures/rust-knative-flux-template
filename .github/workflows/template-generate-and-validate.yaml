@@ -435,6 +435,37 @@ jobs:
           fi
         shell: bash
 
+      - name: Assert no Kafka residue when disabled
+        if: matrix.event_source_kafka == 'false'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          [ ! -f deploy/dev/infrastructure/kafka.yaml ] \
+            || { echo "FAIL: Kind Kafka StatefulSet present when event_source_kafka=false"; exit 1; }
+          [ ! -d deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno present when event_source_kafka=false"; exit 1; }
+
+          echo "✓ no Kafka residue (event_source_kafka=false)"
+        shell: bash
+
+      - name: Assert no managed-Kafka residue
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          # The matrix never sets kafka_managed_cluster, so it defaults to
+          # false: no managed cluster, no Broker/Trigger, no tuning exception.
+          [ ! -d deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno present with kafka_managed_cluster=false"; exit 1; }
+          ! grep -q 'kafka_managed_cluster' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: kafka_managed_cluster leaked into the HelmRelease"; exit 1; }
+          ! grep -q 'triggers:' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: managed Kafka triggers present with kafka_managed_cluster=false"; exit 1; }
+
+          echo "✓ no managed-Kafka residue"
+        shell: bash
+
       - name: Validate Flagger per-env metric gates
         if: matrix.feature_flagger == 'true'
         run: |
@@ -499,6 +530,259 @@ jobs:
             || { echo "FAIL: operator metricsServer not templated"; exit 1; }
 
           echo "Flagger per-env metric gate validation passed"
+        shell: bash
+
+  managed-kafka-render:
+    name: "Managed Kafka render"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies for Kafka
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev pkg-config
+        shell: bash
+
+      - name: Install helm and yq
+        run: |
+          if ! command -v helm &> /dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+          sudo curl -sSLo /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          helm version --short
+          yq --version
+        shell: bash
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+
+      - name: Generate managed-Kafka project
+        run: |
+          set -euo pipefail
+
+          TEMPLATE_SRC=$(mktemp -d)
+          rsync -a --exclude='.git' --exclude='target' "$GITHUB_WORKSPACE/" "$TEMPLATE_SRC/"
+
+          TEMP_DIR=$(mktemp -d)
+          cat > "$TEMP_DIR/template-values.toml" <<'TOML'
+          [values]
+          project_name = "marrakesh"
+          project_author = "CI Bot <ci@github.com>"
+          feature_s3 = true
+          feature_kafka = true
+          feature_postgres = false
+          feature_flagger = false
+          event_source_kafka = true
+          kafka_managed_cluster = true
+          kafka_managed_provider = "redpanda"
+          feature_bucket_notifications = true
+          ceph_object_store_name = "ceph-objectstore"
+          ceph_object_store_namespace = "rook-ceph"
+          ceph_bucket_storage_class = "ceph-bucket"
+          feature_cron = false
+          enable_image_updates = false
+          target_namespace = "marrakesh"
+          github_org = "enchantednatures"
+          github_repo = "rust-knative-flux-template"
+          default_branch = "main"
+          image_registry = "ghcr.io"
+          use_default_scaling = true
+          kafka_topic = "events"
+          kafka_consumer_group = "marrakesh-consumers"
+          kafka_bootstrap_servers_staging = "kafka.staging.svc.cluster.local:9092"
+          kafka_bootstrap_servers_prod = "kafka.prod.svc.cluster.local:9092"
+          kafka_broker_url = "kafka.kafka.svc.cluster.local:9092"
+          kafka_event_name = "com.example.marrakesh.event.published"
+          TOML
+
+          cargo generate \
+            --path "$TEMPLATE_SRC" \
+            --name "marrakesh" \
+            --template-values-file "$TEMP_DIR/template-values.toml" \
+            --destination "$TEMP_DIR" \
+            --silent \
+            --allow-commands
+
+          GENERATED_DIR="$TEMP_DIR/marrakesh"
+          echo "GENERATED_DIR=$GENERATED_DIR" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Assert managed Kafka render
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          helm dependency build deploy/chart
+
+          VALUES_FILE=$(mktemp)
+          yq eval '.spec.values' deploy/base/helmrelease.yaml > "$VALUES_FILE"
+
+          helm lint deploy/chart -n marrakesh -f "$VALUES_FILE"
+          helm template marrakesh deploy/chart -n marrakesh -f "$VALUES_FILE" > /tmp/managed-render.yaml
+
+          # The dev overlay adds the ObjectBucketClaim entries. Render it too so
+          # the bucket-notification resources can be asserted.
+          kubectl kustomize deploy/overlays/dev > /tmp/managed-dev.yaml
+          yq eval 'select(.kind == "HelmRelease") | .spec.values' /tmp/managed-dev.yaml > /tmp/managed-dev-values.yaml
+          helm lint deploy/chart -n marrakesh -f /tmp/managed-dev-values.yaml >/dev/null
+          helm template marrakesh deploy/chart -n marrakesh -f /tmp/managed-dev-values.yaml > /tmp/managed-dev-render.yaml
+
+          BROKER_BOOTSTRAP="marrakesh-kafka.marrakesh.svc.cluster.local:9093"
+
+          require_value() {
+            local description="$1" expected="$2" actual="$3"
+            if [[ "${actual}" != "${expected}" ]]; then
+              echo "FAIL: ${description}: expected '${expected}', got '${actual:-<empty>}'"
+              exit 1
+            fi
+            echo "PASS: ${description}"
+          }
+
+          require_value "managed Redpanda CR" "marrakesh-kafka" \
+            "$(yq 'select(.kind == "Redpanda") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "managed Topic CR" "events" \
+            "$(yq 'select(.kind == "Topic") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "Kafka Broker CR" "marrakesh-kafka-broker" \
+            "$(yq 'select(.kind == "Broker") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "Kafka Trigger CR" "marrakesh-events-trigger" \
+            "$(yq 'select(.kind == "Trigger") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "KafkaSource CR" "marrakesh-events-kafka-source" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-events-kafka-source") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "broker ConfigMap" "marrakesh-kafka-broker-config" \
+            "$(yq 'select(.kind == "ConfigMap" and .metadata.name == "marrakesh-kafka-broker-config") | .metadata.name' /tmp/managed-render.yaml | head -1)"
+          require_value "broker bootstrap" "$BROKER_BOOTSTRAP" \
+            "$(yq 'select(.kind == "ConfigMap" and .metadata.name == "marrakesh-kafka-broker-config") | .data["bootstrap.servers"]' /tmp/managed-render.yaml | head -1)"
+          require_value "KafkaSource derived bootstrap" "$BROKER_BOOTSTRAP" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-events-kafka-source") | .spec.bootstrapServers[0]' /tmp/managed-render.yaml | head -1)"
+          require_value "KafkaSource sinks to the Broker" "Broker" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-events-kafka-source") | .spec.sink.ref.kind' /tmp/managed-render.yaml | head -1)"
+          require_value "KafkaSource broker name" "marrakesh-kafka-broker" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-events-kafka-source") | .spec.sink.ref.name' /tmp/managed-render.yaml | head -1)"
+          require_value "Trigger subscriber" "marrakesh" \
+            "$(yq 'select(.kind == "Trigger" and .metadata.name == "marrakesh-events-trigger") | .spec.subscriber.ref.name' /tmp/managed-render.yaml | head -1)"
+          require_value "app managed Kafka URL" "marrakesh-kafka:9093" \
+            "$(yq 'select(.kind == "Service" and .metadata.name == "marrakesh") | .spec.template.spec.containers[0].env[] | select(.name == "APP__KAFKA__BROKER_URL") | .value' /tmp/managed-render.yaml | head -1)"
+          require_value "DLQ image tag" "v1.23.0" \
+            "$(yq 'select(.kind == "Service" and .metadata.name == "marrakesh-events-dlq") | .spec.template.spec.containers[0].image' /tmp/managed-render.yaml | head -1 | sed 's/.*://')"
+          require_value "tuning init disabled" "false" \
+            "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.initContainers.tuning.tune_aio_events' /tmp/managed-render.yaml | head -1)"
+          require_value "sidecar memory limit" "512Mi" \
+            "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.podTemplate.spec.containers[] | select(.name == "sidecar") | .resources.limits.memory' /tmp/managed-render.yaml | head -1)"
+          require_value "managed broker StorageClass" "ceph-block" \
+            "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.storage.persistentVolume.storageClass' /tmp/managed-render.yaml | head -1)"
+
+          # Ceph RGW bucket notifications: the chart creates the Rook topic and
+          # notification, the Kafka topic, and the app's s3-events source/trigger.
+          require_value "CephBucketTopic" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "CephBucketTopic") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "CephBucketTopic objectStore name" "ceph-objectstore" \
+            "$(yq 'select(.kind == "CephBucketTopic") | .spec.objectStoreName' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "CephBucketTopic objectStore namespace" "rook-ceph" \
+            "$(yq 'select(.kind == "CephBucketTopic") | .spec.objectStoreNamespace' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "CephBucketNotification" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "CephBucketNotification") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "CephBucketNotification topic" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "CephBucketNotification") | .spec.topic' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "CephBucketNotification event" "s3:ObjectCreated:Put" \
+            "$(yq 'select(.kind == "CephBucketNotification") | .spec.events[0]' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "OBC notification label" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "ObjectBucketClaim" and .metadata.name == "marrakesh-app-data") | .metadata.labels["bucket-notification-put"]' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification Kafka topic" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "Topic" and .metadata.name == "marrakesh-app-data-put") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification KafkaSource" "marrakesh-s3-events-kafka-source" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-s3-events-kafka-source") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification KafkaSource topic" "marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-s3-events-kafka-source") | .spec.topics[0]' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification KafkaSource sink" "Broker" \
+            "$(yq 'select(.kind == "KafkaSource" and .metadata.name == "marrakesh-s3-events-kafka-source") | .spec.sink.ref.kind' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification Trigger" "marrakesh-s3-events-trigger" \
+            "$(yq 'select(.kind == "Trigger" and .metadata.name == "marrakesh-s3-events-trigger") | .metadata.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification Trigger filter" "/apis/v1/namespaces/marrakesh/kafkasources/marrakesh-s3-events-kafka-source#marrakesh-app-data-put" \
+            "$(yq 'select(.kind == "Trigger" and .metadata.name == "marrakesh-s3-events-trigger") | .spec.filter.attributes.source' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "notification Trigger subscriber" "marrakesh" \
+            "$(yq 'select(.kind == "Trigger" and .metadata.name == "marrakesh-s3-events-trigger") | .spec.subscriber.ref.name' /tmp/managed-dev-render.yaml | head -1)"
+          require_value "s3-events DLQ has no fieldRef env" "" \
+            "$(yq 'select(.kind == "Service" and .metadata.name == "marrakesh-s3-events-dlq") | .spec.template.spec.containers[0].env // ""' /tmp/managed-dev-render.yaml | head -1)"
+
+          if grep -qE 'redpanda-cluster|kafka\.kafka' /tmp/managed-render.yaml; then
+            echo "FAIL: managed render still references an external Kafka cluster"
+            exit 1
+          fi
+
+          # The Kyverno exception only makes sense for a managed cluster.
+          [ -f deploy/kyverno/policyexception.yaml ] \
+            || { echo "FAIL: deploy/kyverno/policyexception.yaml missing in managed mode"; exit 1; }
+          require_value "kyverno exception name" "marrakesh-kafka-tuning" \
+            "$(yq '.metadata.name' deploy/kyverno/policyexception.yaml)"
+          require_value "kyverno exception namespace" "kyverno-system" \
+            "$(yq '.metadata.namespace' deploy/kyverno/policyexception.yaml)"
+
+          # The dev overlay must not pin an external bootstrap/sink in managed mode.
+          require_value "dev cluster enabled" "true" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.cluster.enabled' /tmp/managed-dev.yaml)"
+          require_value "dev cluster name" "marrakesh-kafka" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.cluster.name' /tmp/managed-dev.yaml)"
+          require_value "dev broker enabled" "true" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.broker.enabled' /tmp/managed-dev.yaml)"
+          require_value "dev app-data objectStore name" "ceph-objectstore" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets["app-data"].objectStore.name' /tmp/managed-dev.yaml)"
+          require_value "dev app-data objectStore namespace" "rook-ceph" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets["app-data"].objectStore.namespace' /tmp/managed-dev.yaml)"
+          require_value "dev app-data notification enabled" "true" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets["app-data"].notifications.put.enabled' /tmp/managed-dev.yaml)"
+          require_value "dev app managed Kafka URL" "marrakesh-kafka:9093" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL") | .value' /tmp/managed-dev.yaml | head -1)"
+          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.bootstrapServers // ""' /tmp/managed-dev.yaml)" ]]; then
+            echo "FAIL: dev overlay still sets kafka.sources.events.bootstrapServers in managed mode"
+            exit 1
+          fi
+          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.sink // ""' /tmp/managed-dev.yaml)" ]]; then
+            echo "FAIL: dev overlay still sets kafka.sources.events.sink in managed mode"
+            exit 1
+          fi
+
+          # Kind fallback: managed mode reverts to the local Kafka StatefulSet.
+          kubectl kustomize deploy/dev/app-overlay > /tmp/managed-app-overlay.yaml
+          require_value "kind fallback source bootstrap" "kafka.kafka.svc.cluster.local:9092" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.bootstrapServers[0]' /tmp/managed-app-overlay.yaml)"
+          require_value "kind fallback source sink" "app" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources.events.sink' /tmp/managed-app-overlay.yaml)"
+          require_value "kind fallback app broker URL" "kafka.kafka.svc.cluster.local:9092" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL") | .value' /tmp/managed-app-overlay.yaml | head -1)"
+          # A duplicate env name is rejected by the API server, so the fallback
+          # must rewrite the dev overlay entry, not append another one.
+          require_value "kind fallback single broker env" "1" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.env[] | select(.name == "APP__KAFKA__BROKER_URL") | .name' /tmp/managed-app-overlay.yaml | wc -l | tr -d ' ')"
+          if [[ "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka | has("broker")' /tmp/managed-app-overlay.yaml)" != "false" ]]; then
+            echo "FAIL: Kind fallback kept kafka.broker"
+            exit 1
+          fi
+          if [[ "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka | has("cluster")' /tmp/managed-app-overlay.yaml)" != "false" ]]; then
+            echo "FAIL: Kind fallback kept kafka.cluster"
+            exit 1
+          fi
+          if [[ "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka | has("triggers")' /tmp/managed-app-overlay.yaml)" != "false" ]]; then
+            echo "FAIL: Kind fallback kept kafka.triggers"
+            exit 1
+          fi
+          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets // ""' /tmp/managed-app-overlay.yaml)" ]]; then
+            echo "FAIL: Kind fallback kept objectBuckets"
+            exit 1
+          fi
+          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources["s3-events"] // ""' /tmp/managed-app-overlay.yaml)" ]]; then
+            echo "FAIL: Kind fallback kept kafka.sources.s3-events"
+            exit 1
+          fi
+
+          echo "✓ managed Kafka render assertions passed"
         shell: bash
 
   full-stack:
@@ -618,6 +902,14 @@ jobs:
             || { echo "FAIL: deadLetterSink missing from rendered chart"; exit 1; }
           grep -q 'test-app-full-events-dlq' "$RENDERED" \
             || { echo "FAIL: DLQ service name missing from rendered chart"; exit 1; }
+
+          # kafka_managed_cluster=false in ci/template-values-full.toml: the
+          # managed Redpanda cluster, Broker, Trigger, and Kyverno exception
+          # must all be absent.
+          ! grep -qE '^kind: (Redpanda|Broker|Trigger)$' "$RENDERED" \
+            || { echo "FAIL: managed Kafka objects rendered with kafka_managed_cluster=false"; exit 1; }
+          [ ! -e deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno shipped with kafka_managed_cluster=false"; exit 1; }
 
           PINGSOURCE_COUNT=$(grep -c '^kind: PingSource$' "$RENDERED" || true)
           [ "$PINGSOURCE_COUNT" = "1" ] \

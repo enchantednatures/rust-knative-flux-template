@@ -28,3 +28,4 @@ image_pull_secret = ""
 custom_domain = ""
 network_policy_allow_all = false
 use_default_scaling = true
+kafka_managed_cluster = false
