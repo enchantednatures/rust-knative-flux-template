@@ -648,7 +648,13 @@ jobs:
           NEW_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/${SERVICE_NAME}"
           NEW_TAG="${{ steps.image-meta.outputs.image_tag }}"
 
-          helm dependency build "${CHART_DIR}"
+          # The ksvc dependency is vendored; a clean clone renders without
+          # `helm dependency build` (Flux does not build dependencies for the
+          # local ./deploy/chart source).
+          [ -f "${CHART_DIR}/Chart.lock" ] \
+            || { echo "❌ Chart.lock missing from generated project"; exit 1; }
+          ls "${CHART_DIR}"/charts/ksvc-*.tgz >/dev/null 2>&1 \
+            || { echo "❌ vendored ksvc chart missing from generated project"; exit 1; }
 
           yq eval -i '
             .spec.values.services.app.image.repository = "'"${NEW_IMAGE}"'" |

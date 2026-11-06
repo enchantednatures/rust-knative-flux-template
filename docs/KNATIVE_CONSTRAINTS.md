@@ -7,8 +7,9 @@ This document outlines Knative-specific constraints, limitations, and best pract
 Before deploying, render the chart and check the resulting Knative Service:
 
 ```bash
-# Local chart + the HelmRelease values it is rendered with
-helm dependency build deploy/chart
+# The ksvc dependency is vendored in deploy/chart/charts (and Chart.lock), so
+# no dependency build is needed. After bumping ksvc in Chart.yaml, run
+# `helm dependency update deploy/chart` and commit the result.
 yq eval '.spec.values' deploy/base/helmrelease.yaml > /tmp/values.yaml
 helm template my-service deploy/chart -f /tmp/values.yaml -n default > /tmp/rendered.yaml
 
