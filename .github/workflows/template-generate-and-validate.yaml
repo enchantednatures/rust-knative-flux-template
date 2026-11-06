@@ -462,6 +462,8 @@ jobs:
             || { echo "FAIL: kafka_managed_cluster leaked into the HelmRelease"; exit 1; }
           ! grep -q 'triggers:' deploy/base/helmrelease.yaml \
             || { echo "FAIL: managed Kafka triggers present with kafka_managed_cluster=false"; exit 1; }
+          ! grep -q 'timeout: 10m' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: managed Kafka Helm timeout present with kafka_managed_cluster=false"; exit 1; }
 
           echo "✓ no managed-Kafka residue"
         shell: bash
@@ -678,6 +680,10 @@ jobs:
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.podTemplate.spec.containers[] | select(.name == "sidecar") | .resources.limits.memory' /tmp/managed-render.yaml | head -1)"
           require_value "managed broker StorageClass" "ceph-block" \
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.storage.persistentVolume.storageClass' /tmp/managed-render.yaml | head -1)"
+          require_value "Helm install timeout" "10m" \
+            "$(yq '.spec.install.timeout' deploy/base/helmrelease.yaml)"
+          require_value "Helm upgrade timeout" "10m" \
+            "$(yq '.spec.upgrade.timeout' deploy/base/helmrelease.yaml)"
 
           # Ceph RGW bucket notifications: the chart creates the Rook topic and
           # notification, the Kafka topic, and the app's s3-events source/trigger.

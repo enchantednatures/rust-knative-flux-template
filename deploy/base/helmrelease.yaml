@@ -13,6 +13,15 @@ spec:
         name: {{ project_name | replace: "_", "-" }}
         namespace: flux-system
       reconcileStrategy: Revision
+  {% if event_source_kafka and kafka_managed_cluster %}
+  # A cold cluster must install Redpanda/Strimzi, the Topic, Broker, Trigger,
+  # KafkaSource, and the Knative Service (plus CNPG when enabled). Helm's 5m
+  # default times out on that first install, so give install/upgrade 10m.
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+  {% endif %}
   {% if event_source_kafka %}
   # Knative >=1.23 rejects valueFrom.fieldRef env vars; the ksvc chart's DLQ
   # service hardcodes POD_NAME/POD_NAMESPACE via fieldRef. Strip the env list
