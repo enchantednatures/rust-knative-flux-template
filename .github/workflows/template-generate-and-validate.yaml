@@ -328,11 +328,17 @@ jobs:
           echo "Compiling tests (no run)"
           cargo test --all-features --no-run
 
-          echo "Asserting the ksvc chart dependency is vendored for Flux"
+        shell: bash
+
+      - name: Assert the generated project vendors the ksvc chart
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
           [ -f deploy/chart/Chart.lock ] \
             || { echo "FAIL: deploy/chart/Chart.lock missing from generated project"; exit 1; }
           ls deploy/chart/charts/ksvc-*.tgz >/dev/null 2>&1 \
             || { echo "FAIL: vendored ksvc chart tarball missing from generated project"; exit 1; }
+          echo "✓ generated project vendors the ksvc chart for Flux"
         shell: bash
 
       - name: Validate PostgreSQL manifests
