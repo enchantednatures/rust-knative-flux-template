@@ -37,11 +37,16 @@ jobs:
 
       - name: Cache cargo registry
         uses: actions/cache@v6
+        # Registry/git caches are small and safe to restore. Do NOT cache
+        # `target` here: on ARC runners it is ~1.7 GB and its post-job upload
+        # took ~20 minutes, blocking the downstream Build & Push job. A slow
+        # cache service must never fail or stall the pipeline.
+        timeout-minutes: 5
+        continue-on-error: true
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: {% raw %}${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
           restore-keys: |
             {% raw %}${{ runner.os }}-cargo-{% endraw %}
@@ -99,11 +104,14 @@ jobs:
 
       - name: Cache cargo registry
         uses: actions/cache@v6
+        # Same policy as the lint job: no `target` cache, and a slow/failing
+        # cache step must not block the build.
+        timeout-minutes: 5
+        continue-on-error: true
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: {% raw %}${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}{% endraw %}
           restore-keys: |
             {% raw %}${{ runner.os }}-cargo-{% endraw %}
@@ -111,6 +119,8 @@ jobs:
       {% if feature_s3 %}
       - name: Cache RustFS client
         uses: actions/cache@v6
+        timeout-minutes: 5
+        continue-on-error: true
         with:
           path: ~/.cargo/bin/rc
           key: rustfs-cli-0.1.36-{% raw %}${{ runner.os }}{% endraw %}
