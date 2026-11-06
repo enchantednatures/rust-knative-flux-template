@@ -258,8 +258,8 @@ jobs:
           # Append GHA runner variables when feature is enabled
           if [ "${{ matrix.feature_gha_runner }}" = "true" ]; then
             cat >> template-values.toml <<EOF
-          gha_runner_chart_version = "0.13.1"
-          gha_runner_image_tag = "2.331.0"
+          gha_runner_chart_version = "0.15.1"
+          gha_runner_image_tag = "2.338.2"
           gha_runner_max = "4"
           gha_runner_storage_class = "openebs-hostpath"
           gha_runner_priority_class = "actions-runner-high-priority"
@@ -450,19 +450,19 @@ jobs:
           fi
           echo "  ✓ priorityClassName = actions-runner-high-priority"
 
-          if ! grep -q 'tag: "0.13.1"' "$OCI"; then
+          if ! grep -q 'tag: "0.15.1"' "$OCI"; then
             echo "❌ Chart version not interpolated correctly"
             grep "tag:" "$OCI"
             exit 1
           fi
-          echo "  ✓ chart version = 0.13.1"
+          echo "  ✓ chart version = 0.15.1"
 
-          if ! grep -q "actions-runner:2.331.0" "$HR"; then
+          if ! grep -q "actions-runner:2.338.2" "$HR"; then
             echo "❌ Runner image tag not interpolated correctly"
             grep "actions-runner" "$HR"
             exit 1
           fi
-          echo "  ✓ runner image tag = 2.331.0"
+          echo "  ✓ runner image tag = 2.338.2"
 
           if ! grep -q "storage: 50Gi" "$HR"; then
             echo "❌ Storage size not interpolated correctly"
