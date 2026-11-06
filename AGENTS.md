@@ -871,7 +871,7 @@ entirely absent when the prompt answers `false`.
 - Rust 1.92+ (existing template), YAML manifests for Kubernetes resources + CloudNativePG Operator 1.28.0 (Kubernetes CRDs), Barman Cloud Plugin (barman-cloud.cloudnative-pg.io), FluxCD for GitOps deploymen (001-cloudnative-postgres-backups)
 - PostgreSQL (deployed via CloudNativePG operator), S3-compatible object storage backed by chart-provisioned ObjectBucketClaims (Ceph RGW in dev/staging/prod, RustFS for local Kind) (001-cloudnative-postgres-backups)
 - Flagger >=1.41.0 (optional, `flagger` feature flag — 1.41 introduced the Knative provider), flagger-loadtester >=0.34.0, Knative provider (no service mesh)
-- GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.13.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
+- GitHub Actions Runner Controller (ARC) gha-runner-scale-set >=0.15.1 (optional, `feature_gha_runner` flag), Docker-in-Docker sidecar, scale-to-zero
 
 ## Flagger Canary Release Promotion
 
@@ -1021,8 +1021,8 @@ A `github-auth-secret` Kubernetes Secret must exist in `actions-runner-system` n
 
 | Variable | Default | Description |
 |---|---|---|
-| `gha_runner_chart_version` | `0.13.1` | ARC runner scale set chart version |
-| `gha_runner_image_tag` | `2.331.0` | GitHub Actions runner image tag |
+| `gha_runner_chart_version` | `0.15.1` | ARC runner scale set chart version |
+| `gha_runner_image_tag` | `2.338.2` | GitHub Actions runner image tag |
 | `gha_runner_max` | `4` | Maximum concurrent runners |
 | `gha_runner_storage_class` | `openebs-hostpath` | StorageClass for work volume |
 | `gha_runner_priority_class` | `actions-runner-high-priority` | PriorityClass for runner pods |
