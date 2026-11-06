@@ -327,7 +327,6 @@ jobs:
 
           echo "Compiling tests (no run)"
           cargo test --all-features --no-run
-
         shell: bash
 
       - name: Validate PostgreSQL manifests
