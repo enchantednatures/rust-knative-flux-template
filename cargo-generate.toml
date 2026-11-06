@@ -3,6 +3,9 @@
 version = "1.0.0"
 cargo_generate_version = ">=0.23.0"
 subfolder = "."
+# Copied verbatim (no Liquid rendering): the vendored ksvc chart tarball is
+# binary and must not be parsed as UTF-8 by the template engine.
+exclude = ["deploy/chart/charts/*.tgz"]
 ignore = [
   ".git",
   ".sisyphus",
