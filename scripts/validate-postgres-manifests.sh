@@ -401,9 +401,12 @@ else
     cat "${render}.stderr" || true
   else
     pass "render deploy/dev/app-overlay (${KUSTOMIZE_MODE})"
-    buckets="$(yq eval 'select(.kind == "HelmRelease") | .spec.values.objectBuckets' "$render" 2>/dev/null | head -n1 || true)"
-    if [ -z "$buckets" ] || [ "$buckets" = "null" ]; then
-      pass "app-overlay: HelmRelease objectBuckets removed"
+    # `eval-all` is required here: with yq 4.44 a plain `select` emits one
+    # result per document, so the command substitution would contain multiple
+    # lines even when the HelmRelease map is empty.
+    buckets_len="$(yq eval-all '[select(.kind == "HelmRelease")] | .[0].spec.values.objectBuckets // {} | length' "$render" 2>/dev/null || true)"
+    if [ "$buckets_len" = "0" ]; then
+      pass "app-overlay: HelmRelease objectBuckets cleared (no claims)"
     else
       fail "app-overlay: HelmRelease objectBuckets still present"
     fi
