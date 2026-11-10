@@ -147,6 +147,7 @@ The Redpanda bootstrap Service is
    # Knative Kafka webhook + controller (always knative-eventing)
    kubectl get pods -n knative-eventing -l app=kafka-webhook-eventing
    kubectl logs -n knative-eventing -l app=kafka-webhook-eventing --tail=100
+   kubectl get validatingwebhookconfigurations | grep kafka.eventing
    ```
 
    A `kafka-webhook-eventing` pod that crash-loops — for example because it was
@@ -1002,10 +1003,10 @@ curl -i -X POST http://localhost:8080/ \
 ```
 
 The bundled `axum-cloudevents` extractor detects the structured body and
-prefers it over the headers. Custom handlers that consume the Broker path
-should accept `CloudEvent<serde_json::Value>` (as the template's
-`src/handlers/events.rs` does when routed by event type) rather than assuming a
-bare payload type.
+prefers it over the headers, so the template's `CloudEvent<Ping>` handler
+accepts the dispatcher shape as-is. If your handler routes several event types,
+use `CloudEvent<serde_json::Value>` (as `src/handlers/events.rs` does for
+scheduled work and bucket notifications) and validate `event.data` yourself.
 
 ### Kafka Connection Issues
 
