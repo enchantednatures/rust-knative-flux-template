@@ -204,7 +204,7 @@ Because the names are delivered by the cluster, do not create them in Git. A Git
 
 The local Kind cluster has no Rook/Ceph and no bucket provisioner, so the Kind loop cannot run the claims. `deploy/dev/app-overlay` is a Kind-only Kustomize layer that neutralizes them:
 
-- removes the `objectBuckets` HelmRelease values (no `ObjectBucketClaim` is rendered)
+- clears the `objectBuckets` HelmRelease values to an empty map (no `ObjectBucketClaim` is rendered)
 - points the CNPG `ObjectStore` back at the in-cluster RustFS (`http://rustfs.rustfs.svc.cluster.local:9000`)
 
 `scripts/dev/build-and-deploy.sh`, `make local-up`, and `make dev-postgres` render that layer. The RustFS init job stands in for the provisioner: it writes the same claim-named Secret and ConfigMap keys, so the backup `ObjectStore` and the app read the same contract locally. For projects without `feature_s3`/`feature_postgres` the layer is a passthrough.

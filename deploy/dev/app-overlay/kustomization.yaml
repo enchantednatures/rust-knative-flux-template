@@ -61,7 +61,7 @@ patches:
         value: app
       {% if feature_s3 and feature_bucket_notifications %}
       # Kind has no Rook/RGW and no managed Broker, so the notification source
-      # cannot deliver. The objectBuckets removal above also drops the topic.
+      # cannot deliver. Clearing objectBuckets above also drops the topic.
       - op: remove
         path: /spec/values/kafka/sources/s3-events
       {% endif %}
