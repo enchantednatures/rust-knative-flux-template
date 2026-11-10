@@ -35,12 +35,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache cargo registry
-        uses: actions/cache@v6
-        # Registry/git caches are small and safe to restore. Do NOT cache
-        # `target` here: on ARC runners it is ~1.7 GB and its post-job upload
-        # took ~20 minutes, blocking the downstream Build & Push job. A slow
-        # cache service must never fail or stall the pipeline.
+      - name: Restore cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@v6
+        # Restore is a normal step, so the timeout bounds it. Do NOT cache
+        # `target` here: on ARC runners it is ~1.7 GB and its upload took
+        # ~20 minutes, blocking the downstream Build & Push job.
         timeout-minutes: 5
         continue-on-error: true
         with:
@@ -56,6 +56,19 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Save cargo cache
+        # An explicit save step (not actions/cache's post-job hook) so a slow
+        # cache service is bounded and cannot stall the pipeline.
+        if: {% raw %}${{ always() && steps.cargo-cache.outputs.cache-hit != 'true' && steps.cargo-cache.outputs.cache-primary-key != '' }}{% endraw %}
+        uses: actions/cache/save@v6
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: {% raw %}${{ steps.cargo-cache.outputs.cache-primary-key }}{% endraw %}
 
   # ==========================================================================
   # Quality Gates - Tests
@@ -102,10 +115,11 @@ jobs:
           done
           docker exec redis redis-cli ping
 
-      - name: Cache cargo registry
-        uses: actions/cache@v6
-        # Same policy as the lint job: no `target` cache, and a slow/failing
-        # cache step must not block the build.
+      - name: Restore cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@v6
+        # Same policy as the lint job: registry/git only, no `target`, and a
+        # bounded restore.
         timeout-minutes: 5
         continue-on-error: true
         with:
@@ -157,6 +171,19 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           {% endif %}
+
+      - name: Save cargo cache
+        # Explicit save step so a slow/failing cache service is bounded by the
+        # timeout and cannot stall Build & Push.
+        if: {% raw %}${{ always() && steps.cargo-cache.outputs.cache-hit != 'true' && steps.cargo-cache.outputs.cache-primary-key != '' }}{% endraw %}
+        uses: actions/cache/save@v6
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: {% raw %}${{ steps.cargo-cache.outputs.cache-primary-key }}{% endraw %}
 
   {% if feature_flagger %}
   # ==========================================================================
