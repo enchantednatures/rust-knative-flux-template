@@ -7,6 +7,8 @@ spec:
   interval: 10m
   chart:
     spec:
+      # The source-controller builds this local chart and resolves the ksvc
+      # OCI dependency from deploy/chart/Chart.yaml/Chart.lock at reconcile.
       chart: ./deploy/chart
       sourceRef:
         kind: GitRepository

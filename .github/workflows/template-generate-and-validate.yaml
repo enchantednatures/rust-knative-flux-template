@@ -162,6 +162,23 @@ jobs:
       - name: Install cargo-generate
         run: cargo install cargo-generate --locked
 
+      - name: Assert the committed ksvc chart lock is valid
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^[[:space:]]*version: "\(.*\)"/\1/p' deploy/chart/Chart.yaml | head -1)
+          [ -n "${VERSION}" ] \
+            || { echo "FAIL: could not read the ksvc version from deploy/chart/Chart.yaml"; exit 1; }
+          [ -f deploy/chart/Chart.lock ] \
+            || { echo "FAIL: deploy/chart/Chart.lock is missing"; exit 1; }
+          grep -q "version: ${VERSION}" deploy/chart/Chart.lock \
+            || { echo "FAIL: deploy/chart/Chart.lock does not pin ksvc ${VERSION}"; exit 1; }
+          if ls deploy/chart/charts/ksvc-*.tgz >/dev/null 2>&1; then
+            echo "FAIL: vendored ksvc tarball present; Flux resolves the OCI dependency from Chart.lock"
+            exit 1
+          fi
+          echo "✓ Chart.lock pins ksvc ${VERSION}; no vendored tarball"
+        shell: bash
+
       - name: Generate template and run build & lint checks
         run: |
           set -euo pipefail
@@ -374,6 +391,24 @@ jobs:
           ! grep -q 'tls-rustls-ring' Cargo.toml || { echo "FAIL: runtime sqlx present"; exit 1; }
 
           echo "✓ no postgres residue"
+        shell: bash
+
+      - name: Assert the generated project tracks the ksvc chart lock
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          VERSION=$(sed -n 's/^[[:space:]]*version: "\(.*\)"/\1/p' deploy/chart/Chart.yaml | head -1)
+          [ -n "${VERSION}" ] \
+            || { echo "FAIL: could not read the ksvc version from deploy/chart/Chart.yaml"; exit 1; }
+          [ -f deploy/chart/Chart.lock ] \
+            || { echo "FAIL: deploy/chart/Chart.lock missing from generated project"; exit 1; }
+          grep -q "version: ${VERSION}" deploy/chart/Chart.lock \
+            || { echo "FAIL: deployed Chart.lock does not pin ksvc ${VERSION}"; exit 1; }
+          if ls deploy/chart/charts/ksvc-*.tgz >/dev/null 2>&1; then
+            echo "FAIL: generated project vendors the ksvc tarball; Flux resolves it from Chart.lock"
+            exit 1
+          fi
+          echo "✓ generated project pins ksvc ${VERSION} via Chart.lock; no vendored tarball"
         shell: bash
 
       - name: Validate scheduled work
