@@ -191,7 +191,8 @@ kubectl create secret generic {{ project_name }}-s3 \
 ### Deploy Base Service
 
 ```bash
-# Apply the base HelmRelease (Flux renders the Knative Service via deploy/chart)
+# Apply the base HelmRelease. Flux builds deploy/chart and resolves the ksvc
+# OCI dependency from Chart.lock at reconcile time.
 kubectl apply -k deploy/base -n {{ project_name }}
 
 # Get service URL
