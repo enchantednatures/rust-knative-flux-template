@@ -255,9 +255,9 @@ ignore = [
 
 [conditional.'feature_gha_runner'.placeholders]
 # ARC runner scale set chart version (from ghcr.io/actions/actions-runner-controller-charts)
-gha_runner_chart_version = { prompt = "ARC runner scale set chart version", type = "string", default = "0.13.1" }
+gha_runner_chart_version = { prompt = "ARC runner scale set chart version", type = "string", default = "0.15.1" }
 # GitHub Actions runner image tag
-gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.331.0" }
+gha_runner_image_tag = { prompt = "GitHub Actions runner image tag", type = "string", default = "2.338.2" }
 # Maximum concurrent runners (min is always 0 — scale-to-zero)
 gha_runner_max = { prompt = "Maximum concurrent runners", type = "string", default = "4" }
 # StorageClass for the runner work volume

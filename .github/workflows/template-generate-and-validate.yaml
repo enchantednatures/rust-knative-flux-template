@@ -314,6 +314,12 @@ jobs:
 
           echo "Compiling tests (no run)"
           cargo test --all-features --no-run
+
+          echo "Asserting generated-project polish"
+          grep -q '^authors = \["CI Bot <ci@github.com>"\]$' Cargo.toml \
+            || { echo "FAIL: Cargo.toml authors has stray whitespace"; exit 1; }
+          grep -A2 '^    dragonfly:$' deploy/base/helmrelease.yaml | grep -q '^      enabled: false$' \
+            || { echo "FAIL: base HelmRelease is missing dragonfly.enabled=false"; exit 1; }
         shell: bash
 
       - name: Validate PostgreSQL manifests

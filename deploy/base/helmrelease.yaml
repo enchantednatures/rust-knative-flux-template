@@ -34,6 +34,13 @@ spec:
       labels:
         app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
 
+    # DragonflyDB is disabled by default, but the key must exist in the base so
+    # environment overlays can enable it with a plain JSON6902 `replace`
+    # (`/spec/values/dragonfly/enabled`) instead of having to `add` the parent
+    # object first.
+    dragonfly:
+      enabled: false
+
     # Named the services key `app` (non-empty) because kafka.sources.*.sink must
     # reference a services key and the ksvc chart rejects an empty sink. An empty
     # nameOverride makes the Knative Service name exactly fullnameOverride.
