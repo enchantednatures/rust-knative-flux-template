@@ -779,8 +779,8 @@ jobs:
             echo "FAIL: Kind fallback kept kafka.triggers"
             exit 1
           fi
-          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets // ""' /tmp/managed-app-overlay.yaml)" ]]; then
-            echo "FAIL: Kind fallback kept objectBuckets"
+          if [[ "$(yq eval-all '[select(.kind == "HelmRelease")] | .[0].spec.values.objectBuckets // {} | length' /tmp/managed-app-overlay.yaml)" != "0" ]]; then
+            echo "FAIL: Kind fallback kept objectBuckets claims"
             exit 1
           fi
           if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources["s3-events"] // ""' /tmp/managed-app-overlay.yaml)" ]]; then
@@ -979,6 +979,30 @@ jobs:
           grep -q 'test-app-full-events-dlq' /tmp/overlay-dev.yaml \
             || { echo "FAIL: dev overlay dropped the DLQ postRenderer target"; exit 1; }
           echo "✓ overlay render assertions passed"
+        shell: bash
+
+      - name: Assert Kind overlay tolerates external-S3 projects
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          cp deploy/overlays/dev/kustomization.yaml /tmp/dev-kustomization.yaml
+
+          # Simulate an external-S3 customization (the marrakesh shape): the
+          # dev overlay no longer declares chart-provisioned objectBuckets.
+          # The Kind app-overlay must still render instead of failing on a
+          # JSON6902 `remove` of a path that does not exist.
+          yq eval -i 'del(.patches[] | select((.patch // "") | contains("objectBuckets")))' \
+            deploy/overlays/dev/kustomization.yaml
+
+          kubectl kustomize deploy/dev/app-overlay > /tmp/app-overlay-external-s3.yaml
+
+          BUCKETS=$(yq eval-all '[select(.kind == "HelmRelease")] | .[0].spec.values.objectBuckets // {} | length' /tmp/app-overlay-external-s3.yaml)
+          [ "$BUCKETS" = "0" ] \
+            || { echo "FAIL: Kind app-overlay kept objectBuckets (length $BUCKETS)"; exit 1; }
+
+          cp /tmp/dev-kustomization.yaml deploy/overlays/dev/kustomization.yaml
+          echo "✓ Kind app-overlay renders without a dev objectBuckets path"
         shell: bash
 
       - name: Render Flux config with load restrictions off
