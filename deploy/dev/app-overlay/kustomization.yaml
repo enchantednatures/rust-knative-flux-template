@@ -12,7 +12,7 @@ kind: Kustomization
 # Always generated; a passthrough for projects without these features.
 resources:
   - ../../overlays/dev
-{% if feature_s3 or feature_postgres or event_source_kafka and kafka_managed_cluster %}
+{% if feature_s3 or feature_postgres or event_source_kafka and kafka_managed_cluster and workload_type == "Knative" %}
 patches:
 {% if feature_s3 or feature_postgres %}
   # Kind has no ObjectBucketClaim CRDs/provisioner: drop the chart claims.
@@ -33,7 +33,7 @@ patches:
         value: "http://rustfs.rustfs.svc.cluster.local:9000"
 {% endif %}
 {% endif %}
-{% if event_source_kafka and kafka_managed_cluster %}
+{% if event_source_kafka and kafka_managed_cluster and workload_type == "Knative" %}
   # Kind fallback for managed Kafka: remove the Redpanda cluster, Broker, and
   # Trigger, and point the KafkaSource back at the local Kafka StatefulSet
   # (`kafka.kafka.svc.cluster.local:9092`) with the app as its direct sink.
@@ -63,7 +63,7 @@ patches:
 {% endif %}
 {% endif %}
 
-{% if event_source_kafka and kafka_managed_cluster %}
+{% if event_source_kafka and kafka_managed_cluster and workload_type == "Knative" %}
 # The dev overlay sets APP__KAFKA__BROKER_URL to the managed short name
 # (`<project>-kafka:9093`) inside its wholesale env replace. A JSON6902 `add`
 # would append a second entry with the same name, which the API server rejects

@@ -15,7 +15,7 @@ spec:
         name: {{ project_name | replace: "_", "-" }}
         namespace: flux-system
       reconcileStrategy: Revision
-  {% if event_source_kafka %}
+  {% if event_source_kafka and workload_type == "Knative" %}
   # Knative >=1.23 rejects valueFrom.fieldRef env vars; the ksvc chart's DLQ
   # service hardcodes POD_NAME/POD_NAMESPACE via fieldRef. Strip the env list
   # post-render — the event_display image does not need them.
@@ -51,12 +51,40 @@ spec:
           imagePullSecrets:
             - name: {{ image_pull_secret }}
           {% endif %}
+        {% if workload_type == "Deployment" %}
+        # Standard Deployment workload for long-lived connections
+        # (websockets/SSE). The Knative `scaling` block below is not rendered:
+        # deployment replicas and the rolling update strategy replace it.
+        workload:
+          type: Deployment
+          replicas: {{ workload_replicas }}
+          strategy:
+            maxUnavailable: "{{ workload_max_unavailable }}"
+            maxSurge: "{{ workload_max_surge }}"
+          terminationGracePeriodSeconds: {{ workload_termination_grace_period_seconds }}
+          # Extra sleep before SIGTERM so endpoint removal can propagate. The
+          # runtime image has /bin/sh and sleep; set to 0 for distroless images.
+          preStopSleepSeconds: {{ workload_prestop_sleep_seconds }}
+        service:
+          type: {{ workload_service_type }}
+          port: {{ workload_service_port }}
+          sessionAffinity: {{ workload_session_affinity }}
+          {% if workload_session_affinity == "ClientIP" %}
+          sessionAffinityConfig:
+            clientIP:
+              timeoutSeconds: 10800
+          {% endif %}
+        podDisruptionBudget:
+          enabled: {{ workload_pdb_enabled }}
+          minAvailable: "{{ workload_pdb_min_available }}"
+        {% else %}
         scaling:
           minScale: {% if use_default_scaling %}1{% else %}{{ base_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}10{% else %}{{ base_max_scale }}{% endif %}
           target: {% if use_default_scaling %}100{% else %}{{ base_target }}{% endif %}
           containerConcurrency: 100
           timeoutSeconds: 300
+        {% endif %}
         resources:
           requests:
             cpu: "{% if use_default_scaling %}100m{% else %}{{ base_cpu_request }}{% endif %}"
@@ -159,7 +187,7 @@ spec:
           - name: APP__POSTGRES__HOST
             value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
           {% endif %}
-          {% if feature_kafka and kafka_managed_cluster %}
+          {% if feature_kafka and kafka_managed_cluster and workload_type == "Knative" %}
           # Chart-managed Kafka: Redpanda exposes a same-namespace Service
           # named "<project>-kafka" on 9093; Strimzi exposes the bootstrap
           # Service "<project>-kafka-kafka-bootstrap" on the plaintext 9092.
@@ -183,7 +211,40 @@ spec:
                   path: ca.crt
         {% endif %}
 
-    {% if event_source_kafka %}
+    {% if workload_type == "Deployment" and ingress_enabled %}
+    # Standard Ingress values rendered by deploy/chart/templates/ingress.yaml.
+    # `annotations` is a pass-through map: add controller-specific keys here
+    # (for example nginx proxy read/send timeouts for SSE/WebSockets).
+    ingress:
+      enabled: true
+      className: "{{ ingress_class_name }}"
+      annotations:
+        # Long-lived SSE/WebSocket support (nginx ingress controller example):
+        # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        # nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      servicePort: {{ workload_service_port }}
+      hosts:
+        - host: "{{ ingress_host }}"
+          paths:
+            - path: "{{ ingress_path }}"
+              pathType: {{ ingress_path_type }}
+      tls:
+        {% if ingress_tls_enabled %}
+        -
+          {% if ingress_host != "" %}
+          hosts:
+            - "{{ ingress_host }}"
+          {% endif %}
+          {% if ingress_tls_secret_name != "" %}
+          secretName: "{{ ingress_tls_secret_name }}"
+          {% endif %}
+        {% else %}
+        []
+        {% endif %}
+    {% endif %}
+
+    {% if event_source_kafka and workload_type == "Knative" %}
     kafka:
       {% if kafka_managed_cluster %}
       # Managed mode renders a Strimzi or Redpanda cluster plus a Knative Kafka
@@ -380,7 +441,7 @@ spec:
         {% endif %}
     {% endif %}
 
-    {% if feature_cron %}
+    {% if feature_cron and workload_type == "Knative" %}
     # The ksvc chart validates that a PingSource sink references a services key,
     # so the root sink `sink: "app"` is intentional: it targets the services.app
     # Knative Service (there is no sink.uri or nested target path here). The

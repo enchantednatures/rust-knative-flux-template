@@ -51,19 +51,26 @@ post = ["post-generate.rhai"]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
 
+# Workload type. `Knative` renders a Knative Service (serverless, scale-to-zero,
+# 300s request timeout). `Deployment` renders a standard apps/v1 Deployment plus
+# a core Service and an optional PodDisruptionBudget for long-lived connections
+# (websockets/SSE). Deployment mode disables Knative-only features: Flagger,
+# KafkaSource/Trigger sinks, PingSource, and DomainMapping.
+workload_type = { prompt = "Workload type", choices = ["Knative", "Deployment"], default = "Knative", type = "string" }
+
 # Feature toggles (individual booleans — cargo-generate v0.23.x cannot evaluate
 # array variables in conditional expressions due to a bug in the Rhai on_var callback)
 feature_s3 = { prompt = "Enable S3-compatible object storage (RustFS)?", type = "bool", default = false }
 feature_postgres = { prompt = "Enable CloudNativePG PostgreSQL?", type = "bool", default = false }
 feature_kafka = { prompt = "Enable Kafka event publishing?", type = "bool", default = false }
-feature_flagger = { prompt = "Enable Flagger canary deployments?", type = "bool", default = false }
+feature_flagger = { prompt = "Enable Flagger canary deployments? (Knative workload only; ignored for Deployment)", type = "bool", default = false }
 feature_gha_runner = { prompt = "Enable GitHub Actions self-hosted runner (ARC scale set)?", type = "bool", default = false }
 feature_cluster_smoke = { prompt = "Verify deployments on a real cluster after CI (smoke workflow)?", type = "bool", default = false }
-event_source_kafka = { prompt = "Enable Kafka event source (consumer)?", type = "bool", default = false }
+event_source_kafka = { prompt = "Enable Kafka event source (consumer)? (Knative workload only; ignored for Deployment)", type = "bool", default = false }
 # Scheduled work uses a Knative PingSource because CronJobSource was removed in
 # Knative Eventing v0.14. The PingSource event type is fixed at
 # `dev.knative.sources.ping`, so there is no custom-event-type prompt.
-feature_cron = { prompt = "Enable scheduled work (Knative PingSource)?", type = "bool", default = false }
+feature_cron = { prompt = "Enable scheduled work (Knative PingSource)? (ignored for Deployment)", type = "bool", default = false }
 
 enable_image_updates = { prompt = "Enable automated image updates?", type = "bool", default = false }
 target_namespace = { prompt = "Target namespace", type = "string", default = "default" }
@@ -76,7 +83,7 @@ image_registry = { prompt = "Container image registry", type = "string", default
 # project public and portable)
 git_auth_secret = { prompt = "Flux Git SSH deploy-key secret name in flux-system (empty = public repo over HTTPS)", type = "string", default = "" }
 image_pull_secret = { prompt = "Image pull secret name for private registries (empty = none)", type = "string", default = "" }
-custom_domain = { prompt = "Custom hostname for the dev Knative service, e.g. app.example.com (empty = none)", type = "string", default = "" }
+custom_domain = { prompt = "Custom hostname for the dev Knative service, e.g. app.example.com (Knative only; ignored for Deployment)", type = "string", default = "" }
 network_policy_allow_all = { prompt = "Add an allow-all NetworkPolicy to the dev namespace (lifts default-deny policies)?", type = "bool", default = false }
 
 # Scaling configuration
@@ -109,6 +116,54 @@ prod_cpu_request = { prompt = "Prod CPU request", type = "string" }
 prod_cpu_limit = { prompt = "Prod CPU limit", type = "string" }
 prod_memory_request = { prompt = "Prod memory request", type = "string" }
 prod_memory_limit = { prompt = "Prod memory limit", type = "string" }
+
+[conditional.'workload_type == "Deployment"'.placeholders]
+# Standard Deployment workload values (only prompted when workload_type =
+# Deployment). Workload replicas replace Knative's min/max scale per env.
+workload_replicas = { prompt = "Deployment replicas (base)", type = "string", default = "2" }
+workload_replicas_dev = { prompt = "Deployment replicas (dev)", type = "string", default = "2" }
+workload_replicas_staging = { prompt = "Deployment replicas (staging)", type = "string", default = "2" }
+workload_replicas_prod = { prompt = "Deployment replicas (prod)", type = "string", default = "3" }
+workload_max_unavailable = { prompt = "Rolling update maxUnavailable (integer or percentage, e.g. 0 or 25%)", type = "string", default = "0" }
+workload_max_surge = { prompt = "Rolling update maxSurge (integer or percentage, e.g. 1 or 25%)", type = "string", default = "1" }
+workload_termination_grace_period_seconds = { prompt = "terminationGracePeriodSeconds (connection drain window)", type = "string", default = "300" }
+workload_prestop_sleep_seconds = { prompt = "preStop sleep seconds (must be lower than terminationGracePeriodSeconds)", type = "string", default = "10" }
+workload_pdb_enabled = { prompt = "Render a PodDisruptionBudget?", type = "bool", default = true }
+workload_pdb_min_available = { prompt = "PodDisruptionBudget minAvailable (integer or percentage; must be <= replicas)", type = "string", default = "1" }
+workload_service_type = { prompt = "Service type", choices = ["ClusterIP", "NodePort", "LoadBalancer"], default = "ClusterIP", type = "string" }
+workload_service_port = { prompt = "Service port", type = "string", default = "80" }
+workload_session_affinity = { prompt = "Session affinity (ClientIP helps sticky WebSockets)", choices = ["None", "ClientIP"], default = "None", type = "string" }
+ingress_enabled = { prompt = "Expose the Deployment through a Kubernetes Ingress?", type = "bool", default = false }
+ingress_class_name = { prompt = "Ingress class name (empty = cluster default)", type = "string", default = "" }
+ingress_host = { prompt = "Ingress hostname (empty = hostless catch-all rule)", type = "string", default = "" }
+ingress_path = { prompt = "Ingress path", type = "string", default = "/" }
+ingress_path_type = { prompt = "Ingress path type", choices = ["Prefix", "Exact", "ImplementationSpecific"], default = "Prefix", type = "string" }
+ingress_tls_enabled = { prompt = "Enable TLS on the Ingress?", type = "bool", default = false }
+ingress_tls_secret_name = { prompt = "Ingress TLS secret name (empty = controller-managed certificate)", type = "string", default = "" }
+
+[conditional.'workload_type == "Deployment"']
+# Knative-only artifacts the chart rejects or that target a Knative Service.
+# The corresponding prompts stay visible (top-level placeholders cannot be
+# conditionally hidden safely) and are documented as ignored for Deployment.
+ignore = [
+  "deploy/components/flagger",
+  "deploy/infrastructure/flagger",
+  "deploy/flux/flagger-kustomization.yaml",
+  "docs/FLAGGER.md",
+  "docs/SCHEDULED_WORK.md",
+  "scripts/dev/install-knative-eventing.sh",
+  "docs/KAFKA_EVENTING.md",
+  "scripts/dev/install-knative-kafka.sh",
+  "deploy/kyverno",
+  "deploy/overlays/dev/domain-mapping.yaml",
+]
+
+[conditional.'workload_type == "Knative"']
+ignore = [
+  "docs/LONG_RUNNING_WORKLOADS.md",
+  "src/handlers/stream.rs",
+  "tests/stream_test.rs",
+]
 
 [conditional.'!feature_s3']
 ignore = [

@@ -50,8 +50,12 @@ curl http://localhost:8080/metrics | grep http_request_duration_seconds
 # Check pod status
 kubectl get pods -n {{ project_name }}
 
-# Check service status
+# Check workload status
+{% if workload_type == "Deployment" %}
+kubectl get deployment,service,pdb {{ project_name }} -n {{ project_name }}
+{% else %}
 kubectl get ksvc {{ project_name }} -n {{ project_name }}
+{% endif %}
 ```
 
 ### Step 2: Respond
@@ -85,7 +89,9 @@ kubectl scale deployment/{{ project_name }} --replicas=20 -n {{ project_name }}
 kubectl delete pod <pod-name> -n {{ project_name }}
 
 # Disable canary (shift all traffic to stable)
+{% if workload_type == "Knative" %}
 kubectl set traffic {{ project_name }} --revision={{ project_name }}-stable --percent=100
+{% endif %}
 ```
 
 **Debug**:
@@ -179,6 +185,21 @@ kubectl rollout restart deployment/{{ project_name }} -n {{ project_name }}
 
 ## Scaling
 
+{% if workload_type == "Deployment" %}
+Deployment replicas are GitOps-managed. Change the per-environment
+`workload.replicas` value in the overlay (or the base HelmRelease) and let Flux
+reconcile. A manual `kubectl scale` is reverted by Flux on the next reconcile.
+
+```bash
+# Edit the overlay, commit, and let Flux reconcile:
+# deploy/overlays/<env>/kustomization.yaml -> /spec/values/services/app/workload/replicas
+kubectl scale deployment/{{ project_name }} --replicas=20 -n {{ project_name }}   # temporary only
+
+# Verify
+kubectl get pods -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }}
+kubectl get deployment {{ project_name }} -n {{ project_name }}
+```
+{% else %}
 ### Manual Scale Up
 
 ```bash
@@ -222,6 +243,7 @@ kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"templa
 # After event, reduce
 kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/minScale":"5"}}}}}'
 ```
+{% endif %}
 
 ---
 
@@ -379,6 +401,13 @@ kubectl rollout undo deployment/{{ project_name }} -n {{ project_name }}
 
 ## Maintenance Windows
 
+{% if workload_type == "Deployment" %}
+> This project uses a Deployment workload. For planned maintenance, scale the
+> Deployment with `kubectl scale deployment/{{ project_name }} --replicas=0`
+> (temporary; Flux restores the Git-declared replica count) and scale it back
+> after maintenance. The Knative annotation patches below do not apply.
+{% endif %}
+
 ### Planned Maintenance
 
 **Step 1: Announce**:
@@ -388,11 +417,19 @@ kubectl rollout undo deployment/{{ project_name }} -n {{ project_name }}
 
 **Step 2: Prepare**:
 ```bash
+{% if workload_type == "Deployment" %}
+# Scale down gracefully
+kubectl scale deployment/{{ project_name }} --replicas=0 -n {{ project_name }}
+
+# Wait for pods to terminate
+kubectl wait --for=delete pods -l app.kubernetes.io/name={{ project_name }} -n {{ project_name }} --timeout=300s
+{% else %}
 # Scale down gracefully
 kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/minScale":"0"}}}}}'
 
 # Wait for pods to terminate
 kubectl wait --for=delete pods -l serving.knative.dev/service={{ project_name }} -n {{ project_name }} --timeout=300s
+{% endif %}
 ```
 
 **Step 3: Perform Maintenance**:
@@ -403,11 +440,19 @@ kubectl wait --for=delete pods -l serving.knative.dev/service={{ project_name }}
 
 **Step 4: Verify**:
 ```bash
+{% if workload_type == "Deployment" %}
+# Scale up (or let Flux restore the Git-declared replica count)
+kubectl scale deployment/{{ project_name }} --replicas=3 -n {{ project_name }}
+
+# Wait for the rollout
+kubectl rollout status deployment/{{ project_name }} -n {{ project_name }} --timeout=300s
+{% else %}
 # Scale up
 kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/minScale":"5"}}}}}'
 
 # Wait for pods to be ready
 kubectl wait --for=condition=ready ksvc {{ project_name }} -n {{ project_name }} --timeout=300s
+{% endif %}
 
 # Test health
 kubectl exec deployment/{{ project_name }} -n {{ project_name }} -- curl localhost:8080/health/ready
@@ -415,13 +460,20 @@ kubectl exec deployment/{{ project_name }} -n {{ project_name }} -- curl localho
 
 ### Rolling Updates (No Downtime)
 
+{% if workload_type == "Deployment" %}
+The generated Deployment uses `maxUnavailable: 0` and `maxSurge: 1`, so a new
+pod starts before an old one is removed. `preStopSleepSeconds` gives endpoints
+time to drain; clients reconnect if a rolling update interrupts a long stream.
+{% else %}
 Knative supports zero-downtime deployments automatically:
 
 1. Deploy new image
 2. New pods start with new revision
 3. Traffic gradually shifts (if configured)
 4. Old pods drained after timeout
+{% endif %}
 
+{% if workload_type == "Knative" %}
 **Configure Traffic Split**:
 ```bash
 # Gradual rollout
@@ -430,6 +482,7 @@ kubectl set traffic {{ project_name }} \
   --revision={{ project_name }}-00002=10 \
   -n {{ project_name }}
 ```
+{% endif %}
 
 ---
 
@@ -439,11 +492,19 @@ kubectl set traffic {{ project_name }} \
 
 **Complete Outage Required**:
 ```bash
+{% if workload_type == "Deployment" %}
+# Scale to zero (emergency; Flux will restore replicas on the next reconcile)
+kubectl scale deployment/{{ project_name }} --replicas=0 -n {{ project_name }}
+
+# Wait for termination
+kubectl wait --for=delete pods -l app.kubernetes.io/name={{ project_name }} -n {{ project_name }}
+{% else %}
 # Scale to zero (emergency)
 kubectl patch ksvc {{ project_name }} -n {{ project_name }} -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/minScale":"0"}}}}}'
 
 # Wait for termination
 kubectl wait --for=delete pods -l serving.knative.dev/service={{ project_name }} -n {{ project_name }}
+{% endif %}
 ```
 
 ### Emergency Database Restore

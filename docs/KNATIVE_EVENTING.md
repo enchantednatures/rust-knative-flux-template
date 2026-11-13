@@ -1,5 +1,12 @@
 # Knative Eventing Guide
 
+{% if workload_type == "Deployment" %}
+> **Deployment workload:** this project renders a standard Deployment, not a
+> Knative Service. Knative Eventing sources (`KafkaSource`, `Trigger`,
+> `PingSource`) are not generated. The `/` CloudEvents endpoint still accepts
+> CloudEvents delivered by any HTTP client or external event source.
+
+{% endif %}
 This document explains how to emit CloudEvents to your Knative service and how Knative routes them to your application.
 
 ## Overview
@@ -156,7 +163,7 @@ spec:
       name: default
 ```
 
-{% if feature_cron %}
+{% if feature_cron and workload_type == "Knative" %}
 ### Example: Scheduled Work with PingSource
 
 For cron-triggered work, this project uses a Knative PingSource instead of the

@@ -4,7 +4,7 @@ Complete reference for {{ project_name }} HTTP endpoints, request/response forma
 
 ## Base URL and Versioning
 
-**Base URL**: `http://localhost:8080` (local) or service URL from Knative (production)
+**Base URL**: `http://localhost:8080` (local) or the {% if workload_type == "Deployment" %}Ingress/LoadBalancer URL{% else %}service URL from Knative{% endif %} (production)
 
 **API Version**: Currently unversioned (v1 coming in future releases)
 
@@ -12,7 +12,7 @@ All endpoints return JSON responses unless otherwise noted.
 
 ## Health Endpoints
 
-Health endpoints are used by Knative for liveness and readiness probes.
+Health endpoints are used by {% if workload_type == "Deployment" %}the Deployment{% else %}Knative{% endif %} for liveness and readiness probes.
 
 ### Liveness Probe
 
@@ -125,6 +125,34 @@ http_request_total{method="GET",path="/health/live",status="200"} 45
 
 ---
 
+{% if workload_type == "Deployment" %}
+## Streaming Endpoint
+
+### Server-Sent Events
+
+**Endpoint**: `GET /api/v1/stream`
+
+**Purpose**: Example long-lived connection for Deployment workloads
+(WebSockets/SSE). Emits an immediate heartbeat and then one every 15 seconds.
+
+```bash
+curl -N http://localhost:8080/api/v1/stream
+```
+
+```text
+event: heartbeat
+data: {"seq":1,"uptime_seconds":0,"service":"{{ project_name | replace: "_", "-" }}"}
+```
+
+The connection stays open until the client disconnects or the pod terminates.
+Metrics: `stream_connections_total`, `stream_connections_active`, and
+`stream_heartbeats_sent_total`.
+
+See `docs/LONG_RUNNING_WORKLOADS.md` for ingress/proxy timeout settings.
+
+---
+
+{% endif %}
 {% if feature_s3 %}
 
 ## Storage Endpoints
@@ -522,8 +550,7 @@ applied in `src/routes.rs` to the `/api/v1/*` router only:
 | `per_second` | 100 | Tokens replenished per second, per client |
 | `burst_size` | 50 | Maximum tokens a client may accumulate (burst) |
 
-The client key is the connection's peer IP address (the Knative activator or
-Kourier gateway address in-cluster), so limits apply per upstream connection.
+The client key is the connection's peer IP address ({% if workload_type == "Deployment" %}the load balancer/ingress address{% else %}the Knative activator or Kourier gateway address in-cluster{% endif %}), so limits apply per upstream connection.
 
 **Exceeding the limit** returns `429 Too Many Requests` with rate-limit
 headers:
@@ -541,7 +568,7 @@ Too Many Requests
 `x-ratelimit-after` is the number of seconds to wait before retrying.
 
 Health (`/health/live`, `/health/ready`), `/metrics`, `/` (CloudEvents sink)
-and the Swagger UI are **not** rate limited, so probes and Knative event
+and the Swagger UI are **not** rate limited, so probes and {% if workload_type == "Deployment" %}CloudEvents{% else %}Knative event{% endif %}
 delivery are never throttled.
 
 `AppError::RateLimit` exists for handlers that apply their own admission

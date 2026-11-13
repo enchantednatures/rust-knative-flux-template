@@ -42,9 +42,11 @@ local-up: ## Start full local development environment (Kind + all services)
 	@echo "${YELLOW}[1/6]${NC} Creating Kind cluster and registry..."
 	@./scripts/dev/setup-kind.sh || { echo "${RED}✗ Failed to setup cluster${NC}"; exit 1; }
 	@echo ""
+	{% if workload_type == "Knative" %}
 	@echo "${YELLOW}[2/6]${NC} Installing Knative Serving v1.20.0..."
 	@./scripts/dev/install-knative.sh || { echo "${RED}✗ Failed to install Knative${NC}"; exit 1; }
 	@echo ""
+	{% endif %}
 	@echo "${YELLOW}[3/6]${NC} Deploying infrastructure services..."
 	@./scripts/dev/deploy-infrastructure.sh || { echo "${RED}✗ Failed to deploy infrastructure${NC}"; exit 1; }
 	@echo ""
@@ -113,27 +115,49 @@ dev-restart: ## Rebuild and redeploy application (with docker image rebuild)
 
 .PHONY: dev-logs
 dev-logs: ## Stream application logs
+	{% if workload_type == "Deployment" %}
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		kubectl logs -f -l app.kubernetes.io/name='$(PROJECT_NAME)' --all-containers=true 2>/dev/null || \
+		echo "${RED}No logs available. Is the application deployed?${NC}"
+	{% else %}
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		kubectl logs -f -l serving.knative.dev/service='$(PROJECT_NAME)' -c user-container --all-containers=false 2>/dev/null || \
 		echo "${RED}No logs available. Is the application deployed?${NC}"
+	{% endif %}
 
 .PHONY: dev-status
 dev-status: ## Show status of all services
+	@export KUBECONFIG=$(KUBECONFIG_PATH); \
+		echo "${GREEN}=== Kubernetes Cluster ===${NC}"; \
+		kubectl cluster-info; \
+		echo ""; \
+		echo "${GREEN}=== Infrastructure Services (namespace: services) ===${NC}"; \
+		kubectl get pods -n services 2>/dev/null || echo "No services namespace"; \
+		echo ""; \
+		echo "${GREEN}=== Observability Stack (namespace: observability) ===${NC}"; \
+		kubectl get pods -n observability 2>/dev/null || echo "No observability namespace"; \
+		echo ""; \
+		echo "${GREEN}=== Application (namespace: default) ===${NC}"
+	{% if workload_type == "Deployment" %}
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
-		echo "${GREEN}=== Kubernetes Cluster ===${NC}" && \
-		kubectl cluster-info && \
-		echo "" && \
-		echo "${GREEN}=== Infrastructure Services (namespace: services) ===${NC}" && \
-		kubectl get pods -n services 2>/dev/null || echo "No services namespace" && \
-		echo "" && \
-		echo "${GREEN}=== Observability Stack (namespace: observability) ===${NC}" && \
-		kubectl get pods -n observability 2>/dev/null || echo "No observability namespace" && \
-		echo "" && \
-		echo "${GREEN}=== Application (namespace: default) ===${NC}" && \
+		kubectl get deploy,svc,pdb,pods -n default 2>/dev/null || echo "No services deployed"
+	{% else %}
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		kubectl get ksvc,pods -n default 2>/dev/null || echo "No services deployed"
+	{% endif %}
 
 .PHONY: dev-shell
 dev-shell: ## Open shell in application pod
+	{% if workload_type == "Deployment" %}
+	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
+		POD=$$(kubectl get pod -l app.kubernetes.io/name='$(PROJECT_NAME)' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && \
+		if [ -z "$$POD" ]; then \
+			echo "${RED}No running pod found. Is the application deployed?${NC}"; \
+			exit 1; \
+		fi && \
+		kubectl exec -it $$POD -- /bin/sh || \
+		echo "${RED}Failed to open shell${NC}"
+	{% else %}
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		POD=$$(kubectl get pod -l serving.knative.dev/service='$(PROJECT_NAME)' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && \
 		if [ -z "$$POD" ]; then \
@@ -142,6 +166,7 @@ dev-shell: ## Open shell in application pod
 		fi && \
 		kubectl exec -it $$POD -c user-container -- /bin/sh || \
 		echo "${RED}Failed to open shell${NC}"
+	{% endif %}
 
 .PHONY: dev-forward
 dev-forward: ## Start port forwarding for all services (run in separate terminal)
@@ -226,6 +251,7 @@ kafka-logs: ## View Kafka broker logs
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 	kubectl logs -n kafka -l app=kafka --tail=100 -f
 
+{% if event_source_kafka and workload_type == "Knative" %}
 .PHONY: kafka-source-status
 kafka-source-status: ## Check KafkaSource status
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
@@ -236,6 +262,7 @@ kafka-dlq-logs: ## View Dead Letter Queue handler logs
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		kubectl logs -f -l serving.knative.dev/service="$(PROJECT_NAME)-dlq" -c user-container 2>/dev/null || \
 		echo "${RED}DLQ handler not running or no events failed${NC}"
+{% endif %}
 
 # ============================================================================
 # PostgreSQL Commands (conditional on feature_postgres; guards fail cleanly
@@ -288,9 +315,13 @@ dev-kubeconfig: ## Show kubeconfig export command
 
 .PHONY: dev-get-url
 dev-get-url: ## Get the application URL
+	{% if workload_type == "Deployment" %}
+	@echo "http://localhost:8080 (run 'make dev-forward' to expose svc/$(PROJECT_NAME))"
+	{% else %}
 	@export KUBECONFIG=$(KUBECONFIG_PATH) && \
 		kubectl get ksvc '$(PROJECT_NAME)' -n default -o jsonpath='{.status.url}' 2>/dev/null || \
 		echo "${RED}Application not found${NC}"
+	{% endif %}
 
 # ============================================================================
 # FluxCD Bootstrap & Deploy Commands

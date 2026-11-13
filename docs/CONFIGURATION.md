@@ -256,6 +256,47 @@ kubectl create secret generic {{ project_name }}-secrets \
 
 Then inject into Pod via environment variables:
 
+{% if workload_type == "Deployment" %}
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ project_name }}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ project_name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ project_name }}
+    spec:
+      containers:
+        - name: service
+          image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
+          env:
+            - name: APP__SERVER__PORT
+              value: "8080"
+            - name: APP__REDIS__URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: redis-url
+            {% if feature_s3 %}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: aws-secret-access-key
+            {% endif %}
+```
+{% else %}
 ```yaml
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -265,28 +306,29 @@ spec:
   template:
     spec:
       containers:
-       - image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
-        env:
-        - name: APP__SERVER__PORT
-          value: "8080"
-        - name: APP__REDIS__URL
-          valueFrom:
-            secretKeyRef:
-              name: {{ project_name }}-secrets
-              key: redis-url
-        {% if feature_s3 %}
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: {{ project_name }}-secrets
-              key: aws-access-key-id
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ project_name }}-secrets
-              key: aws-secret-access-key
-        {% endif %}
+        - image: {{ image_registry }}/{{ github_org }}/{{ project_name }}:latest
+          env:
+            - name: APP__SERVER__PORT
+              value: "8080"
+            - name: APP__REDIS__URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: redis-url
+            {% if feature_s3 %}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ project_name }}-secrets
+                  key: aws-secret-access-key
+            {% endif %}
 ```
+{% endif %}
 
 ---
 

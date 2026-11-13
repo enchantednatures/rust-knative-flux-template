@@ -10,7 +10,7 @@ resources:
   {% endif %}
 
 components:
-  {% if feature_flagger %}
+  {% if feature_flagger and workload_type == "Knative" %}
   - ../../components/flagger
   {% endif %}
   {% if feature_postgres %}
@@ -22,11 +22,17 @@ patches:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
     patch: |-
+      {% if workload_type == "Deployment" %}
+      - op: replace
+        path: /spec/values/services/app/workload/replicas
+        value: {{ workload_replicas_prod }}
+      {% else %}
       - op: replace
         path: /spec/values/services/app/scaling
         value:
           minScale: {% if use_default_scaling %}2{% else %}{{ prod_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}20{% else %}{{ prod_max_scale }}{% endif %}
+      {% endif %}
       - op: replace
         path: /spec/values/services/app/resources
         value:
@@ -66,7 +72,7 @@ patches:
           {% endif %}
       {% endif %}
 
-      {% if event_source_kafka %}
+      {% if event_source_kafka and workload_type == "Knative" %}
       {% if kafka_managed_cluster == false %}
       # External Kafka only: managed mode derives the bootstrap from the
       # chart-managed cluster and rejects an explicit value.

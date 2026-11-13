@@ -126,8 +126,21 @@ jobs:
             event_source_kafka: "false"
             feature_cron: "true"
             enable_image_updates: "false"
+          # Long-running Deployment workload. Knative-only features are set to
+          # true on purpose to prove the generated output suppresses them.
+          - scenario: long-running
+            workload_type: "Deployment"
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "true"
+            event_source_kafka: "true"
+            feature_cron: "true"
+            feature_cluster_smoke: "true"
+            enable_image_updates: "false"
     env:
       SCENARIO: ${{ matrix.scenario }}
+      WORKLOAD_TYPE: ${{ matrix.workload_type || 'Knative' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -202,6 +215,7 @@ jobs:
           [values]
           project_name = "${PROJ_NAME}"
           project_author = "CI Bot <ci@github.com>"
+          workload_type = "${WORKLOAD_TYPE}"
           TOML_HEADER
 
           # Feature booleans
@@ -302,6 +316,35 @@ jobs:
           cron_timezone = "UTC"
           cron_payload = '{"message":"generated"}'
           TOML_CRON
+          fi
+
+          # Deployment workload values (prompted when workload_type = Deployment)
+          if [[ "${WORKLOAD_TYPE}" == "Deployment" ]]; then
+            cat >> "$TEMP_DIR/template-values.toml" <<'TOML_DEPLOY'
+          workload_replicas = "2"
+          workload_replicas_dev = "2"
+          workload_replicas_staging = "2"
+          workload_replicas_prod = "3"
+          workload_max_unavailable = "0"
+          workload_max_surge = "1"
+          workload_termination_grace_period_seconds = "300"
+          workload_prestop_sleep_seconds = "10"
+          workload_pdb_enabled = true
+          workload_pdb_min_available = "1"
+          workload_service_type = "ClusterIP"
+          workload_service_port = "80"
+          workload_session_affinity = "None"
+          ingress_enabled = true
+          ingress_class_name = "nginx"
+          ingress_host = "long-running.example.com"
+          ingress_path = "/"
+          ingress_path_type = "Prefix"
+          ingress_tls_enabled = true
+          ingress_tls_secret_name = "long-running-tls"
+          feature_cluster_smoke = true
+          smoke_environment = "staging"
+          custom_domain = "long-running.example.com"
+          TOML_DEPLOY
           fi
 
           echo "--- template-values.toml ---"
@@ -410,6 +453,19 @@ jobs:
           set -euo pipefail
           cd "$GENERATED_DIR"
 
+          if [[ "${WORKLOAD_TYPE}" == "Deployment" ]]; then
+            ! grep -q 'pingsources:' deploy/base/helmrelease.yaml \
+              || { echo "FAIL: pingsources present for Deployment workload"; exit 1; }
+            [ ! -f scripts/dev/install-knative-eventing.sh ] \
+              || { echo "FAIL: install-knative-eventing.sh present for Deployment workload"; exit 1; }
+            [ ! -f docs/SCHEDULED_WORK.md ] \
+              || { echo "FAIL: docs/SCHEDULED_WORK.md present for Deployment workload"; exit 1; }
+            ! grep -q 'SCHEDULED_WORK.md' README.md \
+              || { echo "FAIL: README.md links SCHEDULED_WORK for Deployment workload"; exit 1; }
+            echo "✓ scheduled-work artifacts suppressed for Deployment"
+            exit 0
+          fi
+
           if [[ "${{ matrix.feature_cron }}" == "true" ]]; then
             grep -q 'pingsources:' deploy/base/helmrelease.yaml \
               || { echo "FAIL: pingsources missing from HelmRelease values"; exit 1; }
@@ -502,7 +558,7 @@ jobs:
         shell: bash
 
       - name: Validate Flagger per-env metric gates
-        if: matrix.feature_flagger == 'true'
+        if: matrix.feature_flagger == 'true' && matrix.workload_type != 'Deployment'
         run: |
           set -euo pipefail
           cd "$GENERATED_DIR"
@@ -567,6 +623,153 @@ jobs:
           echo "Flagger per-env metric gate validation passed"
         shell: bash
 
+      - name: Validate Deployment workload render
+        if: env.WORKLOAD_TYPE == 'Deployment'
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          PROJECT_NAME="${GENERATED_DIR##*/}"
+
+          if ! command -v helm >/dev/null 2>&1; then
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+          if ! command -v yq >/dev/null 2>&1; then
+            sudo curl -sSLo /usr/local/bin/yq \
+              https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          helm version --short
+          yq --version
+
+          helm dependency build deploy/chart
+          VALUES_FILE=$(mktemp)
+          yq eval '.spec.values' deploy/base/helmrelease.yaml > "$VALUES_FILE"
+          RENDERED=$(mktemp)
+          helm lint deploy/chart -n default -f "$VALUES_FILE"
+          helm template "$PROJECT_NAME" deploy/chart -f "$VALUES_FILE" -n default > "$RENDERED"
+
+          assert_eq() {
+            local description="$1" expected="$2" actual="$3"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "FAIL: $description: expected '$expected', got '${actual:-<empty>}'"
+              exit 1
+            fi
+            echo "PASS: $description"
+          }
+
+          assert_eq "no Knative Service rendered" "0" \
+            "$(grep -c 'apiVersion: serving.knative.dev/v1' "$RENDERED" || true)"
+          for kind in KafkaSource Trigger PingSource Canary DomainMapping; do
+            if grep -q "^kind: ${kind}$" "$RENDERED"; then
+              echo "FAIL: ${kind} rendered for a Deployment workload"
+              exit 1
+            fi
+          done
+          assert_eq "exactly one Deployment" "1" \
+            "$(grep -c '^kind: Deployment$' "$RENDERED" || true)"
+          assert_eq "Deployment name" "$PROJECT_NAME" \
+            "$(yq 'select(.kind == "Deployment") | .metadata.name' "$RENDERED" | head -1)"
+          assert_eq "base replicas" "2" \
+            "$(yq 'select(.kind == "Deployment") | .spec.replicas' "$RENDERED" | head -1)"
+          assert_eq "maxUnavailable" "0" \
+            "$(yq 'select(.kind == "Deployment") | .spec.strategy.rollingUpdate.maxUnavailable' "$RENDERED" | head -1)"
+          assert_eq "maxSurge" "1" \
+            "$(yq 'select(.kind == "Deployment") | .spec.strategy.rollingUpdate.maxSurge' "$RENDERED" | head -1)"
+          assert_eq "terminationGracePeriodSeconds" "300" \
+            "$(yq 'select(.kind == "Deployment") | .spec.template.spec.terminationGracePeriodSeconds' "$RENDERED" | head -1)"
+          assert_eq "preStop sleep" "/bin/sh" \
+            "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].lifecycle.preStop.exec.command[0]' "$RENDERED" | head -1)"
+          assert_eq "core Service port" "80" \
+            "$(yq 'select(.kind == "Service" and .apiVersion == "v1") | .spec.ports[0].port' "$RENDERED" | head -1)"
+          assert_eq "core Service targetPort" "8080" \
+            "$(yq 'select(.kind == "Service" and .apiVersion == "v1") | .spec.ports[0].targetPort' "$RENDERED" | head -1)"
+          assert_eq "PodDisruptionBudget" "1" \
+            "$(yq 'select(.kind == "PodDisruptionBudget") | .spec.minAvailable' "$RENDERED" | head -1)"
+          assert_eq "Ingress class" "nginx" \
+            "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' "$RENDERED" | head -1)"
+          assert_eq "Ingress host" "long-running.example.com" \
+            "$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' "$RENDERED" | head -1)"
+          assert_eq "Ingress path" "/" \
+            "$(yq 'select(.kind == "Ingress") | .spec.rules[0].http.paths[0].path' "$RENDERED" | head -1)"
+          assert_eq "Ingress path type" "Prefix" \
+            "$(yq 'select(.kind == "Ingress") | .spec.rules[0].http.paths[0].pathType' "$RENDERED" | head -1)"
+          assert_eq "Ingress TLS secret" "long-running-tls" \
+            "$(yq 'select(.kind == "Ingress") | .spec.tls[0].secretName' "$RENDERED" | head -1)"
+
+          # Annotations are a pass-through map: add one and re-render.
+          yq eval -i \
+            '.spec.values.ingress.annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"] = "3600"' \
+            deploy/base/helmrelease.yaml
+          yq eval '.spec.values' deploy/base/helmrelease.yaml > "$VALUES_FILE"
+          helm template "$PROJECT_NAME" deploy/chart -f "$VALUES_FILE" -n default > "$RENDERED"
+          assert_eq "Ingress annotation pass-through" "3600" \
+            "$(yq 'select(.kind == "Ingress") | .metadata.annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"]' "$RENDERED" | head -1)"
+
+          # Per-env replica patches and suppressed Knative artifacts.
+          for env in dev staging prod; do
+            OUT="/tmp/deployment-${env}.yaml"
+            kubectl kustomize "deploy/overlays/${env}" > "$OUT"
+            [ -s "$OUT" ] || { echo "FAIL: deploy/overlays/${env} rendered empty"; exit 1; }
+            ! grep -q 'kind: DomainMapping' "$OUT" \
+              || { echo "FAIL: DomainMapping rendered for Deployment (${env})"; exit 1; }
+            ! grep -q 'kind: ClusterDomainClaim' "$OUT" \
+              || { echo "FAIL: ClusterDomainClaim rendered for Deployment (${env})"; exit 1; }
+            assert_eq "${env} workload type" "Deployment" \
+              "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.workload.type' "$OUT")"
+          done
+          assert_eq "dev replicas" "2" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.workload.replicas' /tmp/deployment-dev.yaml)"
+          assert_eq "staging replicas" "2" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.workload.replicas' /tmp/deployment-staging.yaml)"
+          assert_eq "prod replicas" "3" \
+            "$(yq 'select(.kind == "HelmRelease") | .spec.values.services.app.workload.replicas' /tmp/deployment-prod.yaml)"
+
+          [ ! -d deploy/components/flagger ] \
+            || { echo "FAIL: Flagger component shipped for Deployment"; exit 1; }
+          [ ! -d deploy/infrastructure/flagger ] \
+            || { echo "FAIL: Flagger operator shipped for Deployment"; exit 1; }
+          [ ! -f deploy/flux/flagger-kustomization.yaml ] \
+            || { echo "FAIL: Flagger Flux Kustomization shipped for Deployment"; exit 1; }
+          [ ! -f docs/FLAGGER.md ] \
+            || { echo "FAIL: docs/FLAGGER.md shipped for Deployment"; exit 1; }
+          [ ! -f docs/SCHEDULED_WORK.md ] \
+            || { echo "FAIL: docs/SCHEDULED_WORK.md shipped for Deployment"; exit 1; }
+          [ ! -f docs/KAFKA_EVENTING.md ] \
+            || { echo "FAIL: docs/KAFKA_EVENTING.md shipped for Deployment"; exit 1; }
+          [ ! -d deploy/kyverno ] \
+            || { echo "FAIL: deploy/kyverno shipped for Deployment"; exit 1; }
+          [ ! -f deploy/overlays/dev/domain-mapping.yaml ] \
+            || { echo "FAIL: domain-mapping.yaml shipped for Deployment"; exit 1; }
+
+          [ -f src/handlers/stream.rs ] \
+            || { echo "FAIL: src/handlers/stream.rs missing"; exit 1; }
+          [ -f tests/stream_test.rs ] \
+            || { echo "FAIL: tests/stream_test.rs missing"; exit 1; }
+          grep -q 'async-stream' Cargo.toml \
+            || { echo "FAIL: async-stream dependency missing"; exit 1; }
+          grep -q '/stream' src/routes.rs \
+            || { echo "FAIL: /stream route missing"; exit 1; }
+          grep -q 'GET /api/v1/stream' README.md \
+            || { echo "FAIL: README.md missing /api/v1/stream"; exit 1; }
+          grep -q 'LONG_RUNNING_WORKLOADS.md' README.md \
+            || { echo "FAIL: README.md missing LONG_RUNNING_WORKLOADS link"; exit 1; }
+          grep -q 'rollout status deployment' scripts/dev/build-and-deploy.sh \
+            || { echo "FAIL: build-and-deploy.sh does not wait for a Deployment"; exit 1; }
+
+          SMOKE=".github/workflows/smoke-deploy.yaml"
+          [ -f "$SMOKE" ] || { echo "FAIL: smoke workflow missing"; exit 1; }
+          grep -q 'deployment/${SERVICE_NAME}' "$SMOKE" \
+            || { echo "FAIL: smoke workflow has no Deployment branch"; exit 1; }
+          grep -q 'port-forward' "$SMOKE" \
+            || { echo "FAIL: smoke workflow has no port-forward fallback"; exit 1; }
+          if grep -q 'ksvc/${SERVICE_NAME}' "$SMOKE"; then
+            echo "FAIL: smoke workflow still waits on a Knative Service for Deployment"
+            exit 1
+          fi
+
+          echo "✓ Deployment workload render assertions passed"
+        shell: bash
+
   managed-kafka-render:
     name: "Managed Kafka render"
     runs-on: ubuntu-latest
@@ -611,6 +814,7 @@ jobs:
           [values]
           project_name = "marrakesh"
           project_author = "CI Bot <ci@github.com>"
+          workload_type = "Knative"
           feature_s3 = true
           feature_kafka = true
           feature_postgres = false

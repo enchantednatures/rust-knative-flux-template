@@ -14,7 +14,7 @@
 ## Core Features
 
 ### Observability (Built-in)
-- **Distributed Tracing**: OpenTelemetry → Jaeger (B3 headers for Knative)
+- **Distributed Tracing**: OpenTelemetry → Jaeger (B3 headers for {% if workload_type == "Deployment" %}HTTP clients{% else %}Knative{% endif %})
 - **Metrics**: Prometheus-compatible HTTP request metrics
 - **Logging**: Structured JSON logs with trace ID correlation
 - **Alerting**: Examples for Slack, PagerDuty
@@ -30,13 +30,20 @@
   - Monitoring and alerting
 
 ### Events & Messaging
-- **Kafka**: Event source via Knative Eventing
 - **CloudEvents**: Automatic format conversion
+{% if workload_type == "Knative" %}
+- **Kafka**: Event source via Knative Eventing
 - **DLQ**: Dead Letter Queue for failed events
 - **Consumer Scaling**: Automatic to match partitions
+{% endif %}
 
 ### Deployment & Infrastructure
+{% if workload_type == "Deployment" %}
+- **Deployment**: Fixed replicas, rolling updates, PodDisruptionBudget
+- **Ingress / LoadBalancer**: Optional standard Kubernetes Ingress
+{% else %}
 - **Knative Serving**: Auto-scaling (min 1, max 100, scale-to-zero)
+{% endif %}
 - **FluxCD**: Git-driven deployment
 - **Docker**: Multi-stage, optimized builds
 - **Kustomize**: Base + overlays (dev/staging/prod)
@@ -63,7 +70,7 @@
 
 ### Development Environment
 ```bash
-make local-up      # Start Kind + Knative + Redis + RustFS + Kafka + PostgreSQL
+make local-up      # Start Kind{% if workload_type == "Knative" %} + Knative{% endif %} + Redis + RustFS + Kafka + PostgreSQL
 make dev-logs    # Follow service logs
 cargo test       # Run all tests
 ```
@@ -78,15 +85,15 @@ cargo test       # Run all tests
 | Observability | OpenTelemetry 0.31 + Jaeger + Prometheus |
 | Storage | Redis 0.24, OpenDAL 0.55 |
 | Database | PostgreSQL (CloudNativePG 1.28.0) |
-| Events | Kafka + Knative Eventing |
-| Deployment | Knative Serving + FluxCD + Docker |
+| Events | {% if workload_type == "Deployment" %}CloudEvents HTTP sink{% else %}Kafka + Knative Eventing{% endif %} |
+| Deployment | {% if workload_type == "Deployment" %}Deployment + Service + PDB{% else %}Knative Serving{% endif %} + FluxCD + Docker |
 | IaC | Kustomize + YAML |
 
 ## Key Characteristics
 
 ### What It Does Well
 - Enterprise observability (traces, metrics, logs)
-- Kubernetes-native deployment (Knative)
+- Kubernetes-native deployment ({% if workload_type == "Deployment" %}long-running Deployment{% else %}Knative{% endif %})
 - GitOps infrastructure (FluxCD)
 - Event-driven architectures (Kafka)
 - Production database with HA/backups
@@ -144,8 +151,13 @@ cargo run
 
 - **ARCHITECTURE.md** - System design and component breakdown
 - **DEPLOYMENT.md** - Production deployment procedures
+{% if workload_type == "Deployment" %}
+- **LONG_RUNNING_WORKLOADS.md** - Deployment values, ingress, and SSE
+{% endif %}
 - **MONITORING.md** - Observability setup and dashboards
+{% if event_source_kafka and workload_type == "Knative" %}
 - **KAFKA_EVENTING.md** - Event-driven architecture guide
+{% endif %}
 - **POSTGRES.md** - Database operations and backup/recovery
 - **SECURITY.md** - Security hardening guide
 - **TESTING.md** - Testing strategy and examples

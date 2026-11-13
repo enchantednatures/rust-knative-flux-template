@@ -11,7 +11,7 @@ resources:
   {% if network_policy_allow_all %}
   - networkpolicy.yaml
   {% endif %}
-  {% if custom_domain != "" %}
+  {% if custom_domain != "" and workload_type == "Knative" %}
   - domain-mapping.yaml
   {% endif %}
   # After creating the encrypted image pull secret (see
@@ -42,11 +42,17 @@ patches:
           imagePullSecrets:
             - name: {{ image_pull_secret }}
           {% endif %}
+      {% if workload_type == "Deployment" %}
+      - op: replace
+        path: /spec/values/services/app/workload/replicas
+        value: {{ workload_replicas_dev }}
+      {% else %}
       - op: replace
         path: /spec/values/services/app/scaling
         value:
           minScale: {% if use_default_scaling %}0{% else %}{{ dev_min_scale }}{% endif %}
           maxScale: {% if use_default_scaling %}3{% else %}{{ dev_max_scale }}{% endif %}
+      {% endif %}
       - op: replace
         path: /spec/values/services/app/resources
         value:
@@ -125,12 +131,12 @@ patches:
           - name: APP__POSTGRES__HOST
             value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
           {% endif %}
-          {% if event_source_kafka %}
+          {% if event_source_kafka and workload_type == "Knative" %}
           - name: APP__KAFKA__BROKER_URL
             value: "{% if kafka_managed_cluster %}{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
           {% endif %}
 
-      {% if event_source_kafka %}
+      {% if event_source_kafka and workload_type == "Knative" %}
       {% if kafka_managed_cluster == false %}
       # External Kafka only: managed mode derives the bootstrap from the
       # chart-managed cluster and rejects an explicit value.

@@ -35,6 +35,7 @@ jobs:
             --name "${PROJECT_NAME}" \
             --define "project_name=${PROJECT_NAME}" \
             --define "project_author=CI Bot <ci@github.com>" \
+            --define "workload_type=Knative" \
             --define "feature_s3=true" \
             --define "feature_kafka=false" \
             --define "feature_postgres=false" \

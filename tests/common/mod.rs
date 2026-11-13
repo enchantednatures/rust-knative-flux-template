@@ -56,12 +56,14 @@ pub async fn create_test_state() -> AppState {
 /// The rate limiter (`tower_governor`) reads the client IP from the
 /// `ConnectInfo` request extension that `axum::serve` inserts at runtime;
 /// `axum-test`'s mocked transport does not, so inject a loopback address.
+#[allow(dead_code)]
 pub fn create_test_server(state: AppState) -> TestServer {
     let app = {{ crate_name }}::routes::create_router(state)
         .layer(axum::middleware::from_fn(inject_connect_info));
     TestServer::new(app).expect("Failed to create test server")
 }
 
+#[allow(dead_code)]
 async fn inject_connect_info(mut request: Request<Body>, next: Next) -> Response {
     request
         .extensions_mut()

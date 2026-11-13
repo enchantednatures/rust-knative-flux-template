@@ -14,7 +14,8 @@
 #      SMOKE_KUBECONFIG_B64. See docs/DEPLOYMENT.md ("Post-Deploy
 #      Verification") for the exact (minimal) RBAC it needs.
 #   2. Optional: set the SMOKE_SERVICE_URL repository variable when the
-#      Knative status URL is not reachable from the runner.
+#      workload URL is not reachable from the runner. Deployment mode falls
+#      back to a Service port-forward when the variable is empty.
 #   3. Protect the "{{ smoke_environment }}" environment with required
 #      reviewers if the cluster is shared.
 {% if feature_s3 and feature_bucket_notifications %}
@@ -178,8 +179,15 @@ jobs:
           kubectl auth can-i patch imageupdateautomations.image.toolkit.fluxcd.io -n flux-system >/dev/null \
             || { echo "::error::SMOKE_KUBECONFIG_B64 cannot trigger the ImageUpdateAutomation (patch in flux-system)."; exit 1; }
           {% endif %}
+          {% if workload_type == "Deployment" %}
+          kubectl auth can-i get deployments.apps -n "${NAMESPACE}" >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read Deployments in ${NAMESPACE}."; exit 1; }
+          kubectl auth can-i get services -n "${NAMESPACE}" >/dev/null \
+            || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read Services in ${NAMESPACE}."; exit 1; }
+          {% else %}
           kubectl auth can-i get services.serving.knative.dev -n "${NAMESPACE}" >/dev/null \
             || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read Knative Services in ${NAMESPACE}."; exit 1; }
+          {% endif %}
           kubectl auth can-i get helmreleases.helm.toolkit.fluxcd.io -n "${NAMESPACE}" >/dev/null \
             || { echo "::error::SMOKE_KUBECONFIG_B64 cannot read HelmReleases in ${NAMESPACE}."; exit 1; }
 
@@ -218,10 +226,15 @@ jobs:
             {% endif %}
             flux reconcile kustomization "${KUSTOMIZATION}" -n flux-system --with-source --timeout=120s >/dev/null 2>&1 || true
             kubectl -n "${NAMESPACE}" wait --for=condition=Ready "helmrelease/${SERVICE_NAME}" --timeout=90s >/dev/null 2>&1 || true
+            {% if workload_type == "Deployment" %}
+            kubectl -n "${NAMESPACE}" wait --for=condition=Available "deployment/${SERVICE_NAME}" --timeout=90s >/dev/null 2>&1 || true
+            DEPLOYED_REF="$(kubectl -n "${NAMESPACE}" get deployment "${SERVICE_NAME}" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            {% else %}
             kubectl -n "${NAMESPACE}" wait --for=condition=Ready "ksvc/${SERVICE_NAME}" --timeout=90s >/dev/null 2>&1 || true
-
             DEPLOYED_REF="$(kubectl -n "${NAMESPACE}" get ksvc "${SERVICE_NAME}" \
               -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            {% endif %}
 
             if [ -n "${DEPLOYED_REF}" ] && [ "${DEPLOYED_REF}" != "${LAST_REF}" ]; then
               echo "Deployed image: ${DEPLOYED_REF}"
@@ -262,6 +275,20 @@ jobs:
           set -euo pipefail
 
           SERVICE_URL="${SERVICE_URL_OVERRIDE}"
+          {% if workload_type == "Deployment" %}
+          PORT_FORWARD_PID=""
+          if [ -z "${SERVICE_URL}" ]; then
+            # No external URL is assumed for a Deployment. Expose the Service on
+            # localhost for the endpoint checks; requires create pods/portforward.
+            kubectl -n "${NAMESPACE}" port-forward "svc/${SERVICE_NAME}" 18080:{{ workload_service_port }} >/tmp/smoke-port-forward.log 2>&1 &
+            PORT_FORWARD_PID=$!
+            for i in $(seq 1 30); do
+              curl -fsS --max-time 2 http://127.0.0.1:18080/health/live >/dev/null 2>&1 && break
+              sleep 1
+            done
+            SERVICE_URL="http://127.0.0.1:18080"
+          fi
+          {% else %}
           if [ -z "${SERVICE_URL}" ]; then
             SERVICE_URL="$(kubectl -n "${NAMESPACE}" get ksvc "${SERVICE_NAME}" -o jsonpath='{.status.url}')"
           fi
@@ -269,6 +296,7 @@ jobs:
             echo "::error::Knative Service ${SERVICE_NAME} has no status.url (not ready?)."
             exit 1
           fi
+          {% endif %}
           echo "Service URL: ${SERVICE_URL}"
           echo "SERVICE_URL=${SERVICE_URL}" >> "$GITHUB_ENV"
 

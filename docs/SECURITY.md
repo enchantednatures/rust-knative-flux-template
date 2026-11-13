@@ -297,6 +297,12 @@ spec:
 
 ### Network Policies
 
+{% if workload_type == "Deployment" %}
+> **Deployment workload:** use the pod label `app.kubernetes.io/name:
+> {{ project_name | replace: "_", "-" }}` and allow the ingress
+> controller/load-balancer namespace instead of `knative-serving`.
+
+{% endif %}
 **Allow Only Ingress from Knative Gateway**:
 ```yaml
 apiVersion: networking.k8s.io/v1

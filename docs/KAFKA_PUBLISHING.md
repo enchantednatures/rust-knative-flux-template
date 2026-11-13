@@ -539,6 +539,8 @@ Kafka event publishing is not enabled for this service. To enable it:
    - Provide broker URL, topic, and event name when prompted
    - Update configuration templates with Kafka settings
 
+{% if event_source_kafka and workload_type == "Knative" %}
 See [KAFKA_EVENTING.md](./KAFKA_EVENTING.md) for event source (Knative Eventing) documentation.
+{% endif %}
 
 {% endif -%}

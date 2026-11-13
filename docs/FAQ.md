@@ -18,7 +18,11 @@ Common questions about {{ project_name }}.
 ### What is {{ project_name }}?
 
 {{ project_name }} is a production-ready Rust microservice template built for:
+{% if workload_type == "Deployment" %}
+- **Deployment**: Long-running workload with fixed replicas
+{% else %}
 - **Knative Serving**: Serverless auto-scaling
+{% endif %}
 - **FluxCD**: GitOps deployment
 - **OpenTelemetry**: Observability stack
 {% if feature_s3 %}
@@ -34,12 +38,24 @@ It provides a complete starting point for building cloud-native services.
 - **Concurrency**: Async/await with Tokio
 - **Type-Safe**: Compiler catches many errors at compile time
 
+{% if workload_type == "Deployment" %}
+### Why a Deployment instead of Knative?
+
+- **Long-lived connections**: No 300s Knative request timeout
+- **No cold starts**: Replicas stay running
+- **Rolling updates**: Direct control over replicas and draining
+- **Ingress-friendly**: Standard `networking.k8s.io/v1` Ingress
+
+Knative-only features (Flagger, KafkaSource/Trigger, PingSource,
+DomainMapping) are not generated for this workload.
+{% else %}
 ### Why Knative Serving?
 
 - **Serverless**: Automatic scale-to-zero
 - **Auto-scaling**: Handles traffic spikes automatically
 - **Simple**: Deploy as a service, Knative handles pods
 - **Industry Standard**: Used by major cloud providers
+{% endif %}
 
 ### Why FluxCD?
 
@@ -71,7 +87,7 @@ make dev-forward
 ### What services are started with make local-up?
 
 - **Kind Kubernetes Cluster** - Local Kubernetes environment
-- **Knative Serving** - Serverless framework
+{% if workload_type == "Deployment" %}- **Deployment** - Long-running workload{% else %}- **Knative Serving** - Serverless framework{% endif %}
 - **Redis** (port 6379) - Caching/sessions
 {% if feature_s3 %}
 - **RustFS** (port 9000) - S3-compatible storage
@@ -161,6 +177,14 @@ flux create kustomization {{ project_name }} \
 
 ### How do I rollback a deployment?
 
+{% if workload_type == "Deployment" %}
+```bash
+# Temporary rollback to the previous ReplicaSet; Flux will reconcile Git again.
+kubectl rollout undo deployment/{{ project_name }} -n {{ project_name }}
+```
+
+For a permanent rollback, revert the Git commit and let Flux reconcile.
+{% else %}
 ```bash
 # Rollback to previous revision
 kubectl rollout undo deployment/{{ project_name }} -n {{ project_name }}
@@ -171,7 +195,9 @@ kubectl set traffic {{ project_name }} \
   --percent=100 \
   -n {{ project_name }}
 ```
+{% endif %}
 
+{% if workload_type == "Knative" %}
 ### How does Knative auto-scaling work?
 
 Knative measures:
@@ -189,6 +215,7 @@ autoscaling.knative.dev/minScale: "5"
 autoscaling.knative.dev/maxScale: "100"
 autoscaling.knative.dev/target: "100"  # Target concurrency
 ```
+{% endif %}
 
 ---
 
@@ -290,14 +317,22 @@ Check:
 # Pod status
 kubectl get pods -n {{ project_name }}
 
-# Service status
+# Workload status
+{% if workload_type == "Deployment" %}
+kubectl get deployment,service,pdb {{ project_name }} -n {{ project_name }}
+{% else %}
 kubectl get ksvc {{ project_name }} -n {{ project_name }}
+{% endif %}
 
 # Pod logs
 kubectl logs deployment/{{ project_name }} -n {{ project_name }}
 
-# Service details
+# Workload details
+{% if workload_type == "Deployment" %}
+kubectl describe deployment {{ project_name }} -n {{ project_name }}
+{% else %}
 kubectl describe ksvc {{ project_name }} -n {{ project_name }}
+{% endif %}
 ```
 
 Common causes:
@@ -394,6 +429,10 @@ kubectl logs -n flux-system deployment/kustomize-controller
 
 ### How do I handle high traffic?
 
+{% if workload_type == "Deployment" %}
+Deployment replicas stay running; set `workload.replicas` in the overlay or
+base HelmRelease and let Flux reconcile. There is no scale-to-zero.
+{% else %}
 **Knative auto-scales automatically**, but you can tune:
 
 ```yaml
@@ -409,9 +448,14 @@ annotations:
 kubectl patch ksvc {{ project_name }} -n {{ project_name }} \
   -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/minScale":"50"}}}}}'
 ```
+{% endif %}
 
 ### How do I reduce cold start latency?
 
+{% if workload_type == "Deployment" %}
+Deployment replicas stay running, so there is no cold start. Set the desired
+replica count in `workload.replicas` and let Flux reconcile.
+{% else %}
 1. **Increase min-scale**: Keep warm pods
 2. **Optimize startup**: Remove unnecessary initialization
 3. **Preload data**: Load frequently used data at startup
@@ -421,6 +465,7 @@ kubectl patch ksvc {{ project_name }} -n {{ project_name }} \
 annotations:
   autoscaling.knative.dev/minScale: "1"  # Don't scale to zero
 ```
+{% endif %}
 
 ---
 

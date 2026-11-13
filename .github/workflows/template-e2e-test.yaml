@@ -94,8 +94,21 @@ jobs:
             project_name: "test-app-with-cron"
             deploy: "true"
 
+          - scenario: with-long-running
+            workload_type: "Deployment"
+            feature_cron: "false"
+            feature_s3: "false"
+            feature_kafka: "false"
+            feature_postgres: "false"
+            feature_flagger: "false"
+            feature_gha_runner: "false"
+            event_source_kafka: "false"
+            project_name: "test-app-with-long-running"
+            deploy: "true"
+
     env:
       SCENARIO: ${{ matrix.scenario }}
+      WORKLOAD_TYPE: ${{ matrix.workload_type || 'Knative' }}
 
     steps:
       - name: Install dependencies (for robustness)
@@ -214,6 +227,7 @@ jobs:
           [values]
           project_name = "${{ matrix.project_name }}"
           project_author = "E2E Bot <e2e@github.com>"
+          workload_type = "${WORKLOAD_TYPE}"
           feature_s3 = ${{ matrix.feature_s3 }}
           feature_cron = ${{ matrix.feature_cron }}
           feature_kafka = ${{ matrix.feature_kafka }}
@@ -324,6 +338,32 @@ jobs:
           if [ "${{ matrix.feature_s3 }}" = "true" ] || [ "${{ matrix.feature_postgres }}" = "true" ]; then
             cat >> template-values.toml <<EOF
           ceph_bucket_storage_class = "ceph-bucket"
+          EOF
+          fi
+
+          # Deployment workload values (prompted when workload_type = Deployment)
+          if [ "${WORKLOAD_TYPE}" = "Deployment" ]; then
+            cat >> template-values.toml <<EOF
+          workload_replicas = "2"
+          workload_replicas_dev = "2"
+          workload_replicas_staging = "2"
+          workload_replicas_prod = "3"
+          workload_max_unavailable = "0"
+          workload_max_surge = "1"
+          workload_termination_grace_period_seconds = "300"
+          workload_prestop_sleep_seconds = "10"
+          workload_pdb_enabled = true
+          workload_pdb_min_available = "1"
+          workload_service_type = "ClusterIP"
+          workload_service_port = "80"
+          workload_session_affinity = "None"
+          ingress_enabled = false
+          ingress_class_name = ""
+          ingress_host = ""
+          ingress_path = "/"
+          ingress_path_type = "Prefix"
+          ingress_tls_enabled = false
+          ingress_tls_secret_name = ""
           EOF
           fi
 
@@ -664,7 +704,7 @@ jobs:
             -f "${VALUES_FILE}" \
             -n default \
             | yq eval '
-              (select(.kind == "Service" and .apiVersion == "serving.knative.dev/v1") |
+              (select(.kind == "Deployment" or (.kind == "Service" and .apiVersion == "serving.knative.dev/v1")) |
                 .spec.template.spec.imagePullSecrets) = [{"name": "ghcr-auth"}]
             ' - > "${GENERATED_DIR}/manifests-built/all.yaml"
 
@@ -754,7 +794,7 @@ jobs:
             deployment/kustomize-controller
 
       - name: Install Knative Serving
-        if: matrix.deploy == 'true'
+        if: matrix.deploy == 'true' && env.WORKLOAD_TYPE != 'Deployment'
         run: |
           KNATIVE_VERSION="knative-v1.20.0"
 
@@ -998,14 +1038,19 @@ jobs:
           flux check || { echo "❌ Flux check failed"; exit 1; }
           echo "  ✓ Flux healthy"
 
-          echo ""
-          echo "Checking Knative..."
-          kubectl get pods -n knative-serving -o wide
-          kubectl wait --for=condition=ready pod \
-            -l app=activator \
-            -n knative-serving \
-            --timeout=60s || { echo "❌ Knative not ready"; exit 1; }
-          echo "  ✓ Knative healthy"
+          if [ "${WORKLOAD_TYPE}" != "Deployment" ]; then
+            echo ""
+            echo "Checking Knative..."
+            kubectl get pods -n knative-serving -o wide
+            kubectl wait --for=condition=ready pod \
+              -l app=activator \
+              -n knative-serving \
+              --timeout=60s || { echo "❌ Knative not ready"; exit 1; }
+            echo "  ✓ Knative healthy"
+          else
+            echo ""
+            echo "  ✓ Knative not installed (Deployment workload)"
+          fi
 
           echo ""
           echo "Checking Redis..."
@@ -1331,20 +1376,36 @@ jobs:
           kubectl get all -n default
 
           echo ""
-          echo "Waiting for Knative Service to be ready..."
-          kubectl wait --for=condition=ready \
-            --timeout=300s \
-            ksvc/${SERVICE_NAME} || {
-              echo "❌ Knative Service not ready"
-              kubectl describe ksvc/${SERVICE_NAME}
-              kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100
+          if [ "${WORKLOAD_TYPE}" = "Deployment" ]; then
+            echo "Waiting for Deployment to roll out..."
+            kubectl rollout status deployment/${SERVICE_NAME} --timeout=300s || {
+              echo "❌ Deployment not ready"
+              kubectl describe deployment/${SERVICE_NAME}
+              kubectl logs -l app.kubernetes.io/name=${SERVICE_NAME} --tail=100 || true
               exit 1
             }
+            kubectl get deployment,service,pdb -n default
+            if kubectl get ksvc/${SERVICE_NAME} >/dev/null 2>&1; then
+              echo "❌ Knative Service exists for a Deployment workload"
+              exit 1
+            fi
+            echo "  ✓ No Knative Service (Deployment workload)"
+          else
+            echo "Waiting for Knative Service to be ready..."
+            kubectl wait --for=condition=ready \
+              --timeout=300s \
+              ksvc/${SERVICE_NAME} || {
+                echo "❌ Knative Service not ready"
+                kubectl describe ksvc/${SERVICE_NAME}
+                kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100
+                exit 1
+              }
+          fi
 
           echo "✅ Checkpoint 5 passed: Application deployed and ready"
 
       - name: Run Flagger canary promotion test
-        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true'
+        if: matrix.feature_flagger == 'true' && matrix.deploy == 'true' && env.WORKLOAD_TYPE != 'Deployment'
         run: |
           set -euo pipefail
           GENERATED_DIR="./generated/${PROJECT_NAME}"
@@ -1561,7 +1622,12 @@ jobs:
         id: app-url
         run: |
           SERVICE_NAME="${SERVICE_NAME}"
-          SERVICE_URL=$(kubectl get ksvc ${SERVICE_NAME} -o jsonpath='{.status.url}')
+          if [ "${WORKLOAD_TYPE}" = "Deployment" ]; then
+            # Cluster-local Service URL; probes run from pods in the default namespace.
+            SERVICE_URL="http://${SERVICE_NAME}.default.svc.cluster.local"
+          else
+            SERVICE_URL=$(kubectl get ksvc ${SERVICE_NAME} -o jsonpath='{.status.url}')
+          fi
           echo "service_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
           echo "📡 Service URL: ${SERVICE_URL}"
 
@@ -1715,6 +1781,44 @@ jobs:
           fi
           echo "======================================"
 
+      - name: Run long-lived SSE stream test
+        if: env.WORKLOAD_TYPE == 'Deployment' && matrix.deploy == 'true'
+        run: |
+          set -euo pipefail
+          SERVICE_NAME="${SERVICE_NAME}"
+          POD="stream-probe-${RANDOM}-$$"
+          START=$(date +%s)
+
+          kubectl run "$POD" --image=curlimages/curl:latest --restart=Never --quiet \
+            --command -- /bin/sh -c \
+            "curl -sN --max-time 305 http://${SERVICE_NAME}.default.svc.cluster.local/api/v1/stream; exit 0"
+
+          PHASE=""
+          for i in $(seq 1 190); do
+            PHASE=$(kubectl get pod "$POD" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            [ "$PHASE" = "Succeeded" ] && break
+            [ "$PHASE" = "Failed" ] && break
+            sleep 2
+          done
+
+          ELAPSED=$(( $(date +%s) - START ))
+          kubectl logs "$POD" > /tmp/stream-probe.log 2>&1 || true
+          kubectl delete pod "$POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+
+          echo "stream probe phase=${PHASE} elapsed=${ELAPSED}s"
+          cat /tmp/stream-probe.log
+
+          [ "$PHASE" = "Succeeded" ] \
+            || { echo "❌ stream probe did not finish cleanly (phase=$PHASE)"; exit 1; }
+          [ "$ELAPSED" -ge 300 ] \
+            || { echo "❌ stream connection ended after ${ELAPSED}s (<300s Knative timeout)"; exit 1; }
+
+          HEARTBEATS=$(grep -c 'event: heartbeat' /tmp/stream-probe.log || true)
+          [ "$HEARTBEATS" -ge 2 ] \
+            || { echo "❌ expected at least 2 heartbeats, got ${HEARTBEATS}"; exit 1; }
+
+          echo "✅ SSE stream stayed open ${ELAPSED}s with ${HEARTBEATS} heartbeats"
+
       - name: Run scheduled event E2E
         if: matrix.feature_cron == 'true' && matrix.deploy == 'true'
         run: |
@@ -1804,6 +1908,7 @@ jobs:
           echo "           E2E Test Summary"
           echo "============================================"
           echo "Scenario: ${{ matrix.scenario }}"
+          echo "Workload type: ${WORKLOAD_TYPE}"
           echo "Feature cron: ${{ matrix.feature_cron }}"
           echo "Image: ${{ steps.image-meta.outputs.app_image }}"
           echo "Manifest: ${{ steps.image-meta.outputs.manifest_image }}"
@@ -1828,7 +1933,11 @@ jobs:
           echo "Feature cron: ${{ matrix.feature_cron }}"
 
           echo "::group::Application logs"
-          kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100 || true
+          if [ "${WORKLOAD_TYPE}" = "Deployment" ]; then
+            kubectl logs -l app.kubernetes.io/name=${SERVICE_NAME} --tail=100 || true
+          else
+            kubectl logs -l serving.knative.dev/service=${SERVICE_NAME} --tail=100 || true
+          fi
           echo "::endgroup::"
 
           if [ "${{ matrix.feature_cron }}" = "true" ]; then

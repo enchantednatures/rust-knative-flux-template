@@ -1,14 +1,21 @@
 # {{ project_name }}
 
-A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% if feature_s3 %}, with S3-compatible object storage{% endif %}{% if feature_kafka or event_source_kafka %}, Apache Kafka event integration{% endif %}.
+A production-ready Rust microservice for {% if workload_type == "Deployment" %}long-running Kubernetes workloads{% else %}Knative Serverless{% endif %} and FluxCD GitOps{% if feature_s3 %}, with S3-compatible object storage{% endif %}{% if feature_kafka %}, Apache Kafka event integration{% elsif event_source_kafka and workload_type == "Knative" %}, Apache Kafka event integration{% endif %}.
 
 ## Features
 
+{%- if workload_type == "Deployment" %}
+- 🚀 **Long-Running Deployment**: Fixed replicas, no scale-to-zero, no Knative request timeout
+- 🔌 **SSE Example**: `/api/v1/stream` emits heartbeats over a persistent connection
+- 🛡️ **Rollout Safety**: Rolling updates, `preStop` draining, and a PodDisruptionBudget
+- 🌐 **Optional Ingress**: Standard `networking.k8s.io/v1` Ingress with pass-through annotations
+{%- else %}
 - 🚀 **Knative Serverless**: Auto-scaling HTTP service with CloudEvents support
+{%- endif %}
 {%- if feature_s3 %}
 - 📦 **S3-Compatible Storage**: Object storage through the Ceph RGW bucket provisioner (RustFS locally)
 {%- endif %}
-{%- if event_source_kafka %}
+{%- if event_source_kafka and workload_type == "Knative" %}
 - 📨 **Kafka Event Source**: Knative KafkaSource for consuming Kafka events
 - 🔁 **Topic-Per-Source Pattern**: One KafkaSource per topic for independent scaling
 - ⚰️ **Dead Letter Queue**: Automatic DLQ handling for failed events
@@ -27,10 +34,10 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 {%- if feature_postgres %}
 - 🐘 **PostgreSQL**: CloudNativePG cluster with TLS, PgBouncer pooling, and Barman backups
 {%- endif %}
-{%- if feature_cron %}
+{%- if feature_cron and workload_type == "Knative" %}
 - ⏰ **Scheduled Work**: Knative PingSource sends a fixed CloudEvent on a cron schedule
 {%- endif %}
-{%- if feature_flagger %}
+{%- if feature_flagger and workload_type == "Knative" %}
 - 🚦 **Canary Releases**: Automated progressive delivery with Flagger (Knative provider)
 {%- endif %}
 {%- if feature_gha_runner %}
@@ -39,7 +46,7 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 - 🔍 **Observability**: OpenTelemetry instrumentation with Jaeger and Prometheus
 - 🔄 **GitOps Ready**: FluxCD manifests for automated deployments
 {%- if feature_cluster_smoke %}
-- 🩺 **Post-Deploy Smoke Tests**: CI verifies the live revision and endpoints after merge
+- 🩺 **Post-Deploy Smoke Tests**: CI verifies the live {% if workload_type == "Deployment" %}Deployment{% else %}revision{% endif %} and endpoints after merge
 {%- endif %}
 - 🧪 **Tested**: Unit, contract, and integration tests wired into CI
 - 📝 **Type-Safe**: Rust 2024 edition with strict compiler checks
@@ -56,11 +63,14 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 | helm | 3.14+ | chart rendering |
 | kustomize | 5.4+ | overlay rendering |
 | Flux CLI | 2.3+ | `make bootstrap` / `make deploy` (real clusters) |
+{%- if workload_type != "Deployment" %}
+| Knative Serving | 1.12+ | Knative workload (not required for Deployment mode) |
+{%- endif %}
 
 ## Local Development (Kind)
 
-The local environment is a Kind cluster with a local container registry, Knative
-Serving, Redis{% if feature_s3 %}, RustFS{% endif %}{% if feature_postgres %}, CloudNativePG{% endif %}{% if event_source_kafka or feature_kafka %}, Kafka{% endif %} and the
+The local environment is a Kind cluster with a local container registry{% if workload_type == "Knative" %},
+Knative Serving{% endif %}, Redis{% if feature_s3 %}, RustFS{% endif %}{% if feature_postgres %}, CloudNativePG{% endif %}{% if event_source_kafka or feature_kafka %}, Kafka{% endif %} and the
 observability stack (Jaeger, Prometheus, OTel Collector).
 
 ```bash
@@ -84,7 +94,7 @@ make dev-forward
 Day-to-day commands:
 
 ```bash
-make dev-restart   # rebuild the image and redeploy the Knative service
+make dev-restart   # rebuild the image and redeploy the application
 make dev-logs      # stream application logs
 make dev-status    # show pods/services across the dev cluster
 make dev-test      # run the integration tests against the local cluster
@@ -124,6 +134,22 @@ For private repositories, create the Flux SSH deploy-key Secret once:
 make git-auth
 ```
 
+{% if workload_type == "Deployment" %}
+### Long-Running Workload
+
+This project renders a standard Deployment, Service, and optional
+PodDisruptionBudget instead of a Knative Service. Connections are not subject to
+Knative's 300-second request timeout, and there is no scale-to-zero. Replicas,
+rolling updates, connection draining, and the PDB are configured in
+`deploy/base/helmrelease.yaml`; per-environment replicas are patched by the
+overlays.
+
+The generated SSE endpoint is `GET /api/v1/stream`. Expose the Service with an
+Ingress (`ingress_enabled` at generation time), a `LoadBalancer` Service, or a
+`NodePort`. Ingress annotations are passed through verbatim; see
+`docs/LONG_RUNNING_WORKLOADS.md` for examples and troubleshooting.
+
+{% endif %}
 {% if feature_postgres %}
 ### PostgreSQL
 
@@ -157,7 +183,7 @@ init Job creates the same Secret/ConfigMap.
 See `docs/STORAGE.md` for the full contract and the external-S3 escape hatch.
 {% endif %}
 
-{% if event_source_kafka %}
+{% if event_source_kafka and workload_type == "Knative" %}
 ## Kafka Event Source
 {% if kafka_managed_cluster %}
 This project was generated with `kafka_managed_cluster=true` and
@@ -238,7 +264,7 @@ HTTP handlers publish CloudEvents to Kafka without blocking the response. See
 `docs/KAFKA_PUBLISHING.md` for the publishing patterns, metrics, and tuning.
 {% endif %}
 
-{% if feature_cron %}
+{% if feature_cron and workload_type == "Knative" %}
 ## Scheduled Work
 
 A Knative PingSource delivers a fixed `dev.knative.sources.ping` CloudEvent to
@@ -247,7 +273,7 @@ missed ticks are not replayed, so handlers must be idempotent. See
 `docs/SCHEDULED_WORK.md`.
 {% endif %}
 
-{% if feature_flagger %}
+{% if feature_flagger and workload_type == "Knative" %}
 ## Canary Releases
 
 Flagger shifts traffic 10% at a time up to `maxWeight`, gating on HTTP success
@@ -330,7 +356,7 @@ uses the `APP__` prefix with `__` as the separator, e.g.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP__SERVER__HOST` | `0.0.0.0` | Bind address |
-| `APP__SERVER__PORT` | `8080` | Listen port (Knative requires 8080) |
+| `APP__SERVER__PORT` | `8080` | Listen port{% if workload_type == "Knative" %} (Knative requires 8080){% endif %} |
 | `APP__REDIS__URL` | `redis://localhost:6379` | Redis connection URL |
 | `APP__TELEMETRY__OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector endpoint |
 | `APP__TELEMETRY__SERVICE_NAME` | `{{ project_name }}` | Trace service name |
@@ -380,15 +406,23 @@ uses the `APP__` prefix with `__` as the separator, e.g.
 | `GET /metrics` | Prometheus metrics |
 | `GET /` (POST for CloudEvents) | CloudEvents sink |
 | `GET /api/v1/hello` | Example handler |
-{% if feature_postgres %}
-| `PUT /api/v1/items/{id}` | Upsert an item |
-| `GET /api/v1/items/{id}` | Read an item |
-{% endif %}
-{% if feature_kafka %}
-| `POST /api/v1/publish-event` | Publish a CloudEvent to Kafka |
-{% endif %}
 | `GET /swagger-ui` | OpenAPI UI |
 | `GET /api-docs/openapi.json` | OpenAPI document |
+
+{% if workload_type == "Deployment" or feature_postgres or feature_kafka %}
+Additional endpoints:
+
+{% if workload_type == "Deployment" %}
+- `GET /api/v1/stream` — Server-Sent Events heartbeat stream
+{% endif %}
+{% if feature_postgres %}
+- `POST /api/v1/items` — Upsert an item
+- `GET /api/v1/items/{key}` — Read an item
+{% endif %}
+{% if feature_kafka %}
+- `POST /api/v1/publish-event` — Publish a CloudEvent to Kafka
+{% endif %}
+{% endif %}
 
 `/api/v1/*` is rate limited to 100 requests/second with a burst of 50 per client
 IP; probes, metrics, and the CloudEvents sink are exempt. See `docs/API.md`.
@@ -415,13 +449,13 @@ docker build -t {{ project_name }}:latest .
 
 The Dockerfile is a multi-stage build using `cargo-chef`; the runtime stage
 installs `ca-certificates`, `curl`, and `tzdata` and runs as the non-root
-`appuser`. The Docker `HEALTHCHECK` calls `/health/live` with `curl`; Knative
-ignores it and uses HTTP probes.
+`appuser`. The Docker `HEALTHCHECK` calls `/health/live` with `curl`;
+Kubernetes probes are configured by the chart in both workload modes.
 
 ## Observability
 
-- **Traces**: OTLP → Jaeger, B3 headers propagated through Knative and Kafka.
-- **Metrics**: Prometheus scrapes `/metrics` (HTTP latency, Redis, {% if feature_kafka %}publisher and {% endif %}Knative metrics).
+- **Traces**: OTLP → Jaeger, B3 headers propagated through {% if workload_type == "Knative" %}Knative and {% endif %}Kafka.
+- **Metrics**: Prometheus scrapes `/metrics` (HTTP latency, Redis, {% if feature_kafka %}publisher and {% endif %}{% if workload_type == "Knative" %}Knative{% else %}stream{% endif %} metrics).
 - **Logs**: structured `tracing` output with request IDs.
 
 See `docs/MONITORING.md` and `docs/RUNBOOKS.md`.
@@ -431,15 +465,23 @@ See `docs/MONITORING.md` and `docs/RUNBOOKS.md`.
 ```bash
 make dev-status                          # cluster and service status
 make dev-logs                            # application logs
+{% if workload_type == "Deployment" %}
+kubectl get deployment,service,pdb -n {{ target_namespace }}
+kubectl describe deployment {{ project_name | replace: "_", "-" }} -n {{ target_namespace }}
+{% else %}
 kubectl get ksvc -n {{ target_namespace }}   # Knative service state
 kubectl describe ksvc {{ project_name | replace: "_", "-" }} -n {{ target_namespace }}
+{% endif %}
 ```
 
 Common causes:
 
-- **ImagePullBackOff**: the image tag must match the Knative service name
-  (hyphens, not underscores) and be pushed to the registry the cluster can reach.
-- **Revision not ready**: check `/health/ready`; it reports dependency failures.
+- **ImagePullBackOff**: the image tag must match the workload name (hyphens,
+  not underscores) and be pushed to the registry the cluster can reach.
+- **{% if workload_type == "Deployment" %}Pod{% else %}Revision{% endif %} not ready**: check `/health/ready`; it reports dependency failures.
+{% if workload_type == "Deployment" %}
+- **Ingress 404/502**: check `ingress.className`, the controller, and `ingress.servicePort`.
+{% endif %}
 {% if feature_postgres %}
 - **UnknownIssuer on PostgreSQL**: the PgBouncer pooler service name must be in
   the Cluster's `spec.certificates.serverAltDNSNames`.

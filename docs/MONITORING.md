@@ -202,6 +202,18 @@ http_active_requests (gauge)
 - `path`: Request path
 - `status`: HTTP status code (200, 404, 500, etc.)
 
+{% if workload_type == "Deployment" %}
+**Streaming Metrics**:
+```
+stream_connections_total (counter)
+stream_connections_active (gauge)
+stream_heartbeats_sent_total (counter)
+```
+
+Alert when `stream_connections_active` stays at zero for a service that is
+supposed to hold long-lived connections, or when heartbeats stop increasing.
+{% endif %}
+
 ### Accessing Prometheus
 
 **Local**: http://localhost:9090

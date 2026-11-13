@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Complete guide for deploying {{ project_name }} to Kubernetes using Knative Serving and FluxCD GitOps.
+Complete guide for deploying {{ project_name }} to Kubernetes using {% if workload_type == "Deployment" %}a standard Deployment{% else %}Knative Serving{% endif %} and FluxCD GitOps.
 
 > **About Template Variables**: This is a template file that uses Liquid syntax for variables like `{{ project_name }}`. During project generation with `cargo-generate`, these placeholders are replaced with your actual project values. The generated documentation will contain your specific project name instead of the template variable.
 
@@ -10,7 +10,7 @@ Complete guide for deploying {{ project_name }} to Kubernetes using Knative Serv
 
 When generating a project from this template, you'll be prompted for a `project_name`. This name is automatically normalized to follow platform-specific conventions:
 
-- **Kubernetes Resources** (Knative Services, ConfigMaps, Secrets): Uses **kebab-case** (hyphens)
+- **Kubernetes Resources** ({% if workload_type == "Deployment" %}Deployments, Services{% else %}Knative Services{% endif %}, ConfigMaps, Secrets): Uses **kebab-case** (hyphens)
   - Example: `my-service`, `user-api`, `payment-processor`
   - Kubernetes DNS names require hyphens, not underscores
   
@@ -30,7 +30,7 @@ When generating a project from this template, you'll be prompted for a `project_
 - `{{ project_name | replace: "_", "-" }}` → Forces kebab-case for Kubernetes/Docker
 - `{{ crate_name }}` → Automatically converted to snake_case for Rust
 
-**Why This Matters**: Knative Services **cannot** contain underscores in their names. Using underscores will cause `ImagePullBackOff` errors because the image tag won't match the service name. The template handles this normalization automatically.
+**Why This Matters**: Kubernetes Service names **cannot** contain underscores in their names. Using underscores will cause `ImagePullBackOff` errors because the image tag won't match the service name. The template handles this normalization automatically.
 
 > **For Detailed Information**: Naming is normalized at generation time: Rust uses underscores, Kubernetes and Docker use hyphens. See the naming checks in `.github/workflows/naming-convention-tests.yaml` in the template repository.
 
@@ -44,7 +44,9 @@ When generating a project from this template, you'll be prompted for a `project_
 - [Post-Deploy Verification (Cluster Smoke)](#post-deploy-verification-cluster-smoke){% endif %}
 - [Environment-Specific Deployment](#environment-specific-deployment)
 - [Rollback Procedures](#rollback-procedures)
+{% if workload_type == "Knative" %}
 - [Traffic Splitting](#traffic-splitting)
+{% endif %}
 - [Monitoring Deployments](#monitoring-deployments)
 
 ---
@@ -56,7 +58,8 @@ When generating a project from this template, you'll be prompted for a `project_
 | Software | Version | Purpose |
 |----------|---------|---------|
 | kubectl | 1.24+ | Kubernetes CLI |
-| Knative Serving | 1.12+ | Serverless platform |
+{% if workload_type == "Knative" %}| Knative Serving | 1.12+ | Serverless platform |
+{% endif %}
 | FluxCD CLI | 2.0+ | GitOps tool |
 | Docker | 20.10+ | Container build |
 | helm | 3.x+ | Package manager (optional) |
@@ -74,6 +77,7 @@ When generating a project from this template, you'll be prompted for a `project_
 - Minikube
 - Local development cluster
 
+{% if workload_type == "Knative" %}
 ### Install Knative Serving
 
 ```bash
@@ -92,6 +96,7 @@ kubectl patch configmap/config-network \
 kubectl get pods -n knative-serving
 ```
 
+{% endif %}
 ### Install FluxCD
 
 ```bash
@@ -195,14 +200,53 @@ kubectl create secret generic {{ project_name }}-s3 \
 # OCI dependency from Chart.lock at reconcile time.
 kubectl apply -k deploy/base -n {{ project_name }}
 
+{% if workload_type == "Deployment" %}
+# Wait for the Deployment and get the Service
+kubectl rollout status deployment/{{ project_name }} -n {{ project_name }}
+kubectl get deployment,service,pdb -n {{ project_name }}
+
+# Test through a port-forward (or your Ingress/LoadBalancer URL)
+kubectl port-forward svc/{{ project_name }} 8080:{{ workload_service_port }} -n {{ project_name }} &
+curl http://localhost:8080/health/live
+{% else %}
 # Get service URL
 kubectl get ksvc {{ project_name }} -n {{ project_name }}
 
 # Test
 export URL=$(kubectl get ksvc {{ project_name }} -n {{ project_name }} -o jsonpath='{.status.url}')
 curl https://$URL/health/live
+{% endif %}
 ```
 
+{% if workload_type == "Deployment" %}
+### Ingress (Deployment mode)
+
+Set `ingress_enabled = true` at generation time, or add this to the
+HelmRelease values:
+
+```yaml
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  servicePort: 80
+  hosts:
+    - host: "app.example.com"
+      paths:
+        - path: "/"
+          pathType: Prefix
+  tls:
+    - hosts:
+        - "app.example.com"
+      secretName: "app-tls"
+```
+
+`deploy/chart/templates/ingress.yaml` renders the `networking.k8s.io/v1`
+Ingress. `annotations` is a pass-through map, so controller-specific timeouts
+for SSE/WebSockets work without template changes. See
+`docs/LONG_RUNNING_WORKLOADS.md` for examples.
+
+{% endif %}
 ---
 
 ## FluxCD GitOps Deployment
@@ -398,12 +442,12 @@ flux get kustomizations --watch
 {% if feature_cluster_smoke %}
 ## Post-Deploy Verification (Cluster Smoke)
 
-The local Kind suite (`make local-up`, `make dev-test`) proves the manifests render and the service works against the fakes it ships with. It cannot prove the parts that only exist on a real cluster: ObjectBucketClaim binding to Ceph RGW, registry pulls with real credentials, DNS/cert issuance for `DomainMapping`, admission policies, or image automation committing tags back to git.
+The local Kind suite (`make local-up`, `make dev-test`) proves the manifests render and the service works against the fakes it ships with. It cannot prove the parts that only exist on a real cluster: ObjectBucketClaim binding to Ceph RGW, registry pulls with real credentials, {% if workload_type == "Deployment" %}Ingress/TLS setup{% else %}DNS/cert issuance for `DomainMapping`{% endif %}, admission policies, or image automation committing tags back to git.
 
 `feature_cluster_smoke` generates `.github/workflows/smoke-deploy.yaml`, which closes that gap **without ever deploying**:
 
 - Trigger: `workflow_run` of `CI/CD Pipeline` on `{{ default_branch }}` (post-merge) and manual `workflow_dispatch`. It is never triggered by `pull_request`, so fork code cannot reach the cluster.
-- Flux stays the only deployer. The job reconciles the `{{ project_name | replace: "_", "-" }}-<env>` Kustomization, waits for the `HelmRelease` and Knative Service, then asserts the running image digest equals the digest of the `sha-<commit>` tag CI just pushed.
+- Flux stays the only deployer. The job reconciles the `{{ project_name | replace: "_", "-" }}-<env>` Kustomization, waits for the `HelmRelease` and {% if workload_type == "Deployment" %}Deployment{% else %}Knative Service{% endif %}, then asserts the running image digest equals the digest of the `sha-<commit>` tag CI just pushed.
 - Endpoint checks run against the live URL: `/health/live`, `/health/ready`, `/metrics`, `/api/v1/hello`, plus a Postgres upsert/read-back and an S3 write/read/delete when those features are enabled.
 {% if feature_s3 and feature_bucket_notifications %}
 - Bucket notifications: the S3 check writes an object, then the job polls `/metrics` for `bucket_notifications_received_total`. The cluster must have Rook Ceph (`CephObjectStore` + bucket StorageClass) and the `{{ kafka_managed_provider }}` operator installed.
@@ -431,11 +475,23 @@ kubectl -n flux-system create rolebinding ci-smoke-flux-sources \
 kubectl -n flux-system create rolebinding ci-smoke-flux-images \
   --role=ci-smoke-flux-images --serviceaccount=flux-system:ci-smoke
 
-# app namespace: read the HelmRelease and Knative Service
+# app namespace: read the HelmRelease and the workload
 kubectl -n {{ target_namespace }} create role ci-smoke-app --verb=get,list,watch \
-  --resource=helmreleases.helm.toolkit.fluxcd.io,services.serving.knative.dev
+  --resource=helmreleases.helm.toolkit.fluxcd.io{% if workload_type == "Deployment" %},deployments.apps,services{% else %},services.serving.knative.dev{% endif %}
 kubectl -n {{ target_namespace }} create rolebinding ci-smoke-app \
   --role=ci-smoke-app --serviceaccount=flux-system:ci-smoke
+{% if workload_type == "Deployment" %}
+# Deployment smoke fallback: port-forward the Service when SMOKE_SERVICE_URL
+# is not set. This needs pod read plus create on pods/portforward.
+kubectl -n {{ target_namespace }} create role ci-smoke-portforward \
+  --verb=get,list --resource=pods
+kubectl -n {{ target_namespace }} create role ci-smoke-portforward-create \
+  --verb=create --resource=pods/portforward
+kubectl -n {{ target_namespace }} create rolebinding ci-smoke-portforward \
+  --role=ci-smoke-portforward --serviceaccount=flux-system:ci-smoke
+kubectl -n {{ target_namespace }} create rolebinding ci-smoke-portforward-create \
+  --role=ci-smoke-portforward-create --serviceaccount=flux-system:ci-smoke
+{% endif %}
 
 # Token-based kubeconfig for CI
 kubectl -n flux-system create token ci-smoke --duration=8760h
@@ -448,7 +504,11 @@ KUBECONFIG_RAW=$(base64 -w0 < ci-smoke.kubeconfig)
 gh secret set SMOKE_KUBECONFIG_B64 --body "$KUBECONFIG_RAW"
 ```
 
+{% if workload_type == "Deployment" %}
+If the Ingress or LoadBalancer URL is not resolvable from the runner, set it as a repository variable (otherwise the smoke workflow falls back to a Service port-forward):
+{% else %}
 If the Knative `status.url` is not resolvable from the runner, set the public URL as a repository variable:
+{% endif %}
 
 ```bash
 gh variable set SMOKE_SERVICE_URL --body "https://{{ project_name | replace: '_', '-' }}.example.com"
@@ -469,6 +529,14 @@ To disable the workflow, remove `.github/workflows/smoke-deploy.yaml` (or genera
 {% endif %}
 
 ## Environment-Specific Deployment
+
+{% if workload_type == "Deployment" %}
+> The examples below are the original Knative-style snippets. In this project
+> the generated overlays in `deploy/overlays/{dev,staging,prod}` patch
+> `services.app.workload.replicas` instead of Knative autoscaling annotations;
+> treat the snippets as illustrative only.
+
+{% endif %}
 
 ### Development
 
@@ -622,6 +690,18 @@ secretGenerator:
 
 ## Rollback Procedures
 
+{% if workload_type == "Deployment" %}
+### Option 1: Manual Deployment Rollback (temporary)
+
+```bash
+# List ReplicaSets and revisions
+kubectl get rs -n {{ project_name }}
+
+# Temporarily roll back to the previous ReplicaSet (Flux will reconcile the
+# Git state again, so use a Git revert for a permanent rollback)
+kubectl rollout undo deployment/{{ project_name }} -n {{ project_name }}
+```
+{% else %}
 ### Option 1: Manual Revision Rollback
 
 ```bash
@@ -637,6 +717,7 @@ kubectl set traffic {{ project_name }} \
   --percent=100 \
   -n {{ project_name }}
 ```
+{% endif %}
 
 ### Option 2: Git Rollback (GitOps)
 
@@ -651,6 +732,7 @@ git push origin main
 flux get kustomizations -n {{ project_name }}
 ```
 
+{% if workload_type == "Knative" %}
 ### Option 3: Canary Rollback
 
 If using canary deployment:
@@ -662,9 +744,14 @@ kubectl set traffic {{ project_name }} \
   --percent=100 \
   -n {{ project_name }}
 ```
+{% else %}
+> Flagger canary rollback is not available in Deployment mode. Use the Git
+> rollback above; Flux reconciles the previous ReplicaSet.
+{% endif %}
 
 ---
 
+{% if workload_type == "Knative" %}
 ## Traffic Splitting
 
 Knative supports traffic splitting between revisions for canary deployments.
@@ -729,6 +816,8 @@ kubectl set traffic {{ project_name }} \
 # Delete blue later after verification
 ```
 
+{% endif %}
+
 ---
 
 ## Monitoring Deployments
@@ -736,6 +825,16 @@ kubectl set traffic {{ project_name }} \
 ### Check Service Status
 
 ```bash
+{% if workload_type == "Deployment" %}
+# Get Service and Deployment
+kubectl get deployment,service,pdb {{ project_name }} -n {{ project_name }}
+
+# Get details
+kubectl describe deployment {{ project_name }} -n {{ project_name }}
+
+# Get pods
+kubectl get pods -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }}
+{% else %}
 # Get service URL
 kubectl get ksvc {{ project_name }} -n {{ project_name }}
 
@@ -747,6 +846,7 @@ kubectl get pods -n {{ project_name }} -l serving.knative.dev/service={{ project
 
 # Get revisions
 kubectl revisions list -n {{ project_name }}
+{% endif %}
 ```
 
 ### Check FluxCD Status
@@ -777,9 +877,11 @@ kubectl logs -f -n {{ project_name }} <pod-name>
 # Previous revision logs
 kubectl logs -f -n {{ project_name }} deployment/{{ project_name }} --previous
 
+{% if workload_type == "Knative" %}
 # Knative serving logs
 kubectl logs -n knative-serving deployment/controller
 kubectl logs -n knative-serving deployment/autoscaler
+{% endif %}
 ```
 
 ---
@@ -936,6 +1038,21 @@ EOF
 
 ## Troubleshooting Deployments
 
+{% if workload_type == "Deployment" %}
+### Deployment Not Ready
+
+```bash
+# Describe the Deployment
+kubectl describe deployment {{ project_name }} -n {{ project_name }}
+
+# Check rollout status
+kubectl rollout status deployment/{{ project_name }} -n {{ project_name }} --timeout=60s
+
+# Check pods and events
+kubectl get pods -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }}
+kubectl get events -n {{ project_name }} --sort-by=.lastTimestamp | tail -20
+```
+{% else %}
 ### Service Not Ready
 
 ```bash
@@ -944,12 +1061,13 @@ kubectl describe ksvc {{ project_name }} -n {{ project_name }}
 
 # Check conditions
 kubectl get ksvc {{ project_name }} -n {{ project_name }} -o jsonpath='{.status.conditions[*]}' | jq
-
-# Common issues:
-# - ImagePullBackOff: Check image registry credentials
-# - CrashLoopBackOff: Check application logs
-# - ConfigMissing: Check ConfigMaps and Secrets exist
 ```
+{% endif %}
+
+Common issues:
+- **ImagePullBackOff**: check image registry credentials.
+- **CrashLoopBackOff**: check application logs.
+- **ConfigMissing**: check ConfigMaps and Secrets exist.
 
 ### Pods Not Starting
 
@@ -1025,7 +1143,7 @@ flux reconcile kustomization {{ project_name }} -n {{ project_name }}
    spec:
      podSelector:
        matchLabels:
-         serving.knative.dev/service: {{ project_name }}
+         {% if workload_type == "Deployment" %}app.kubernetes.io/name: {{ project_name | replace: "_", "-" }}{% else %}serving.knative.dev/service: {{ project_name }}{% endif %}
      policyTypes:
      - Ingress
      - Egress

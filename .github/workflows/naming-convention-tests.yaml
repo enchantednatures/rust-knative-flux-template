@@ -85,6 +85,7 @@ jobs:
           [values]
           project_name = "${{ matrix.project_name }}"
           project_author = "Naming Bot <naming@github.com>"
+          workload_type = "Knative"
           feature_s3 = false
           feature_postgres = false
           feature_kafka = false

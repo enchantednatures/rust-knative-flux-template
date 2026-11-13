@@ -84,7 +84,7 @@ fi
 
 # Render and deploy via Helm chart
 # In production, FluxCD reconciles the HelmRelease CR. For local dev, we render
-# the chart ourselves with helm template and apply the raw Knative Service YAML.
+# the chart ourselves with helm template and apply the rendered workload.
 echo -e "${YELLOW}→${NC} Rendering Helm chart for local deployment..."
 
 # Check dependencies
@@ -124,7 +124,7 @@ if [[ -n "${NON_HR_RESOURCES}" && "${NON_HR_RESOURCES}" != "null" ]]; then
 fi
 
 # Render chart with extracted values and apply
-echo -e "${YELLOW}→${NC} Deploying to Knative..."
+echo -e "${YELLOW}→${NC} Deploying application..."
 if ! helm template "${SERVICE_NAME}" "${CHART_DIR}" \
 	-f "${VALUES_FILE}" \
 	-n default | kubectl apply -f -; then
@@ -133,6 +133,22 @@ if ! helm template "${SERVICE_NAME}" "${CHART_DIR}" \
 fi
 
 # Wait for service to be ready
+{% if workload_type == "Deployment" %}
+echo -e "${YELLOW}→${NC} Waiting for Deployment to roll out..."
+if ! kubectl rollout status deployment/"${SERVICE_NAME}" -n default --timeout=5m; then
+	echo -e "${RED}✗ Error: Deployment failed to become ready${NC}"
+	echo ""
+	echo "Deployment status:"
+	kubectl get deployment "${SERVICE_NAME}" -n default -o yaml
+	echo ""
+	echo "Pod status:"
+	kubectl get pods -n default
+	echo ""
+	echo "Recent logs:"
+	kubectl logs -l app.kubernetes.io/name="${SERVICE_NAME}" -n default --tail=50 2>/dev/null || echo "No logs available"
+	exit 1
+fi
+{% else %}
 echo -e "${YELLOW}→${NC} Waiting for Knative service to be ready..."
 if ! kubectl wait --for=condition=Ready ksvc/"${SERVICE_NAME}" -n default --timeout=5m; then
 	echo -e "${RED}✗ Error: Knative service failed to become ready${NC}"
@@ -147,12 +163,17 @@ if ! kubectl wait --for=condition=Ready ksvc/"${SERVICE_NAME}" -n default --time
 	kubectl logs -l serving.knative.dev/service="${SERVICE_NAME}" -c user-container -n default --tail=50 2>/dev/null || echo "No logs available"
 	exit 1
 fi
+{% endif %}
 
 echo ""
 echo -e "${GREEN}✓ Application deployed successfully${NC}"
 echo ""
 
 # Get service URL
+{% if workload_type == "Deployment" %}
+echo -e "Service URL: ${GREEN}http://localhost:8080${NC} (run 'make dev-forward')"
+kubectl get deployment,service,pod -n default -l app.kubernetes.io/name="${SERVICE_NAME}"
+{% else %}
 SERVICE_URL=$(kubectl get ksvc "${SERVICE_NAME}" -n default -o jsonpath='{.status.url}' 2>/dev/null || echo "")
 if [[ -n "$SERVICE_URL" ]]; then
 	echo -e "Service URL: ${GREEN}${SERVICE_URL}${NC}"
@@ -161,4 +182,5 @@ else
 fi
 
 kubectl get ksvc "${SERVICE_NAME}" -n default
+{% endif %}
 echo ""
