@@ -358,6 +358,38 @@ kubectl kustomize deploy/overlays/dev
 
 ---
 
+## Deployment Workload Alternative
+
+The template defaults to a Knative Service, but `workload_type = "Deployment"`
+renders a standard `apps/v1 Deployment` plus a core `v1 Service` and an optional
+`PodDisruptionBudget`. Use it for WebSockets, SSE, streaming gateways, or any
+connection that must stay open longer than Knative's default 300-second request
+timeout.
+
+Knative-specific constraints in this document (request timeout, scale-to-zero,
+revision traffic splitting, `fieldRef` restrictions) do not apply to a plain
+Deployment. In exchange, the chart rejects or cannot target the following:
+
+| Knative feature | Deployment-mode behavior |
+|---|---|
+| Flagger `Canary` | Not generated; the Knative provider targets a Knative Service |
+| `KafkaSource` / `Trigger` sink | Not generated; a core Service is not a Knative-addressable sink |
+| `PingSource` | Not generated; same addressable requirement |
+| `DomainMapping` / `custom_domain` | Not generated; use an Ingress or LoadBalancer Service |
+| Scale-to-zero | Not available; replicas are fixed per environment |
+
+The rendered Deployment keeps the same probes, security context, resource
+limits, and `/tmp` emptyDir as the Knative path. Long-lived connections should
+set `preStopSleepSeconds` below `terminationGracePeriodSeconds` so endpoint
+removal propagates before SIGTERM, and clients must reconnect on disconnect.
+
+{% if workload_type == "Deployment" %}
+See `docs/LONG_RUNNING_WORKLOADS.md` for the values reference, ingress options,
+and the SSE example endpoint.
+{% endif %}
+
+---
+
 ## Useful References
 
 - [Knative Serving Runtime Contract](https://knative.dev/docs/serving/runtime-contract/)

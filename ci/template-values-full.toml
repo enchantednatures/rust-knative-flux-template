@@ -1,6 +1,7 @@
 [values]
 project_name = "test-app-full"
 project_author = "CI Bot <ci@github.com>"
+workload_type = "Knative"
 feature_s3 = true
 feature_kafka = true
 feature_postgres = true

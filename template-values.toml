@@ -9,6 +9,7 @@
 [values]
 project_name = "example-app"
 project_author = "Your Name <you@example.com>"
+workload_type = "Knative"
 feature_s3 = false
 feature_postgres = false
 feature_kafka = false
