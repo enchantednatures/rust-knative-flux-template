@@ -15,13 +15,18 @@ resources:
 {% if feature_s3 or feature_postgres or event_source_kafka and kafka_managed_cluster %}
 patches:
 {% if feature_s3 or feature_postgres %}
-  # Kind has no ObjectBucketClaim CRDs/provisioner: drop the chart claims.
+  # Kind has no ObjectBucketClaim CRDs/provisioner: clear the chart claims.
+  # Use `add` with an empty map rather than `remove`: an external-S3 project
+  # (or any project whose dev overlay no longer declares `objectBuckets`) has
+  # no such path, and a JSON6902 `remove` fails the whole render. The empty map
+  # is the chart default, so it creates no claims either way.
   - target:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}
     patch: |-
-      - op: remove
+      - op: add
         path: /spec/values/objectBuckets
+        value: {}
 {% if feature_postgres %}
   # Backups keep using the local RustFS in Kind.
   - target:
@@ -56,7 +61,7 @@ patches:
         value: app
       {% if feature_s3 and feature_bucket_notifications %}
       # Kind has no Rook/RGW and no managed Broker, so the notification source
-      # cannot deliver. The objectBuckets removal above also drops the topic.
+      # cannot deliver. Clearing objectBuckets above also drops the topic.
       - op: remove
         path: /spec/values/kafka/sources/s3-events
       {% endif %}

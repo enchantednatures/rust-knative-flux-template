@@ -7,7 +7,7 @@ This document outlines Knative-specific constraints, limitations, and best pract
 Before deploying, render the chart and check the resulting Knative Service:
 
 ```bash
-# Local chart + the HelmRelease values it is rendered with
+# Chart.lock pins the ksvc OCI dependency. Build it for local rendering:
 helm dependency build deploy/chart
 yq eval '.spec.values' deploy/base/helmrelease.yaml > /tmp/values.yaml
 helm template my-service deploy/chart -f /tmp/values.yaml -n default > /tmp/rendered.yaml
@@ -15,6 +15,10 @@ helm template my-service deploy/chart -f /tmp/values.yaml -n default > /tmp/rend
 # Overlay render (HelmRelease + Flux wiring)
 kubectl kustomize deploy/overlays/dev > /tmp/overlay.yaml
 ```
+
+Flux's source-controller builds this local chart and resolves the OCI
+dependency from `Chart.yaml`/`Chart.lock` at reconcile time; the dependency
+tarball is not committed.
 
 CI runs both of these for every generated project. This catches:
 - ✓ Unsupported field references (fieldRef)
@@ -334,6 +338,7 @@ error: trouble configuring builtin PatchTransformer
 
 **Solution:** Render the chart and overlays
 ```bash
+helm dependency build deploy/chart
 helm template my-service deploy/chart -f <(yq eval '.spec.values' deploy/base/helmrelease.yaml) -n default
 kubectl kustomize deploy/overlays/dev
 ```

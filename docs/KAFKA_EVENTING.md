@@ -132,6 +132,50 @@ The Redpanda bootstrap Service is
    (the reference cluster sets `--exceptionNamespace=kyverno-system`), not the
    application namespace. Adjust `metadata.namespace` if your install differs.
 {% endif %}
+4. **Healthy operators before the first reconcile.** The HelmRelease cannot
+   finish until both the `{{ kafka_managed_provider }}` operator and the Knative
+   Kafka webhook are Ready:
+
+   ```bash
+   # Operator namespace depends on how it was installed.
+   {% if kafka_managed_provider == "redpanda" %}
+   kubectl get pods -n redpanda-system        # or -n redpanda / -n redpanda-operator
+   {% else %}
+   kubectl get pods -n strimzi-system
+   {% endif %}
+
+   # Knative Kafka webhook + controller (always knative-eventing)
+   kubectl get pods -n knative-eventing -l app=kafka-webhook-eventing
+   kubectl logs -n knative-eventing -l app=kafka-webhook-eventing --tail=100
+   kubectl get validatingwebhookconfigurations | grep kafka.eventing
+   ```
+
+   A `kafka-webhook-eventing` pod that crash-loops — for example because it was
+   scheduled onto a node with probe or network trouble — blocks Broker, Trigger,
+   and KafkaSource creation even when the Kafka cluster itself is healthy. Look
+   for failing calls to `defaulting.webhook.kafka.eventing.knative.dev` /
+   `validation.webhook.kafka.eventing.knative.dev`, then reschedule the pod
+   (node affinity/anti-affinity) or repair the node before retrying.
+
+### Cold start and Helm timeout
+
+The first managed-Kafka install creates the Kafka cluster, its Topic, the
+Knative Broker and Trigger, the KafkaSource, and the Knative Service. On a cold
+cluster this can exceed Helm's default 5-minute timeout, especially while the
+first application image is still being pushed. Generated managed-Kafka
+HelmReleases therefore set:
+
+```yaml
+spec:
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+```
+
+A timeout does not by itself mean the resources are broken: check
+`kubectl describe helmrelease <project> -n <namespace>` and the operator/webhook
+pods above before retrying. Non-managed projects keep Helm's default.
 
 ### Environment overlays
 
@@ -933,6 +977,36 @@ make dev-logs | grep -i error
 - Is retry count too low?
 - Is backoff too aggressive?
 - Is service timing out?
+
+### App Returns HTTP 400 for Broker Events
+
+**Symptom:** `kafka-broker-dispatcher` logs
+`failed to send event to subscriber ... statusCode=400`, while the app logs
+`missing field message`.
+
+**Cause:** the Knative Kafka broker dispatcher posts a **structured CloudEvent
+JSON body together with `ce-*` headers**. An extractor that treats any `ce-*`
+header as binary mode reads the whole envelope as the payload type and fails to
+deserialize it. Direct binary POSTs and structured POSTs without headers work,
+which makes the failure look payload-specific.
+
+**Check:** reproduce the dispatcher shape locally:
+
+```bash
+curl -i -X POST http://localhost:8080/ \
+  -H 'content-type: application/json' \
+  -H 'ce-specversion: 1.0' \
+  -H 'ce-id: test-1' \
+  -H 'ce-source: /apis/v1/namespaces/default/kafkasources/test' \
+  -H 'ce-type: dev.knative.kafka.event' \
+  -d '{"specversion":"1.0","id":"test-1","source":"/apis/v1/namespaces/default/kafkasources/test","type":"dev.knative.kafka.event","data":{"message":"hi"}}'
+```
+
+The bundled `axum-cloudevents` extractor detects the structured body and
+prefers it over the headers, so the template's `CloudEvent<Ping>` handler
+accepts the dispatcher shape as-is. If your handler routes several event types,
+use `CloudEvent<serde_json::Value>` (as `src/handlers/events.rs` does for
+scheduled work and bucket notifications) and validate `event.data` yourself.
 
 ### Kafka Connection Issues
 

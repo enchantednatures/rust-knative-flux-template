@@ -4,7 +4,7 @@
 # ARG for selecting the base image tag. This default is the single source of
 # truth (renovate keeps rust-toolchain.toml and the Dockerfile in sync); the
 # release workflow builds without overriding it.
-ARG RUST_BASE_IMAGE_TAG=1.99-slim
+ARG RUST_BASE_IMAGE_TAG=1.100-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS chef
 RUN apt-get update && apt-get install -y \
@@ -30,7 +30,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ==============================================================================
 # Stage 2: Build dependencies using chef recipe
 # ==============================================================================
-ARG RUST_BASE_IMAGE_TAG=1.99-slim
+ARG RUST_BASE_IMAGE_TAG=1.100-slim
 
 FROM rust:${RUST_BASE_IMAGE_TAG} AS builder
 RUN apt-get update && apt-get install -y \

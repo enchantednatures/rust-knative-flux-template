@@ -7,12 +7,23 @@ spec:
   interval: 10m
   chart:
     spec:
+      # The source-controller builds this local chart and resolves the ksvc
+      # OCI dependency from deploy/chart/Chart.yaml/Chart.lock at reconcile.
       chart: ./deploy/chart
       sourceRef:
         kind: GitRepository
         name: {{ project_name | replace: "_", "-" }}
         namespace: flux-system
       reconcileStrategy: Revision
+  {% if event_source_kafka and kafka_managed_cluster %}
+  # A cold cluster must install Redpanda/Strimzi, the Topic, Broker, Trigger,
+  # KafkaSource, and the Knative Service (plus CNPG when enabled). Helm's 5m
+  # default times out on that first install, so give install/upgrade 10m.
+  install:
+    timeout: 10m
+  upgrade:
+    timeout: 10m
+  {% endif %}
   {% if event_source_kafka %}
   # Knative >=1.23 rejects valueFrom.fieldRef env vars; the ksvc chart's DLQ
   # service hardcodes POD_NAME/POD_NAMESPACE via fieldRef. Strip the env list
@@ -33,6 +44,13 @@ spec:
       fullnameOverride: "{{ project_name | replace: '_', '-' }}"
       labels:
         app.kubernetes.io/part-of: "{{ project_name | replace: '_', '-' }}"
+
+    # DragonflyDB is disabled by default, but the key must exist in the base so
+    # environment overlays can enable it with a plain JSON6902 `replace`
+    # (`/spec/values/dragonfly/enabled`) instead of having to `add` the parent
+    # object first.
+    dragonfly:
+      enabled: false
 
     # Named the services key `app` (non-empty) because kafka.sources.*.sink must
     # reference a services key and the ksvc chart rejects an empty sink. An empty

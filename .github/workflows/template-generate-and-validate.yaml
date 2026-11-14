@@ -170,6 +170,23 @@ jobs:
       - name: Install cargo-generate
         run: cargo install cargo-generate --locked
 
+      - name: Assert the committed ksvc chart lock is valid
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^[[:space:]]*version: "\(.*\)"/\1/p' deploy/chart/Chart.yaml | head -1)
+          [ -n "${VERSION}" ] \
+            || { echo "FAIL: could not read the ksvc version from deploy/chart/Chart.yaml"; exit 1; }
+          [ -f deploy/chart/Chart.lock ] \
+            || { echo "FAIL: deploy/chart/Chart.lock is missing"; exit 1; }
+          grep -q "version: ${VERSION}" deploy/chart/Chart.lock \
+            || { echo "FAIL: deploy/chart/Chart.lock does not pin ksvc ${VERSION}"; exit 1; }
+          if ls deploy/chart/charts/ksvc-*.tgz >/dev/null 2>&1; then
+            echo "FAIL: vendored ksvc tarball present; Flux resolves the OCI dependency from Chart.lock"
+            exit 1
+          fi
+          echo "✓ Chart.lock pins ksvc ${VERSION}; no vendored tarball"
+        shell: bash
+
       - name: Generate template and run build & lint checks
         run: |
           set -euo pipefail
@@ -332,6 +349,12 @@ jobs:
 
           echo "Compiling tests (no run)"
           cargo test --all-features --no-run
+
+          echo "Asserting generated-project polish"
+          grep -q '^authors = \["CI Bot <ci@github.com>"\]$' Cargo.toml \
+            || { echo "FAIL: Cargo.toml authors has stray whitespace"; exit 1; }
+          grep -A2 '^    dragonfly:$' deploy/base/helmrelease.yaml | grep -q '^      enabled: false$' \
+            || { echo "FAIL: base HelmRelease is missing dragonfly.enabled=false"; exit 1; }
         shell: bash
 
       - name: Validate PostgreSQL manifests
@@ -386,6 +409,24 @@ jobs:
           ! grep -q 'tls-rustls-ring' Cargo.toml || { echo "FAIL: runtime sqlx present"; exit 1; }
 
           echo "✓ no postgres residue"
+        shell: bash
+
+      - name: Assert the generated project tracks the ksvc chart lock
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          VERSION=$(sed -n 's/^[[:space:]]*version: "\(.*\)"/\1/p' deploy/chart/Chart.yaml | head -1)
+          [ -n "${VERSION}" ] \
+            || { echo "FAIL: could not read the ksvc version from deploy/chart/Chart.yaml"; exit 1; }
+          [ -f deploy/chart/Chart.lock ] \
+            || { echo "FAIL: deploy/chart/Chart.lock missing from generated project"; exit 1; }
+          grep -q "version: ${VERSION}" deploy/chart/Chart.lock \
+            || { echo "FAIL: deployed Chart.lock does not pin ksvc ${VERSION}"; exit 1; }
+          if ls deploy/chart/charts/ksvc-*.tgz >/dev/null 2>&1; then
+            echo "FAIL: generated project vendors the ksvc tarball; Flux resolves it from Chart.lock"
+            exit 1
+          fi
+          echo "✓ generated project pins ksvc ${VERSION} via Chart.lock; no vendored tarball"
         shell: bash
 
       - name: Validate scheduled work
@@ -480,6 +521,8 @@ jobs:
             || { echo "FAIL: kafka_managed_cluster leaked into the HelmRelease"; exit 1; }
           ! grep -q 'triggers:' deploy/base/helmrelease.yaml \
             || { echo "FAIL: managed Kafka triggers present with kafka_managed_cluster=false"; exit 1; }
+          ! grep -q 'timeout: 10m' deploy/base/helmrelease.yaml \
+            || { echo "FAIL: managed Kafka Helm timeout present with kafka_managed_cluster=false"; exit 1; }
 
           echo "✓ no managed-Kafka residue"
         shell: bash
@@ -706,6 +749,10 @@ jobs:
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.statefulset.podTemplate.spec.containers[] | select(.name == "sidecar") | .resources.limits.memory' /tmp/managed-render.yaml | head -1)"
           require_value "managed broker StorageClass" "ceph-block" \
             "$(yq 'select(.kind == "Redpanda") | .spec.clusterSpec.storage.persistentVolume.storageClass' /tmp/managed-render.yaml | head -1)"
+          require_value "Helm install timeout" "10m" \
+            "$(yq '.spec.install.timeout' deploy/base/helmrelease.yaml)"
+          require_value "Helm upgrade timeout" "10m" \
+            "$(yq '.spec.upgrade.timeout' deploy/base/helmrelease.yaml)"
 
           # Ceph RGW bucket notifications: the chart creates the Rook topic and
           # notification, the Kafka topic, and the app's s3-events source/trigger.
@@ -801,8 +848,8 @@ jobs:
             echo "FAIL: Kind fallback kept kafka.triggers"
             exit 1
           fi
-          if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.objectBuckets // ""' /tmp/managed-app-overlay.yaml)" ]]; then
-            echo "FAIL: Kind fallback kept objectBuckets"
+          if [[ "$(yq eval-all '[select(.kind == "HelmRelease")] | .[0].spec.values.objectBuckets // {} | length' /tmp/managed-app-overlay.yaml)" != "0" ]]; then
+            echo "FAIL: Kind fallback kept objectBuckets claims"
             exit 1
           fi
           if [[ -n "$(yq 'select(.kind == "HelmRelease") | .spec.values.kafka.sources["s3-events"] // ""' /tmp/managed-app-overlay.yaml)" ]]; then
@@ -1012,6 +1059,30 @@ jobs:
           grep -q 'test-app-full-events-dlq' /tmp/overlay-dev.yaml \
             || { echo "FAIL: dev overlay dropped the DLQ postRenderer target"; exit 1; }
           echo "✓ overlay render assertions passed"
+        shell: bash
+
+      - name: Assert Kind overlay tolerates external-S3 projects
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          cp deploy/overlays/dev/kustomization.yaml /tmp/dev-kustomization.yaml
+
+          # Simulate an external-S3 customization (the marrakesh shape): the
+          # dev overlay no longer declares chart-provisioned objectBuckets.
+          # The Kind app-overlay must still render instead of failing on a
+          # JSON6902 `remove` of a path that does not exist.
+          yq eval -i 'del(.patches[] | select((.patch // "") | contains("objectBuckets")))' \
+            deploy/overlays/dev/kustomization.yaml
+
+          kubectl kustomize deploy/dev/app-overlay > /tmp/app-overlay-external-s3.yaml
+
+          BUCKETS=$(yq eval-all '[select(.kind == "HelmRelease")] | .[0].spec.values.objectBuckets // {} | length' /tmp/app-overlay-external-s3.yaml)
+          [ "$BUCKETS" = "0" ] \
+            || { echo "FAIL: Kind app-overlay kept objectBuckets (length $BUCKETS)"; exit 1; }
+
+          cp /tmp/dev-kustomization.yaml deploy/overlays/dev/kustomization.yaml
+          echo "✓ Kind app-overlay renders without a dev objectBuckets path"
         shell: bash
 
       - name: Render Flux config with load restrictions off
