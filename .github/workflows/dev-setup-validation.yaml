@@ -18,10 +18,18 @@ jobs:
     env:
       PROJECT_NAME: dev-setup-test
       GENERATED_DIR: ./generated/dev-setup-test
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -47,6 +55,7 @@ jobs:
             --define "github_repo=${PROJECT_NAME}" \
             --define "default_branch=main" \
             --define "image_registry=ghcr.io" \
+            --define "kellnr_index=sparse+https://crates.enchantednatures.com/api/v1/crates/" \
             --define "use_default_scaling=true" \
             --define "kafka_topic=events" \
             --define "kafka_consumer_group=${PROJECT_NAME}-consumers" \

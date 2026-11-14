@@ -626,6 +626,29 @@ Eventing v0.14, and PingSource is the supported successor.
 - Full guide: `docs/SCHEDULED_WORK.md`.
 
 {% endif %}
+## Published CloudEvents Crates (Kellnr)
+
+`axum-cloudevents` and `axum-cloudevents-macros` are **not vendored** in this
+template. They live in
+[`enchantednatures/axum-cloudevents`](https://github.com/enchantednatures/axum-cloudevents)
+and are published to the private Kellnr registry.
+
+- Registry: `kellnr`
+- Sparse index: `sparse+https://crates.enchantednatures.com/api/v1/crates/`
+- Template dependency: `axum-cloudevents = { version = "0.1", registry = "kellnr" }`
+- Generated project config: `.cargo/config.toml` (index only; no token)
+- Local auth: `cargo login --registry kellnr` or `CARGO_REGISTRIES_KELLNR_TOKEN`
+- CI auth: `KELLNR_TOKEN` repository secret
+- Docker auth: BuildKit secret `id=cargo_token`, passed as
+  `CARGO_REGISTRIES_KELLNR_TOKEN`
+- Publishing: `crates-v*` tag in the crate repo, `KELLNR_PUBLISH_TOKEN`, macros
+  crate first, then the main crate
+- Do **not** add a `crates/` directory back to this template or restore
+  `COPY crates` in the Dockerfile. Changes to the crate source belong in the
+  crate repository.
+
+Full guide: `docs/CRATES.md`.
+
 ## Knative-Specific Constraints
 
 - **Port 8080**: Always use port 8080 (required by Knative)
@@ -1061,6 +1084,17 @@ deploy/
 ```
 
 ## Recent Changes
+- kellnr-published-crates: Moved `axum-cloudevents` and `axum-cloudevents-macros`
+  out of the template into `enchantednatures/axum-cloudevents` (the old
+  Copilot-generated 4-crate implementation is preserved on the
+  `pre-vendored-import` tag and `legacy/copilot-implementation` branch), published
+  both 0.1.0 to the private Kellnr registry, and switched `Cargo.toml.liquid` to
+  the registry dependency. Generated projects get `.cargo/config.toml` (index
+  only; `cargo login --registry kellnr` or `CARGO_REGISTRIES_KELLNR_TOKEN` for
+  auth), CI uses `KELLNR_TOKEN`, and Docker builds pass the token as a BuildKit
+  secret (`id=cargo_token`). Removed `crates/`, the `cloudevents-crates` CI job,
+  and the Dockerfile `COPY crates`; added `docs/CRATES.md`. The crate repo
+  publishes via `crates-v*` tags with `KELLNR_PUBLISH_TOKEN`.
 - kafka-managed-provider: Added `kafka_managed_provider` (default `redpanda`, alternative `strimzi`) under `kafka_managed_cluster`. The HelmRelease sets `kafka.cluster.provider` and gates the Redpanda tuning block; `APP__KAFKA__BROKER_URL` is `<project>-kafka:9093` for Redpanda or `<project>-kafka-kafka-bootstrap:9092` for Strimzi. The Kyverno exception remains Redpanda-specific.
 - bucket-notifications: Added the opt-in `feature_bucket_notifications` prompt (under managed Kafka, default `false`). When `feature_s3=true`, the app-data bucket declares `objectStore` (`ceph_object_store_name`/`ceph_object_store_namespace`) and a `put` notification; the chart renders `CephBucketTopic`/`CephBucketNotification` plus the `<project>-app-data-put` Kafka topic. The HelmRelease adds an `s3-events` KafkaSource (sinking to the Broker) and a Trigger filtered on the KafkaSource's CloudEvent `source` so the main topic is not delivered twice. The s3-events DLQ sets `env: []` to avoid Knative >= 1.23's `fieldRef` rejection. `src/handlers/events.rs` accepts the S3 `Records[]` payload when enabled. Requires Rook's notification CRDs and the managed Kafka cluster (plaintext/no-auth); `deploy/dev/app-overlay` removes the bucket claims and the s3-events source for Kind. The template now pins `ksvc` 1.2.1.
 - managed-kafka: Added the opt-in `kafka_managed_cluster` prompt (only prompted when `event_source_kafka=true`, default `false`). Managed mode makes the app chart render a Redpanda `Redpanda` cluster + source `Topic`, a Knative Kafka `Broker` and `Trigger`, and a `KafkaSource` whose bootstrap is derived by the chart (`<project>-kafka.<namespace>.svc.cluster.local:9093`) and which sinks to the Broker. Neither the sources nor the broker config may set `bootstrapServers`/`sink` in that mode — the chart fails the render. The app gets `APP__KAFKA__BROKER_URL=<project>-kafka:9093`, the DLQ image is pinned to `v1.23.0`, and Redpanda tuning is disabled plus every generated container sized so a require-resources policy passes. `deploy/kyverno/policyexception.yaml` (Kyverno exception for the operator's privileged `tuning` init container) ships only in managed mode and must be applied in Kyverno's exception namespace (`kyverno-system`), not the app namespace. `deploy/dev/app-overlay` is the Kind fallback: it drops `kafka.cluster`/`kafka.broker`/`kafka.triggers` and restores the local Kafka StatefulSet bootstrap and `sink: app`. The external-Kafka path is unchanged when the flag is `false`; CI gates it in the `managed-kafka-render` job.

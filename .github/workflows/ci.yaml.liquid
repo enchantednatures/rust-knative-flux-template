@@ -18,8 +18,17 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: {% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required to resolve axum-cloudevents from Kellnr"
+            exit 1
+          fi
 
       {% if feature_kafka or feature_gha_runner %}
       - name: Install build dependencies
@@ -76,8 +85,17 @@ jobs:
   test:
     name: Test
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: {% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required to resolve axum-cloudevents from Kellnr"
+            exit 1
+          fi
 
       {% if feature_kafka or feature_gha_runner %}
       - name: Install build dependencies
@@ -216,11 +234,20 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: {% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
     outputs:
       image-tag: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
       image-digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required for the Docker build"
+            exit 1
+          fi
 
       - name: Wait for Docker daemon
         run: |
@@ -269,6 +296,8 @@ jobs:
           push: true
           tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
           labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
+          secrets: |
+            cargo_token={% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
