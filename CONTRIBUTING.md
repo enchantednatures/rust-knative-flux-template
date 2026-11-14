@@ -15,6 +15,9 @@ cd rust-knative-flux-template
 # Toolchain is pinned in rust-toolchain.toml (Rust 1.92+)
 rustup show
 
+# axum-cloudevents resolves from the private Kellnr registry
+cargo login --registry kellnr   # or export CARGO_REGISTRIES_KELLNR_TOKEN
+
 # Generate a project with every feature enabled and build it
 cargo generate --path . --name scratch --template-values-file ci/template-values-full.toml --allow-commands
 cd scratch && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test
@@ -23,6 +26,12 @@ cd scratch && cargo fmt --all -- --check && cargo clippy --all-targets --all-fea
 Detailed project-level workflow: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md).
 Local environment: [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md).
 Test strategy: [`docs/TESTING.md`](./docs/TESTING.md).
+CloudEvents crates: [`docs/CRATES.md`](./docs/CRATES.md).
+
+The `axum-cloudevents` crates are no longer vendored. Changes to them belong in
+[`enchantednatures/axum-cloudevents`](https://github.com/enchantednatures/axum-cloudevents);
+this template consumes the version published to Kellnr. The template CI requires
+the `KELLNR_TOKEN` repository secret.
 
 ## What CI checks
 

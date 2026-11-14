@@ -1,0 +1,8 @@
+# Private Kellnr registry for the axum-cloudevents crate.
+#
+# No token is stored here. Authenticate once with:
+#   cargo login --registry kellnr
+# or set CARGO_REGISTRIES_KELLNR_TOKEN in the environment.
+[registries.kellnr]
+index = "{{ kellnr_index }}"
+credential-provider = ["cargo:token"]

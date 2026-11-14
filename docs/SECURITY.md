@@ -182,7 +182,12 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Build image
-      run: docker build -t test-image .
+      env:
+        CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
+      run: |
+        docker build \
+          --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+          -t test-image .
     
     - name: Run Trivy
       uses: aquasecurity/trivy-action@v0.36.0

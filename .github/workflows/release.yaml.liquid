@@ -112,6 +112,8 @@ jobs:
           push: true
           tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
           labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
+          secrets: |
+            cargo_token={% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64

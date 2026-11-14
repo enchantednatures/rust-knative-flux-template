@@ -397,7 +397,10 @@ kubectl apply -f my-secret.sealed.yaml
 
 1. **Build and push image**:
    ```bash
-    docker build -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0 .
+    export CARGO_REGISTRIES_KELLNR_TOKEN=...   # or cargo login --registry kellnr
+    docker build \
+      --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+      -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0 .
     docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0
    ```
 
