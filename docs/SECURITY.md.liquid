@@ -183,7 +183,7 @@ jobs:
     
     - name: Build image
       env:
-        CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
+        CARGO_REGISTRIES_KELLNR_TOKEN: {% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
       run: |
         docker build \
           --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
