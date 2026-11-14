@@ -29,9 +29,6 @@ jobs:
       contents: read
       packages: write
 
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
-
     strategy:
       fail-fast: false
       # No max-parallel cap: every scenario gets its own GitHub-hosted VM, its
@@ -99,6 +96,7 @@ jobs:
 
     env:
       SCENARIO: ${{ matrix.scenario }}
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
 
     steps:
       - name: Install dependencies (for robustness)
