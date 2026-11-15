@@ -38,8 +38,8 @@ tower_governor = "0.7"
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
-# CloudEvents support (vendored)
-axum-cloudevents = { path = "crates/axum-cloudevents" }
+# CloudEvents support (private Kellnr registry; see docs/CRATES.md)
+axum-cloudevents = { version = "0.1", registry = "kellnr" }
 
 # Observability - Tracing
 tracing = "0.1"

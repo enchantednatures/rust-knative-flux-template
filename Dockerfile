@@ -53,15 +53,19 @@ WORKDIR /app
 # Copy the recipe from chef stage
 COPY --from=chef /app/recipe.json recipe.json
 
-# Copy local crate dependencies (required for path dependencies)
-COPY crates ./crates
+# Registry configuration (index only; no credentials). The Kellnr token is
+# supplied as a BuildKit secret so it never lands in an image layer:
+#   docker build --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN .
+COPY .cargo ./.cargo
 
 # Build dependencies using the recipe (cached layer)
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN --mount=type=secret,id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+    cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build the application
 COPY . .
-RUN cargo build --release
+RUN --mount=type=secret,id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+    cargo build --release
 
 # ==============================================================================
 # Stage 3: Runtime (Debian Slim — must match the builder's Debian release for

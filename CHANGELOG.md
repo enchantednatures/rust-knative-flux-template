@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `axum-cloudevents` and `axum-cloudevents-macros` are no longer vendored. They
+  are published to the `kellnr` registry from
+  [`enchantednatures/axum-cloudevents`](https://github.com/enchantednatures/axum-cloudevents),
+  and generated projects consume
+  `axum-cloudevents = { version = "0.1", registry = "kellnr" }`. The generated
+  `.cargo/config.toml` declares the registry index; CI requires the
+  `KELLNR_TOKEN` secret and Docker builds pass it as a BuildKit secret. See
+  `docs/CRATES.md`.
 - Template version is declared in `cargo-generate.toml` (`[template] version`).
 - `postgres_storage_class` now sets the CNPG `Cluster`'s `storage.storageClass`.
 - `docs/TESTING.md`, `docs/FAQ.md`, and `scripts/README.md` describe the current
@@ -75,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The vendored `crates/axum-cloudevents` and `crates/axum-cloudevents-macros`
+  sources, their standalone lockfiles, and the `cloudevents-crates` CI job. The
+  crates now live in their own repository and are published to Kellnr.
 - Stale local test tooling that referenced deleted manifests:
   `scripts/test-template-matrix.sh`, `scripts/test-template-e2e-local.sh`,
   `scripts/cleanup-e2e-local.sh`, `scripts/validate-knative-service.sh`, the

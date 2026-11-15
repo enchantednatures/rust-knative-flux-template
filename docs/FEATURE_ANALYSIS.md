@@ -400,7 +400,7 @@ This is a production-ready **Rust microservice template** designed for cloud-nat
 
 ### Serialization & Data
 - **JSON**: serde_json 1.0, serde 1.0
-- **CloudEvents**: Custom vendored crate (axum-cloudevents)
+- **CloudEvents**: Published `axum-cloudevents` crate from Kellnr
 - **Configuration**: figment 0.10 (TOML + env vars)
 
 ### Observability Stack

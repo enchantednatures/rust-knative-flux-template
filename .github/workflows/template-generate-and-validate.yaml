@@ -128,9 +128,17 @@ jobs:
             enable_image_updates: "false"
     env:
       SCENARIO: ${{ matrix.scenario }}
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -222,6 +230,7 @@ jobs:
           github_repo = "rust-knative-flux-template"
           default_branch = "main"
           image_registry = "ghcr.io"
+          kellnr_index = "sparse+https://crates.enchantednatures.com/api/v1/crates/"
           use_default_scaling = true
           TOML_COMMON
 
@@ -319,6 +328,15 @@ jobs:
           GENERATED_DIR="$TEMP_DIR/$PROJ_NAME"
           cd "$GENERATED_DIR"
           echo "GENERATED_DIR=$GENERATED_DIR" >> "$GITHUB_ENV"
+
+          echo "Verifying Kellnr registry configuration"
+          test -f .cargo/config.toml
+          grep -q '\[registries.kellnr\]' .cargo/config.toml
+          grep -q 'sparse+https://crates.enchantednatures.com/api/v1/crates/' .cargo/config.toml
+          if grep -qE '^[[:space:]]*token[[:space:]]*=' .cargo/config.toml; then
+            echo "FAIL: token found in generated .cargo/config.toml"
+            exit 1
+          fi
 
           echo "Running formatting check"
           cargo fmt --all -- --check
@@ -579,9 +597,18 @@ jobs:
     name: "Managed Kafka render"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -637,6 +664,7 @@ jobs:
           github_repo = "rust-knative-flux-template"
           default_branch = "main"
           image_registry = "ghcr.io"
+          kellnr_index = "sparse+https://crates.enchantednatures.com/api/v1/crates/"
           use_default_scaling = true
           kafka_topic = "events"
           kafka_consumer_group = "marrakesh-consumers"
@@ -836,9 +864,18 @@ jobs:
     name: "Full-stack validation"
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -927,7 +964,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GENERATED_DIR"
-          docker build -t test-app-full:ci .
+          docker build \
+            --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+            -t test-app-full:ci .
         shell: bash
 
       - name: Render Helm chart and assert Kafka/DLQ wiring
@@ -1118,6 +1157,7 @@ jobs:
           LEAKS=(
             AGENTS.md
             CONTRIBUTING.md
+            crates
             docs/FEATURE_ANALYSIS.md
             docs/IMPROVEMENTS_SUMMARY.md
             docs/CLOUDEVENTS_KAFKA_RESEARCH.md
@@ -1144,56 +1184,22 @@ jobs:
           echo "✓ no template-internal files in generated output"
         shell: bash
 
-  cloudevents-crates:
-    name: "axum-cloudevents crates (unit tests)"
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-cloudevents-${{ hashFiles('crates/**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      # The crates are standalone packages (own Cargo.lock), not workspace
-      # members, so each one is checked in its own directory.
-      - name: Format, lint, and test axum-cloudevents
-        run: |
-          set -euo pipefail
-          cd crates/axum-cloudevents
-          cargo fmt --all -- --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test --all-targets
-        shell: bash
-
-      - name: Format, lint, and test axum-cloudevents-macros
-        run: |
-          set -euo pipefail
-          cd crates/axum-cloudevents-macros
-          cargo fmt --all -- --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test --all-targets
-        shell: bash
-
   integration-tests:
     name: "Integration tests (ignored suites, live infra)"
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

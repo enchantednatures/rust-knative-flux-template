@@ -66,11 +66,40 @@ if [[ "${ACTUAL_CRATE}" != "${CRATE_NAME}" ]]; then
 	exit 1
 fi
 
+# Resolve the Kellnr token for the Docker build. Prefer the environment;
+# otherwise read the token from the Cargo credentials/config for `kellnr`.
+KELLNR_TOKEN="${CARGO_REGISTRIES_KELLNR_TOKEN:-}"
+if [[ -z "${KELLNR_TOKEN}" ]]; then
+	for file in "${CARGO_HOME:-$HOME/.cargo}/credentials.toml" "${CARGO_HOME:-$HOME/.cargo}/config.toml"; do
+		[[ -f "$file" ]] || continue
+		KELLNR_TOKEN=$(awk '
+			/^\[registries\.kellnr\]/ { in_section = 1; next }
+			/^\[/ { in_section = 0 }
+			in_section && /^[[:space:]]*token[[:space:]]*=/ {
+				sub(/^[^"]*"/, "")
+				sub(/".*$/, "")
+				print
+				exit
+			}
+		' "$file")
+		[[ -n "$KELLNR_TOKEN" ]] && break
+	done
+fi
+
+DOCKER_BUILD_ARGS=()
+if [[ -n "${KELLNR_TOKEN}" ]]; then
+	DOCKER_BUILD_ARGS+=(--secret "id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN")
+else
+	echo -e "${YELLOW}⚠ Kellnr token not found; the Docker build may fail.${NC}"
+	echo "  Run 'cargo login --registry kellnr' or export CARGO_REGISTRIES_KELLNR_TOKEN."
+fi
+
 IMAGE="localhost:${REGISTRY_PORT}/${SERVICE_NAME}:dev"
 
 if [[ "${DEPLOY_ONLY}" != "true" ]]; then
 	echo -e "${YELLOW}→${NC} Building Docker image: ${IMAGE}"
-	if ! docker build -t "${IMAGE}" "${PROJECT_ROOT}"; then
+	if ! CARGO_REGISTRIES_KELLNR_TOKEN="${KELLNR_TOKEN}" \
+		docker build "${DOCKER_BUILD_ARGS[@]}" -t "${IMAGE}" "${PROJECT_ROOT}"; then
 		echo -e "${RED}✗ Error: Docker build failed${NC}"
 		exit 1
 	fi

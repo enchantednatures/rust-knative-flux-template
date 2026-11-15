@@ -21,7 +21,7 @@
 | Crate | Use Case | Verdict |
 |-------|----------|---------|
 | **`cloudevents-sdk` (v0.9+)** | Publishing events | ✅ RECOMMENDED |
-| **`axum-cloudevents` (vendored)** | Consuming events | ✅ CURRENT (keep for consumption) |
+| **`axum-cloudevents` (Kellnr)** | Consuming events | ✅ CURRENT (keep for consumption) |
 
 **Recommendation**: Use `cloudevents-sdk` with `rdkafka` feature for publishing to match CNCF standards.
 

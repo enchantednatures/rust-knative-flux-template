@@ -4,6 +4,11 @@
 **Context**: Supporting Kafka event publishing feature (spec: `002-kafka-event-publishing`)  
 **Scope**: Publishing dummy CloudEvents to Kafka topics from HTTP handlers in Rust
 
+> Historical research note: `axum-cloudevents` is now published from
+> [`enchantednatures/axum-cloudevents`](https://github.com/enchantednatures/axum-cloudevents)
+> to the private Kellnr registry. The template consumes the published 0.1
+> release; see `docs/CRATES.md`.
+
 ---
 
 ## 1. CloudEvents Standard Compliance (v1.0)

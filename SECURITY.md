@@ -45,7 +45,8 @@ release notes unless you ask us not to.
 In scope:
 
 - the template repository (generation logic, manifests, scripts, CI workflows),
-- the vendored `crates/axum-cloudevents` and `crates/axum-cloudevents-macros`,
+- the published `axum-cloudevents` and `axum-cloudevents-macros` crates
+  (source: <https://github.com/enchantednatures/axum-cloudevents>),
 - the Dockerfile and shipped runtime configuration.
 
 Out of scope:

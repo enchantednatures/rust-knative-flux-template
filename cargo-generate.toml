@@ -13,8 +13,8 @@ ignore = [
   "docs/TEMPLATE_GUIDE.md",
   "Cargo.lock",
   "specs",
-  "crates/axum-cloudevents/target",
-  "crates/axum-cloudevents-macros/target",
+  # Crates are published to Kellnr; never vendor them into generated projects.
+  "crates",
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
@@ -50,6 +50,11 @@ post = ["post-generate.rhai"]
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
+
+# Private crate registry used for axum-cloudevents. The generated
+# .cargo/config.toml points at this sparse index; the token is supplied by
+# `cargo login --registry kellnr` or CARGO_REGISTRIES_KELLNR_TOKEN.
+kellnr_index = { prompt = "Kellnr sparse index URL", type = "string", default = "sparse+https://crates.enchantednatures.com/api/v1/crates/" }
 
 # Feature toggles (individual booleans — cargo-generate v0.23.x cannot evaluate
 # array variables in conditional expressions due to a bug in the Rhai on_var callback)

@@ -37,3 +37,5 @@ tests/
 *.env
 .env*
 deploy/base/secret.yaml
+.cargo/credentials.toml
+.cargo/credentials

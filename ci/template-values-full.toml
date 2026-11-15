@@ -17,6 +17,7 @@ github_org = "enchantednatures"
 github_repo = "rust-knative-flux-template"
 default_branch = "main"
 image_registry = "ghcr.io"
+kellnr_index = "sparse+https://crates.enchantednatures.com/api/v1/crates/"
 use_default_scaling = false
 base_min_scale = "1"
 base_max_scale = "10"

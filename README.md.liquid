@@ -21,7 +21,7 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 {%- endif %}
 {%- if feature_kafka %}
 - 📤 **Kafka Event Publishing**: Non-blocking event publishing from HTTP handlers
-- 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 support via the vendored `axum-cloudevents` crate
+- 🔄 **CloudEvents Standard**: Full CloudEvents 1.0 support via the `axum-cloudevents` crate from your private Kellnr registry
 - 📊 **Publisher Metrics**: Prometheus metrics for event publishing
 {%- endif %}
 {%- if feature_postgres %}
@@ -56,6 +56,11 @@ A production-ready Rust microservice for Knative Serverless and FluxCD GitOps{% 
 | helm | 3.14+ | chart rendering |
 | kustomize | 5.4+ | overlay rendering |
 | Flux CLI | 2.3+ | `make bootstrap` / `make deploy` (real clusters) |
+| Kellnr access | — | `axum-cloudevents` dependency (see `docs/CRATES.md`) |
+
+> `axum-cloudevents` is fetched from the private Kellnr registry. Authenticate
+> once with `cargo login --registry kellnr` or set
+> `CARGO_REGISTRIES_KELLNR_TOKEN`. CI uses the `KELLNR_TOKEN` repository secret.
 
 ## Local Development (Kind)
 
@@ -293,9 +298,8 @@ See `docs/SELF_HOSTED_RUNNERS.md`.
 {%- endif %}
 │       └── mod.rs
 │
-├── crates/                 # Vendored CloudEvents crates
-│   ├── axum-cloudevents/
-│   └── axum-cloudevents-macros/
+├── .cargo/
+│   └── config.toml         # Kellnr registry index (no token)
 │
 ├── config/
 │   ├── default.toml
@@ -404,19 +408,26 @@ cargo bench                     # criterion benchmarks
 ```
 
 CI runs the same commands for the all-features project, plus a release-profile
-build. See `docs/DEVELOPMENT.md` and `docs/TESTING.md`.
+build. The `axum-cloudevents` dependency resolves from Kellnr, so CI needs the
+`KELLNR_TOKEN` repository secret and local development needs
+`cargo login --registry kellnr` (or `CARGO_REGISTRIES_KELLNR_TOKEN`). See
+`docs/CRATES.md`.
 
 ### Building the Image
 
 ```bash
 cargo build --release
-docker build -t {{ project_name }}:latest .
+export CARGO_REGISTRIES_KELLNR_TOKEN=...   # or cargo login --registry kellnr
+docker build \
+  --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+  -t {{ project_name }}:latest .
 ```
 
 The Dockerfile is a multi-stage build using `cargo-chef`; the runtime stage
 installs `ca-certificates`, `curl`, and `tzdata` and runs as the non-root
 `appuser`. The Docker `HEALTHCHECK` calls `/health/live` with `curl`; Knative
-ignores it and uses HTTP probes.
+ignores it and uses HTTP probes. The Kellnr token is a BuildKit secret and is
+never written into an image layer.
 
 ## Observability
 

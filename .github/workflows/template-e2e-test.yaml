@@ -96,6 +96,7 @@ jobs:
 
     env:
       SCENARIO: ${{ matrix.scenario }}
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
 
     steps:
       - name: Install dependencies (for robustness)
@@ -175,6 +176,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -227,6 +235,7 @@ jobs:
           github_repo = "test-repo"
           default_branch = "main"
           image_registry = "ghcr.io"
+          kellnr_index = "sparse+https://crates.enchantednatures.com/api/v1/crates/"
           use_default_scaling = false
           base_min_scale = "1"
           base_max_scale = "10"
@@ -610,6 +619,8 @@ jobs:
           push: true
           load: true
           tags: ${{ steps.image-meta.outputs.app_image }}
+          secrets: |
+            cargo_token=${{ secrets.KELLNR_TOKEN }}
           # The Dockerfile installs cargo-chef precisely so the dependency
           # compile is one reusable layer; plain `docker build` discarded it
           # every run. Scoped per scenario because generated Cargo features

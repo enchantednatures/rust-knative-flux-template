@@ -118,8 +118,11 @@ Before deploying to Kubernetes, test locally:
 ### 1. Build Docker Image
 
 ```bash
-# Build image
-docker build -t {{ project_name }}:latest .
+# Build image (the Kellnr token is passed as a BuildKit secret)
+export CARGO_REGISTRIES_KELLNR_TOKEN=...   # or cargo login --registry kellnr
+docker build \
+  --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+  -t {{ project_name }}:latest .
 
 # Tag for registry
 docker tag {{ project_name }}:latest {{ image_registry }}/{{ github_org }}/{{ project_name }}:v1.0.0

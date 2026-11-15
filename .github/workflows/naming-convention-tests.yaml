@@ -61,10 +61,18 @@ jobs:
       PROJECT_NAME: ${{ matrix.project_name }}
       EXPECTED_CRATE: ${{ matrix.expected_crate }}
       EXPECTED_K8S: ${{ matrix.expected_k8s }}
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify Kellnr token
+        run: |
+          if [ -z "${CARGO_REGISTRIES_KELLNR_TOKEN:-}" ]; then
+            echo "::error::KELLNR_TOKEN repository secret is required"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -99,6 +107,7 @@ jobs:
           github_repo = "test-repo"
           default_branch = "main"
           image_registry = "ghcr.io"
+          kellnr_index = "sparse+https://crates.enchantednatures.com/api/v1/crates/"
           use_default_scaling = true
           EOF
 

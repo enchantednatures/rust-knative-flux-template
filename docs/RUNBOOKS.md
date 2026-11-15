@@ -110,8 +110,11 @@ kubectl logs -f deployment/{{ project_name }} -n {{ project_name }}
 # Run tests
 cargo test
 
-# Build and push image
-docker build -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1 .
+# Build and push image (Kellnr token passed as a BuildKit secret)
+export CARGO_REGISTRIES_KELLNR_TOKEN=...   # or cargo login --registry kellnr
+docker build \
+  --secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+  -t {{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1 .
 docker push {{ image_registry }}/{{ github_org }}/{{ project_name }}:fix-v1
 
 # Deploy (via GitOps or manual)

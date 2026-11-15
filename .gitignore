@@ -35,6 +35,9 @@ deploy/base/secret.yaml
 *.env
 .env*
 !.env.example
+# Cargo registry credentials (Kellnr token)
+.cargo/credentials.toml
+.cargo/credentials
 # SOPS: per-environment config and the age private key stay out of git
 # (start from .sops.yaml.example)
 .sops.yaml
