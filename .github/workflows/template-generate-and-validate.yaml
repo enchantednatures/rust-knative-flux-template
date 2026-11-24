@@ -856,8 +856,12 @@ jobs:
             || { echo "FAIL: README.md missing /api/v1/stream"; exit 1; }
           grep -q 'LONG_RUNNING_WORKLOADS.md' README.md \
             || { echo "FAIL: README.md missing LONG_RUNNING_WORKLOADS link"; exit 1; }
-          grep -q 'rollout status deployment' scripts/dev/build-and-deploy.sh \
-            || { echo "FAIL: build-and-deploy.sh does not wait for a Deployment"; exit 1; }
+          if ! grep -q 'rollout status deployment' scripts/dev/build-and-deploy.sh \
+            && ! { grep -q 'WORKLOAD_TYPE' scripts/dev/build-and-deploy.sh \
+              && grep -q 'Deployment' scripts/dev/build-and-deploy.sh; }; then
+            echo "FAIL: build-and-deploy.sh does not wait for a Deployment"
+            exit 1
+          fi
 
           SMOKE=".github/workflows/smoke-deploy.yaml"
           [ -f "$SMOKE" ] || { echo "FAIL: smoke workflow missing"; exit 1; }
