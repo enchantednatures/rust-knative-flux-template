@@ -19,7 +19,9 @@ patches:
   # Use `add` with an empty map rather than `remove`: an external-S3 project
   # (or any project whose dev overlay no longer declares `objectBuckets`) has
   # no such path, and a JSON6902 `remove` fails the whole render. The empty map
-  # is the chart default, so it creates no claims either way.
+  # is the chart default, so it creates no claims either way. This patch targets
+  # the first service's HelmRelease; added services reuse the project-level
+  # app-data claim and never declare objectBuckets.
   - target:
       kind: HelmRelease
       name: {{ project_name | replace: "_", "-" }}

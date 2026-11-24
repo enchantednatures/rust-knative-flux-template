@@ -1,0 +1,33 @@
+# Production environment configuration.
+
+[telemetry]
+service_name = "{{ service_slug }}-prod"
+log_level = "info"
+otlp_endpoint = "{{ otel_endpoint }}"
+
+{% if include_s3 %}
+[s3]
+endpoint = "https://s3.amazonaws.com"
+bucket = "data"
+region = "us-east-1"
+{% endif %}
+
+{% if kafka_publish %}
+[kafka]
+broker_url = "{{ kafka_bootstrap_servers_prod }}"
+topic = "{{ kafka_topic }}"
+timeout_ms = 30000
+retries = 5
+{% endif %}
+
+{% if include_postgres %}
+[postgres]
+url = ""
+host = ""
+database = "{{ db_name }}"
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+# sqlx migrate takes a pg advisory lock; concurrent pods wait, then reconcile.
+run_migrations = true
+max_connections = 5
+{% endif %}

@@ -327,6 +327,12 @@ See `docs/SELF_HOSTED_RUNNERS.md`.
 ├── .cargo/
 │   └── config.toml         # Kellnr registry index (no token)
 │
+├── crates/
+│   └── service-core/       # Shared config, state, observability, health
+│
+├── services/                 # Added services (make add-service)
+│   └── README.md
+│
 ├── config/
 │   ├── default.toml
 │   └── development.toml
@@ -499,6 +505,38 @@ Common causes:
 {% endif %}
 
 See `docs/TROUBLESHOOTING.md` and `docs/FAQ.md`.
+
+## Adding a Service
+
+This project is a Cargo workspace. The first service is the workspace root package;
+later services are generated into `services/<service-slug>/` with the thin-service
+sub-template that ships in the platform template.
+
+```bash
+# Recommended: detect existing infrastructure and register the service
+make add-service --name orders-api --workload knative
+```
+
+Directly with cargo-generate (the subfolder is selected positionally, not through
+`sub_templates`):
+
+```bash
+mkdir -p services/orders-api
+cargo generate --git {{ template_repo_url }} service-template \
+  --name orders-api \
+  --init \
+  --template-values-file /tmp/orders-api-values.toml \
+  --destination services/orders-api
+```
+
+The values file must be TOML with a `[values]` table, and the destination must already
+exist. Use `--workload deployment` through `make add-service` for a plain Kubernetes
+Deployment instead of a Knative Service. KafkaSource consumption and Flagger canaries
+are Knative-only; added services reuse the existing PostgreSQL cluster, S3 bucket
+claim, Redis, telemetry, and Kafka broker rather than re-provisioning them.
+
+See [docs/SERVICE_TEMPLATE.md](docs/SERVICE_TEMPLATE.md) for the full invocation
+contract, template values, workload/feature matrix, and limitations.
 
 ## Contributing
 

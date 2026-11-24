@@ -6,6 +6,11 @@ subfolder = "."
 ignore = [
   ".git",
   ".sisyphus",
+  # The add-service sub-template and its tests are template-authoring only.
+  "service-template",
+  "tests/add-service",
+  "tests/e2e",
+  "scripts/test-service-renders.sh",
   ".opencode",
   ".specify",
   "target",
@@ -13,8 +18,7 @@ ignore = [
   "docs/TEMPLATE_GUIDE.md",
   "Cargo.lock",
   "specs",
-  # Crates are published to Kellnr; never vendor them into generated projects.
-  "crates",
+  # CloudEvents crates are published to Kellnr; only crates/service-core ships.
   ".github/workflows/template-e2e-test.yaml",
   ".github/workflows/template-generate-and-validate.yaml",
   ".github/workflows/naming-convention-tests.yaml",
@@ -50,6 +54,13 @@ post = ["post-generate.rhai"]
 [placeholders]
 project_name = { prompt = "Project name", type = "string", default = "example-app" }
 project_author = { prompt = "Project authors", type = "string", default = "Your Name <you@example.com>" }
+
+# Origin of the service sub-template, rendered into `scripts/service-template.env`
+# and consumed by `scripts/add-service.sh`. The defaults point at this
+# repository; forks should override these values when generating their project so
+# `make add-service` keeps using their own template fork/ref.
+template_repo_url = { prompt = "Service template repository URL (used by make add-service)", type = "string", default = "https://github.com/enchantednatures/rust-knative-flux-template" }
+template_ref = { prompt = "Service template git ref (branch, tag, or revision)", type = "string", default = "main" }
 
 # Private crate registry used for axum-cloudevents. The generated
 # .cargo/config.toml points at this sparse index; the token is supplied by

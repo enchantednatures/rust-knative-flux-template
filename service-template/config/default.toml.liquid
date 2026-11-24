@@ -1,0 +1,42 @@
+# Default configuration. Environment files and APP__* variables override it.
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[redis]
+url = "redis://localhost:6379"
+
+[telemetry]
+service_name = "{{ service_slug }}"
+log_level = "info"
+# otlp_endpoint = "http://otel-collector:4317"  # Optional
+
+{% if include_s3 %}
+[s3]
+endpoint = "http://localhost:9000"
+bucket = "data"
+region = "us-east-1"
+{% endif %}
+
+{% if kafka_publish %}
+[kafka]
+broker_url = "{{ kafka_bootstrap_servers }}"
+topic = "{{ kafka_topic }}"
+event_name = "com.example.{{ service_slug | replace: "-", "." }}.event.published"
+compression = "snappy"
+linger_ms = 5
+retries = 3
+timeout_ms = 10000
+{% endif %}
+
+{% if include_postgres %}
+[postgres]
+url = ""                    # APP__POSTGRES__URL from the CNPG app secret
+host = ""                   # APP__POSTGRES__HOST points at the pooler when enabled
+database = "{{ db_name }}"  # APP__POSTGRES__DATABASE selects this service's database
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+run_migrations = true
+max_connections = 5
+{% endif %}

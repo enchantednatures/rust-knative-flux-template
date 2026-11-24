@@ -1,0 +1,129 @@
+# cargo-generate configuration for the thin service sub-template.
+#
+# This template is invoked POSITIONALLY from the platform template root:
+#
+#   cargo generate --git <repo> service-template \
+#     --name <service-slug> --init \
+#     --template-values-file <values.toml> \
+#     --destination <workspace>/services/<service-slug>
+#
+# NOTE: do NOT add `[template] sub_templates` here or in the root template.
+# cargo-generate 0.23.x turns `sub_templates` into an interactive chooser,
+# which breaks every non-interactive/CI generation (proved in Task 1 evidence).
+# The positional subfolder argument is the only supported selection mechanism.
+#
+# There are intentionally NO hooks in this template: the platform's
+# `scripts/add-service.sh` renders the service and then runs `cargo fmt`
+# itself, so service generation never needs `--allow-commands`.
+
+[template]
+cargo_generate_version = ">=0.23.0"
+# Author-facing guide only. It is named README.author.md because cargo-generate
+# matches ignore paths against the RENDERED output path: ignoring "README.md"
+# would also suppress the generated service's README.md.liquid (Todo 13).
+ignore = ["README.author.md"]
+
+[placeholders]
+# ── Identity ──────────────────────────────────────────────────────────────
+# Kebab-case identifier used for the directory, HelmRelease, Service,
+# Kafka topic/consumer-group names and image repository.
+service_slug = { prompt = "Service slug (kebab-case; used for all Kubernetes names)", type = "string", default = "example-service" }
+# PostgreSQL-safe database name (<=63 bytes, no reserved names).
+db_name = { prompt = "PostgreSQL database name", type = "string", default = "example_service" }
+# Platform project slug (the first service / HelmRelease name).
+project_slug = { prompt = "Platform project slug", type = "string", default = "example-app" }
+image_registry = { prompt = "Container image registry", type = "string", default = "ghcr.io" }
+github_org = { prompt = "GitHub organization or username", type = "string", default = "your-org" }
+
+# ── Feature toggles ───────────────────────────────────────────────────────
+# Booleans (never an enum picker) because cargo-generate 0.23.x cannot evaluate
+# array variables in conditional expressions.
+include_postgres = { prompt = "Reuse the existing CloudNativePG cluster for this service?", type = "bool", default = false }
+include_s3 = { prompt = "Wire this service to the project-level S3 bucket claim?", type = "bool", default = false }
+kafka_publish = { prompt = "Publish events to Kafka from this service?", type = "bool", default = false }
+# Knative only: Deployment workloads cannot render a KafkaSource with the
+# pinned ksvc chart. The wrapper forces this off for Deployment mode and the
+# conditional ignore block below prunes the Knative-only files.
+kafka_source = { prompt = "Consume Kafka events via a Knative KafkaSource (Knative only)?", type = "bool", default = false }
+# false = Knative Service (scale-to-zero); true = plain Kubernetes Deployment.
+workload_deployment = { prompt = "Use a plain Kubernetes Deployment instead of a Knative Service?", type = "bool", default = false }
+# Knative only: forced off for Deployment mode by the conditional ignore below.
+enable_flagger = { prompt = "Enable Flagger canary promotion (Knative only)?", type = "bool", default = false }
+enable_image_updates = { prompt = "Add Flux image-update resources for this service?", type = "bool", default = false }
+
+# ── Per-environment targets ───────────────────────────────────────────────
+target_namespace_dev = { prompt = "Target namespace (dev)", type = "string", default = "default" }
+target_namespace_staging = { prompt = "Target namespace (staging)", type = "string", default = "default" }
+target_namespace_prod = { prompt = "Target namespace (prod)", type = "string", default = "default" }
+
+# ── Existing infrastructure (reused, never re-provisioned) ────────────────
+pg_cluster = { prompt = "Existing CNPG Cluster name", type = "string", default = "example-app-postgres" }
+pg_app_secret = { prompt = "CNPG app secret name (key: uri)", type = "string", default = "example-app-postgres-app" }
+pg_ca_secret = { prompt = "CNPG CA secret name (key: ca.crt)", type = "string", default = "example-app-postgres-ca" }
+# Empty = no pooler override; the deploy template must omit APP__POSTGRES__HOST.
+pg_pooler_host = { prompt = "PgBouncer pooler host (empty = no pooler)", type = "string", default = "" }
+redis_url = { prompt = "Redis URL used by the dev overlay", type = "string", default = "redis://redis.default.svc.cluster.local:6379" }
+otel_endpoint = { prompt = "OpenTelemetry OTLP endpoint", type = "string", default = "http://otel-collector.observability.svc.cluster.local:4317" }
+
+kafka_bootstrap_servers = { prompt = "Kafka bootstrap servers (dev)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
+kafka_bootstrap_servers_staging = { prompt = "Kafka bootstrap servers (staging)", type = "string", default = "kafka.staging.svc.cluster.local:9092" }
+kafka_bootstrap_servers_prod = { prompt = "Kafka bootstrap servers (prod)", type = "string", default = "kafka.prod.svc.cluster.local:9092" }
+kafka_topic = { prompt = "Kafka topic for this service (defaults to <slug>-events when the wrapper renders)", type = "string", default = "events" }
+kafka_consumer_group = { prompt = "Kafka consumer group for this service", type = "string", default = "events-consumers" }
+
+canary_prometheus_url_dev = { prompt = "Prometheus URL for dev canary gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
+canary_prometheus_url_staging = { prompt = "Prometheus URL for staging canary gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
+canary_prometheus_url_prod = { prompt = "Prometheus URL for prod canary gates", type = "string", default = "http://prometheus.observability.svc.cluster.local:9090" }
+
+# ── Conditional file pruning ──────────────────────────────────────────────
+# Paths are relative to this sub-template. Entries for files that a later
+# todo has not created yet are inert; they are the contract for the feature
+# file sets owned by Todos 13 (crate) and 14 (deploy unit).
+
+[conditional.'!include_postgres']
+ignore = [
+  "migrations",
+  "build.rs",
+  "deploy/base/database.yaml",
+  "deploy/base/database.yaml.liquid",
+]
+
+# KafkaSource is a Knative-only capability of the pinned ksvc chart.
+[conditional.'!kafka_source']
+ignore = [
+  "src/handlers/events.rs",
+  "deploy/base/kafka-source.yaml",
+  "deploy/base/kafka-source.yaml.liquid",
+]
+
+# Knative-only deploy files (Deployment mode renders inline Helm values
+# instead; there are no standalone Deployment-only manifests today).
+[conditional.'workload_deployment']
+ignore = [
+  "deploy/base/kafka-source.yaml",
+  "deploy/base/kafka-source.yaml.liquid",
+  "deploy/base/canary.yaml",
+  "deploy/base/canary.yaml.liquid",
+]
+
+# Deployment-only files, if any are introduced later (for example a PDB that
+# the chart does not render). Deployment mode is currently expressed entirely
+# as Helm values in deploy/base/helmrelease.yaml, so this list is empty.
+[conditional.'!workload_deployment']
+ignore = []
+
+# Flagger is rendered as chart values only for Knative workloads. The
+# `workload_deployment` term forces this off even if the wrapper was asked
+# for a canary, so Deployment output can never contain a Canary.
+[conditional.'!enable_flagger || workload_deployment']
+ignore = [
+  "deploy/base/canary.yaml",
+  "deploy/base/canary.yaml.liquid",
+]
+
+# Flux image-update resources live in their own flux-system-scoped directory
+# and are pruned for services that do not opt in.
+[conditional.'!enable_image_updates']
+ignore = [
+  "deploy/flux",
+]

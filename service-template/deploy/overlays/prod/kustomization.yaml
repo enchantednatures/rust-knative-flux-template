@@ -1,0 +1,73 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Per-service prod overlay. The root prod overlay includes this directory as
+# ../../../services/{{ service_name }}/deploy/overlays/prod.
+namespace: {{ target_namespace_prod }}
+
+{% assign kafka_env_index = 5 %}
+{% if include_s3 %}{% assign kafka_env_index = kafka_env_index | plus: 7 %}{% endif %}
+{% if include_postgres %}{% assign kafka_env_index = kafka_env_index | plus: 2 %}{% endif %}
+{% if include_postgres and pg_pooler_host != "" %}{% assign kafka_env_index = kafka_env_index | plus: 1 %}{% endif %}
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: HelmRelease
+      name: {{ service_name }}
+    patch: |-
+      {% if workload_deployment %}
+      - op: replace
+        path: /spec/values/services/app/workload/replicas
+        value: 3
+      {% else %}
+      - op: replace
+        path: /spec/values/services/app/scaling
+        value:
+          minScale: 2
+          maxScale: 20
+      {% endif %}
+      - op: replace
+        path: /spec/values/services/app/resources
+        value:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+      {% if kafka_publish or kafka_source %}
+      # Replace the base env entry at a computed index (see staging overlay).
+      - op: replace
+        path: /spec/values/services/app/env/{{ kafka_env_index }}
+        value:
+          name: APP__KAFKA__BROKER_URL
+          value: "{{ kafka_bootstrap_servers_prod }}"
+      {% endif %}
+
+      {% if kafka_source and workload_deployment == false %}
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
+        value:
+          - "{{ kafka_bootstrap_servers_prod }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 10
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: latest
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/delivery/retry
+        value: 10
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/delivery/backoffDelay
+        value: "PT2S"
+      {% endif %}
+      {% if enable_flagger and workload_deployment == false %}
+      - op: replace
+        path: /spec/values/services/app/flagger/metrics/prometheusAddress
+        value: "{{ canary_prometheus_url_prod }}"
+      {% endif %}

@@ -4,8 +4,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-{%- if feature_s3 %}
-
+#[cfg(feature = "s3")]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3Config {
     /// S3-compatible endpoint (required for RustFS/S3-compatible storage)
@@ -16,9 +15,8 @@ pub struct S3Config {
     pub region: String,
     // Credentials via AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
 }
-{%- endif %}
 
-{%- if feature_kafka %}
+#[cfg(feature = "kafka")]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KafkaConfig {
     /// Kafka broker URL (e.g., "kafka.kafka.svc.cluster.local:9092")
@@ -44,25 +42,27 @@ pub struct KafkaConfig {
     pub timeout_ms: u32,
 }
 
+#[cfg(feature = "kafka")]
 fn default_compression() -> String {
     "snappy".into()
 }
 
+#[cfg(feature = "kafka")]
 fn default_linger_ms() -> u32 {
     5
 }
 
+#[cfg(feature = "kafka")]
 fn default_retries() -> u32 {
     3
 }
 
+#[cfg(feature = "kafka")]
 fn default_timeout_ms() -> u32 {
     10000
 }
-{%- endif %}
 
-{%- if feature_postgres %}
-
+#[cfg(feature = "postgres")]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PostgresConfig {
     /// libpq-style DSN. Injected at runtime via APP__POSTGRES__URL (defaults: empty string - set in k8s from CNPG secret)
@@ -72,6 +72,12 @@ pub struct PostgresConfig {
     /// `<cluster>-rw` service baked into the CNPG-generated `uri` secret.
     #[serde(default)]
     pub host: Option<String>,
+    /// Optional database-name override applied to the parsed DSN
+    /// (`APP__POSTGRES__DATABASE`). Lets a service target its own database on
+    /// the shared cluster while keeping the credentials/DSN from the
+    /// `<cluster>-app` secret.
+    #[serde(default)]
+    pub database: Option<String>,
     /// ssl mode: "disable" | "require" | "verify-ca" | "verify-full"
     #[serde(default = "default_postgres_ssl_mode")]
     pub ssl_mode: String,
@@ -85,33 +91,32 @@ pub struct PostgresConfig {
     pub max_connections: u32,
 }
 
+#[cfg(feature = "postgres")]
 fn default_postgres_ssl_mode() -> String {
     "verify-full".into()
 }
 
+#[cfg(feature = "postgres")]
 fn default_true() -> bool {
     true
 }
 
+#[cfg(feature = "postgres")]
 fn default_postgres_max_connections() -> u32 {
     5
 }
-{%- endif %}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub redis: RedisConfig,
     pub telemetry: TelemetryConfig,
-    {%- if feature_s3 %}
+    #[cfg(feature = "s3")]
     pub s3: S3Config,
-    {%- endif %}
-    {%- if feature_kafka %}
+    #[cfg(feature = "kafka")]
     pub kafka: Option<KafkaConfig>,
-    {%- endif %}
-    {%- if feature_postgres %}
+    #[cfg(feature = "postgres")]
     pub postgres: PostgresConfig,
-    {%- endif %}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -149,29 +154,27 @@ impl Default for Config {
             },
             telemetry: TelemetryConfig {
                 otlp_endpoint: None,
-                service_name: "{{ project_name }}".into(),
+                service_name: "service".into(),
                 log_level: "info".into(),
             },
-            {%- if feature_s3 %}
+            #[cfg(feature = "s3")]
             s3: S3Config {
                 endpoint: "http://localhost:9000".into(),
                 bucket: "data".into(),
                 region: "us-east-1".into(),
             },
-            {%- endif %}
-            {%- if feature_kafka %}
+            #[cfg(feature = "kafka")]
             kafka: None,
-            {%- endif %}
-            {%- if feature_postgres %}
+            #[cfg(feature = "postgres")]
             postgres: PostgresConfig {
                 url: String::new(),
                 host: None,
+                database: None,
                 ssl_mode: default_postgres_ssl_mode(),
                 ssl_root_cert_path: None,
                 run_migrations: true,
                 max_connections: default_postgres_max_connections(),
             },
-            {%- endif %}
         }
     }
 }
@@ -186,14 +189,11 @@ impl Config {
     /// - APP__SERVER__PORT=9000
     /// - APP__REDIS__URL=redis://:password@host:6379/0
     /// - APP__TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4317
-    {%- if feature_kafka %}
     /// - APP__KAFKA__BROKER_URL=kafka.kafka.svc.cluster.local:9092
     /// - APP__KAFKA__TOPIC=events
     /// - APP__KAFKA__EVENT_NAME=com.example.service.event.published
-    {%- endif %}
-    {%- if feature_postgres %}
     /// - APP__POSTGRES__URL=postgres://user:password@host:5432/dbname
-    {%- endif %}
+    /// - APP__POSTGRES__DATABASE=my_service
     #[allow(clippy::result_large_err)]
     pub fn load() -> Result<Self, figment::Error> {
         let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
@@ -232,36 +232,34 @@ impl Config {
             return Err(figment::Error::from("server.port must be non-zero"));
         }
 
-        {%- if feature_s3 %}
+        #[cfg(feature = "s3")]
+        {
+            if self.s3.endpoint.is_empty() {
+                return Err(figment::Error::from(
+                    "s3.endpoint must be set (via config file or APP__S3__ENDPOINT)",
+                ));
+            }
 
-        if self.s3.endpoint.is_empty() {
-            return Err(figment::Error::from(
-                "s3.endpoint must be set (via config file or APP__S3__ENDPOINT)",
-            ));
+            if self.s3.bucket.is_empty() {
+                return Err(figment::Error::from(
+                    "s3.bucket must be set (via config file or APP__S3__BUCKET)",
+                ));
+            }
         }
 
-        if self.s3.bucket.is_empty() {
-            return Err(figment::Error::from(
-                "s3.bucket must be set (via config file or APP__S3__BUCKET)",
-            ));
-        }
-        {%- endif %}
-
-        {%- if feature_kafka %}
+        #[cfg(feature = "kafka")]
         if let Some(kafka) = &self.kafka {
             kafka.validate()?;
         }
-        {%- endif %}
 
-        {%- if feature_postgres %}
+        #[cfg(feature = "postgres")]
         self.postgres.validate()?;
-        {%- endif %}
 
         Ok(())
     }
 }
 
-{%- if feature_kafka %}
+#[cfg(feature = "kafka")]
 impl KafkaConfig {
     /// Validate Kafka configuration
     /// Ensures required fields are non-empty and optional fields are within valid ranges
@@ -301,7 +299,7 @@ impl KafkaConfig {
         }
 
         // Validate timeout_ms range (1000-300000 ms = 1-300 seconds)
-        if self.timeout_ms < 1000 || self.timeout_ms > 300000 {
+        if !(1000..=300000).contains(&self.timeout_ms) {
             return Err(figment::Error::from(
                 "kafka.timeout_ms must be between 1000 and 300000",
             ));
@@ -322,9 +320,8 @@ impl KafkaConfig {
         Ok(())
     }
 }
-{%- endif %}
 
-{%- if feature_postgres %}
+#[cfg(feature = "postgres")]
 impl PostgresConfig {
     /// Validate PostgreSQL configuration
     /// Ensures the DSN parses (when non-empty) and ssl_mode is a known value
@@ -350,7 +347,6 @@ impl PostgresConfig {
         Ok(())
     }
 }
-{%- endif %}
 
 #[cfg(test)]
 mod tests {
@@ -370,37 +366,53 @@ mod tests {
         assert!(config.validate().is_err());
     }
 
-    {%- if feature_postgres %}
-
+    #[cfg(feature = "postgres")]
     #[test]
     #[allow(clippy::result_large_err)]
     fn test_toml_layering_loads_postgres_defaults() {
-        // cargo test runs with CWD = crate root where config/*.toml live.
         // Asserts the loader actually merges the env-specific file (the
         // figment .nested() regression dropped all TOML sections because
         // they were treated as figment profiles). No `Env` provider here, so
         // ambient/parallel-test env leakage can't affect the assertions.
-        let cfg: Config = Figment::new()
-            .merge(Serialized::defaults(Config::default()))
-            .merge(Toml::file(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/config/default.toml"
-            )))
-            .merge(Toml::file(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/config/development.toml"
-            )))
-            .extract()
-            .expect("layered config should load cleanly");
-        assert_eq!(cfg.postgres.ssl_mode, "verify-full");
-        assert_eq!(
-            cfg.postgres.ssl_root_cert_path.as_deref(),
-            Some("/etc/secrets/pg-ca/ca.crt")
-        );
-        assert!(cfg.postgres.run_migrations);
-        assert_eq!(cfg.postgres.max_connections, 5);
+        figment::Jail::expect_with(|jail| {
+            jail.create_dir("config")?;
+            jail.create_file(
+                "config/default.toml",
+                r#"
+[postgres]
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+run_migrations = true
+max_connections = 5
+"#,
+            )?;
+            jail.create_file(
+                "config/development.toml",
+                r#"
+[postgres]
+ssl_mode = "require"
+"#,
+            )?;
+
+            let cfg: Config = Figment::new()
+                .merge(Serialized::defaults(Config::default()))
+                .merge(Toml::file("config/default.toml"))
+                .merge(Toml::file("config/development.toml"))
+                .extract()
+                .expect("layered config should load cleanly");
+
+            assert_eq!(cfg.postgres.ssl_mode, "require");
+            assert_eq!(
+                cfg.postgres.ssl_root_cert_path.as_deref(),
+                Some("/etc/secrets/pg-ca/ca.crt")
+            );
+            assert!(cfg.postgres.run_migrations);
+            assert_eq!(cfg.postgres.max_connections, 5);
+            Ok(())
+        });
     }
 
+    #[cfg(feature = "postgres")]
     #[test]
     #[allow(clippy::result_large_err)]
     fn test_postgres_config_env_mapping() {
@@ -409,6 +421,7 @@ mod tests {
                 "APP__POSTGRES__URL",
                 "postgres://user:secret@localhost:5432/testdb",
             );
+            jail.set_env("APP__POSTGRES__DATABASE", "service_db");
             jail.set_env("APP__POSTGRES__SSL_MODE", "require");
             jail.set_env("APP__POSTGRES__SSL_ROOT_CERT_PATH", "/tmp/ca.crt");
             jail.set_env("APP__POSTGRES__RUN_MIGRATIONS", "false");
@@ -423,6 +436,7 @@ mod tests {
                 config.postgres.url,
                 "postgres://user:secret@localhost:5432/testdb"
             );
+            assert_eq!(config.postgres.database.as_deref(), Some("service_db"));
             assert_eq!(config.postgres.ssl_mode, "require");
             assert_eq!(
                 config.postgres.ssl_root_cert_path.as_deref(),
@@ -435,6 +449,7 @@ mod tests {
         });
     }
 
+    #[cfg(feature = "postgres")]
     #[test]
     fn test_postgres_validation_allows_empty_url() {
         let config = Config::default();
@@ -442,6 +457,7 @@ mod tests {
         assert!(config.validate().is_ok());
     }
 
+    #[cfg(feature = "postgres")]
     #[test]
     fn test_postgres_validation_fails_on_invalid_url() {
         let mut config = Config::default();
@@ -449,11 +465,11 @@ mod tests {
         assert!(config.validate().is_err());
     }
 
+    #[cfg(feature = "postgres")]
     #[test]
     fn test_postgres_validation_fails_on_invalid_ssl_mode() {
         let mut config = Config::default();
         config.postgres.ssl_mode = "bogus".into();
         assert!(config.validate().is_err());
     }
-    {%- endif %}
 }

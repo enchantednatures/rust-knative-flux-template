@@ -37,6 +37,9 @@ spec:
     push:
       branch: {{ default_branch }}
   update:
-    path: ./deploy
+    # Scan the repository root, not just ./deploy: the first service's setter
+    # marker lives in deploy/base, while added services keep theirs under
+    # services/<service>/deploy. A narrower path would miss the latter.
+    path: ./
     strategy: Setters
 

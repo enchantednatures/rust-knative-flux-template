@@ -39,19 +39,10 @@ pub async fn liveness() -> Json<HealthResponse> {
 /// Readiness probe - can the service handle traffic?
 ///
 /// Checks Redis connectivity with PING before returning 200 OK.
-/// {%- if feature_postgres %}
-/// Also runs `SELECT 1` against PostgreSQL when a pool is configured.
-/// {%- endif %}
-/// {%- if feature_kafka %}
-/// Also verifies Kafka broker connectivity if event publishing is enabled.
-/// {%- endif %}
-/// If Redis is unreachable, returns 503 Service Unavailable.
-/// {%- if feature_postgres %}
-/// If PostgreSQL is unreachable (or the check exceeds its 2s budget), returns 503.
-/// {%- endif %}
-/// {%- if feature_kafka %}
-/// If Kafka broker is unreachable and event publishing is enabled, returns 503.
-/// {%- endif %}
+/// When the corresponding features are enabled it also probes PostgreSQL
+/// (`SELECT 1`) and Kafka broker connectivity.
+/// If Redis is unreachable, returns 503 Service Unavailable. The optional
+/// dependency checks return 503 on failure or timeout.
 ///
 /// Kubernetes will remove the pod from Service endpoints if this fails,
 /// but will NOT restart the pod.
@@ -81,50 +72,52 @@ pub async fn readiness(
         ));
     }
 
-    {%- if feature_postgres %}
-    // A lazy pool may hide an unreachable database until first use; probe it
-    // here, bounded to 2s so a hung database cannot stall the probe past the
-    // kubelet's own timeout.
-    if let Some(pool) = &state.postgres {
-        let ping = sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(pool.as_ref());
-        match tokio::time::timeout(std::time::Duration::from_secs(2), ping).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                tracing::error!(error = %e, "PostgreSQL health check failed");
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(HealthResponse {
-                        status: format!("postgres unavailable: {}", e),
-                    }),
-                ));
-            }
-            Err(_) => {
-                tracing::error!("PostgreSQL health check timed out");
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(HealthResponse {
-                        status: "postgres unavailable: health check timed out".into(),
-                    }),
-                ));
+    #[cfg(feature = "postgres")]
+    {
+        // A lazy pool may hide an unreachable database until first use; probe it
+        // here, bounded to 2s so a hung database cannot stall the probe past the
+        // kubelet's own timeout.
+        if let Some(pool) = &state.postgres {
+            let ping = sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(pool.as_ref());
+            match tokio::time::timeout(std::time::Duration::from_secs(2), ping).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    tracing::error!(error = %e, "PostgreSQL health check failed");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(HealthResponse {
+                            status: format!("postgres unavailable: {}", e),
+                        }),
+                    ));
+                }
+                Err(_) => {
+                    tracing::error!("PostgreSQL health check timed out");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(HealthResponse {
+                            status: "postgres unavailable: health check timed out".into(),
+                        }),
+                    ));
+                }
             }
         }
     }
-    {%- endif %}
 
-    {%- if feature_kafka %}
-    // If Kafka publishing is enabled, also check broker connectivity
-    if let Some(publisher) = &state.kafka_publisher
-        && let Err(e) = publisher.health_check().await
+    #[cfg(feature = "kafka")]
     {
-        tracing::error!(error = %e, "Kafka health check failed");
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(HealthResponse {
-                status: format!("kafka unavailable: {}", e),
-            }),
-        ));
+        // If Kafka publishing is enabled, also check broker connectivity
+        if let Some(publisher) = &state.kafka_publisher
+            && let Err(e) = publisher.health_check().await
+        {
+            tracing::error!(error = %e, "Kafka health check failed");
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(HealthResponse {
+                    status: format!("kafka unavailable: {}", e),
+                }),
+            ));
+        }
     }
-    {%- endif %}
 
     Ok(Json(HealthResponse {
         status: "ready".into(),
@@ -137,11 +130,7 @@ pub async fn readiness(
 /// Metrics include:
 /// - HTTP request metrics (via tower-http)
 /// - Custom application metrics
-/// {%- if feature_kafka %}
-/// - kafka_events_published_total: Counter for successfully published events
-/// - kafka_events_failed_total: Counter for failed publish attempts
-/// - kafka_publish_latency_ms: Histogram for publishing latency
-/// {%- endif %}
+/// - Kafka publish counters/histograms when the `kafka` feature is enabled
 #[utoipa::path(
     get,
     path = "/metrics",

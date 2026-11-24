@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Port-forward the local development dependencies. When --service <slug> (or
+# SERVICE=<slug>) is supplied, also forward that workload's Kubernetes Service
+# to localhost:8080. Without a service the historic behaviour is unchanged:
+# only Redis/RustFS/observability are forwarded.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +15,30 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+SERVICE="${SERVICE:-}"
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--service)
+			SERVICE="${2:-}"
+			shift 2
+			;;
+		--service=*)
+			SERVICE="${1#*=}"
+			shift
+			;;
+		--help|-h)
+			sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+			exit 0
+			;;
+		*)
+			echo -e "${RED}✗ Unknown option: $1${NC}" >&2
+			echo "Usage: $0 [--service <slug>]" >&2
+			exit 2
+			;;
+	esac
+done
+SERVICE="${SERVICE//_/-}"
 
 if [[ ! -f "$KUBECONFIG_PATH" ]]; then
   echo -e "${RED}✗ Error: Kubeconfig not found at ${KUBECONFIG_PATH}${NC}"
@@ -60,11 +89,28 @@ echo -e "${YELLOW}→${NC} Prometheus (9090)"
 kubectl port-forward -n observability svc/prometheus 9090:9090 >/dev/null 2>&1 &
 PROMETHEUS_PID=$!
 
+APP_FORWARDED=false
+if [[ -n "$SERVICE" ]]; then
+  if kubectl get service "$SERVICE" -n default 2>/dev/null >/dev/null; then
+    APP_PORT=$(kubectl get service "$SERVICE" -n default -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo 80)
+    echo -e "${YELLOW}→${NC} Application: ${SERVICE} (8080 -> ${APP_PORT:-80})"
+    kubectl port-forward -n default "svc/${SERVICE}" "8080:${APP_PORT:-80}" >/dev/null 2>&1 &
+    APP_PID=$!
+    APP_FORWARDED=true
+  else
+    echo -e "${RED}✗ Service/${SERVICE} not found; skipping application forward${NC}"
+  fi
+fi
+
 echo ""
 echo -e "${GREEN}✓ Port forwarding active${NC}"
 echo ""
 echo "Access your services:"
-echo "  • Application:   http://localhost:8080"
+if [[ "$APP_FORWARDED" == "true" ]]; then
+  echo "  • Application (${SERVICE}): http://localhost:8080"
+else
+  echo "  • Application:   http://localhost:8080"
+fi
 echo "  • Jaeger UI:     http://localhost:16686"
 echo "  • Prometheus:    http://localhost:9090"
 echo "  • Redis:         localhost:6379"

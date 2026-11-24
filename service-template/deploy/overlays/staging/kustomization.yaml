@@ -1,0 +1,69 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Per-service staging overlay. The root staging overlay includes this directory
+# as ../../../services/{{ service_name }}/deploy/overlays/staging.
+namespace: {{ target_namespace_staging }}
+
+{% assign kafka_env_index = 5 %}
+{% if include_s3 %}{% assign kafka_env_index = kafka_env_index | plus: 7 %}{% endif %}
+{% if include_postgres %}{% assign kafka_env_index = kafka_env_index | plus: 2 %}{% endif %}
+{% if include_postgres and pg_pooler_host != "" %}{% assign kafka_env_index = kafka_env_index | plus: 1 %}{% endif %}
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: HelmRelease
+      name: {{ service_name }}
+    patch: |-
+      {% if workload_deployment %}
+      - op: replace
+        path: /spec/values/services/app/workload/replicas
+        value: 2
+      {% else %}
+      - op: replace
+        path: /spec/values/services/app/scaling
+        value:
+          minScale: 1
+          maxScale: 5
+      {% endif %}
+      - op: replace
+        path: /spec/values/services/app/resources
+        value:
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+          limits:
+            cpu: "800m"
+            memory: "384Mi"
+      {% if kafka_publish or kafka_source %}
+      # Replace the base env entry at a computed index so the project-level
+      # Redis secret reference and every optional PG/S3 entry stay intact.
+      # The index follows the base env order; update it if that order changes.
+      - op: replace
+        path: /spec/values/services/app/env/{{ kafka_env_index }}
+        value:
+          name: APP__KAFKA__BROKER_URL
+          value: "{{ kafka_bootstrap_servers_staging }}"
+      {% endif %}
+
+      {% if kafka_source and workload_deployment == false %}
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
+        value:
+          - "{{ kafka_bootstrap_servers_staging }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 5
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: earliest
+      {% endif %}
+      {% if enable_flagger and workload_deployment == false %}
+      - op: replace
+        path: /spec/values/services/app/flagger/metrics/prometheusAddress
+        value: "{{ canary_prometheus_url_staging }}"
+      {% endif %}

@@ -7,16 +7,104 @@ on:
 
 env:
   REGISTRY: {{ image_registry }}
-  IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ==========================================================================
+  # Discover Services
+  #
+  # The workspace contains the first service (the root package) plus one
+  # package per directory under services/. Vendored crates (crates/*,
+  # including service-core and axum-cloudevents*) are never images. Discovery
+  # is delegated to scripts/list-services.sh, which reads
+  # `cargo metadata --no-deps` and selects packages by manifest path.
+  # ==========================================================================
+  discover:
+    name: Discover Services
+    runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    outputs:
+      matrix: {% raw %}${{ steps.discover.outputs.matrix }}{% endraw %}
+      pull_commands: {% raw %}${{ steps.discover.outputs.pull_commands }}{% endraw %}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install discovery dependencies
+        run: |
+          # scripts/list-services.sh parses `cargo metadata` with python3; the
+          # ARC runner image does not guarantee it (GitHub-hosted Ubuntu does).
+          if ! command -v python3 >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y python3
+          fi
+
+      - name: Discover workspace services
+        id: discover
+        env:
+          GITHUB_ORG: {{ github_org }}
+          REF_NAME: {% raw %}${{ github.ref_name }}{% endraw %}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import subprocess
+
+          # scripts/list-services.sh prints <slug>\t<dir>\t<package>\t<bin> for
+          # the root package and every services/* workspace member; --json
+          # returns the same rows as an array.
+          rows = json.loads(
+              subprocess.check_output(
+                  ["bash", "scripts/list-services.sh", "--json"], text=True
+              )
+          )
+          if not rows:
+              raise SystemExit("no services discovered in the workspace")
+
+          registry = os.environ["REGISTRY"]
+          org = os.environ["GITHUB_ORG"]
+          ref_name = os.environ.get("REF_NAME", "")
+          version = ref_name[1:] if ref_name.startswith("v") else ref_name
+          # rows[0] is always the first service (the root package).
+          project = rows[0]["slug"]
+
+          include = []
+          images = []
+          for row in rows:
+              is_root = row["dir"] == "."
+              image = (
+                  "{}/{}/{}".format(registry, org, project)
+                  if is_root
+                  else "{}/{}/{}-{}".format(registry, org, project, row["slug"])
+              )
+              include.append(
+                  {
+                      "service": row["slug"],
+                      "dir": row["dir"],
+                      "pkg": row["package"],
+                      "bin": row["bin"],
+                      "image": image,
+                  }
+              )
+              images.append(image)
+
+          matrix = {"include": include}
+          print("matrix=" + json.dumps(matrix))
+          print("pull_commands<<PULL_COMMANDS")
+          for image in images:
+              print("docker pull {}:{}".format(image, version))
+          print("PULL_COMMANDS")
+          PY
+
   # ==========================================================================
   # Create GitHub Release
   # ==========================================================================
   create-release:
     name: Create Release
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
+    needs: discover
     permissions:
       contents: write
     outputs:
@@ -37,34 +125,34 @@ jobs:
           name: Release {% raw %}${{ steps.get_version.outputs.version }}{% endraw %}
           body: |
             ## Release {% raw %}${{ steps.get_version.outputs.version }}{% endraw %}
-            
+
             ### Container Images
-            
+
             ```bash
-            docker pull {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }}{% endraw %}
+            {% raw %}${{ needs.discover.outputs.pull_commands }}{% endraw %}
             ```
-            
+
             ### Deployment
-            
+
             This release is automatically deployable via Flux ImagePolicy using the `release` policy.
-            
+
             See the [deployment documentation](../docs/DEPLOYMENT.md) for details.
           draft: false
           prerelease: false
 
   # ==========================================================================
-  # Build & Push Release Image
+  # Build & Push Release Images (one per service)
   # ==========================================================================
   build-release:
-    name: Build Release Image
+    name: Build Release Image ({% raw %}${{ matrix.service }}{% endraw %})
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
-    needs: create-release
+    needs: [create-release, discover]
     permissions:
       contents: read
       packages: write
-    outputs:
-      image-tag: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
-      image-digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}
+    strategy:
+      fail-fast: false
+      matrix: {% raw %}${{ fromJSON(needs.discover.outputs.matrix) }}{% endraw %}
     steps:
       - uses: actions/checkout@v7
 
@@ -93,7 +181,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}
+          images: {% raw %}${{ matrix.image }}{% endraw %}
           tags: |
             # SemVer tags (v1.0.0 -> 1.0.0, 1.0, 1)
             type=semver,pattern={% raw %}{{version}}{% endraw %}
@@ -109,13 +197,19 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # The same Dockerfile builds every workspace member; the build args
+          # select the service directory, cargo package and binary.
+          build-args: |
+            SERVICE_DIR={% raw %}${{ matrix.dir }}{% endraw %}
+            SERVICE_PKG={% raw %}${{ matrix.pkg }}{% endraw %}
+            SERVICE_BIN={% raw %}${{ matrix.bin }}{% endraw %}
           push: true
           tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
           labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
           secrets: |
             cargo_token={% raw %}${{ secrets.KELLNR_TOKEN }}{% endraw %}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope={% raw %}${{ matrix.service }}{% endraw %}
+          cache-to: type=gha,mode=max,scope={% raw %}${{ matrix.service }}{% endraw %}
           platforms: linux/amd64
           # NOTE: `rust:release` does not exist on Docker Hub; the Dockerfile's
           # RUST_BASE_IMAGE_TAG default (kept in sync by renovate) is used.
@@ -123,23 +217,50 @@ jobs:
       - name: Image digest
         run: |
           echo "Release image built and pushed:"
+          echo "Service: {% raw %}${{ matrix.service }}{% endraw %}"
+          echo "Image: {% raw %}${{ matrix.image }}{% endraw %}"
           echo "Version: {% raw %}${{ needs.create-release.outputs.version }}{% endraw %}"
           echo "Digest: {% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}"
           echo "Tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}"
 
+      - name: Save image digest
+        run: |
+          mkdir -p .digests
+          echo "{% raw %}${{ steps.build-push.outputs.digest }}{% endraw %}" > ".digests/{% raw %}${{ matrix.service }}{% endraw %}"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digest-{% raw %}${{ matrix.service }}{% endraw %}
+          path: .digests/
+          retention-days: 1
+
   # ==========================================================================
-  # Security Scan
+  # Security Scan (one per service)
   # ==========================================================================
   security-scan:
-    name: Security Scan
+    name: Security Scan ({% raw %}${{ matrix.service }}{% endraw %})
     runs-on: {% if feature_gha_runner %}{{ project_name | replace: "_", "-" }}-runner{% else %}ubuntu-latest{% endif %}
-    needs: build-release
+    needs: [discover, build-release]
     permissions:
       contents: read
       packages: read
       security-events: write
+    strategy:
+      fail-fast: false
+      matrix: {% raw %}${{ fromJSON(needs.discover.outputs.matrix) }}{% endraw %}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Download image digest
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digest-{% raw %}${{ matrix.service }}{% endraw %}
+          path: .digest
+
+      - name: Read image digest
+        id: digest
+        run: echo "value=$(cat .digest/{% raw %}${{ matrix.service }}{% endraw %})" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
         uses: docker/login-action@v4
@@ -151,7 +272,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-release.outputs.image-digest }}{% endraw %}
+          image-ref: {% raw %}${{ matrix.image }}@${{ steps.digest.outputs.value }}{% endraw %}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -162,13 +283,13 @@ jobs:
         # the report as a build artifact instead.
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-sarif
+          name: trivy-sarif-{% raw %}${{ matrix.service }}{% endraw %}
           path: trivy-results.sarif
 
       - name: Fail on vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-release.outputs.image-digest }}{% endraw %}
+          image-ref: {% raw %}${{ matrix.image }}@${{ steps.digest.outputs.value }}{% endraw %}
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL'

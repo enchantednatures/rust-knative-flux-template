@@ -1,6 +1,8 @@
 pub mod api;
 pub mod events;
-pub mod health;
+// Health endpoints are infrastructure: they live in `service-core` and are
+// re-exported here so `handlers::health::*` paths keep working.
+pub use service_core::health;
 {%- if feature_postgres %}
 pub mod items;
 {%- endif %}

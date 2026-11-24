@@ -1,0 +1,33 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+# sha-based continuous deployment policy. The HelmRelease marker
+# {"$imagepolicy": "flux-system:{{ project_slug }}-{{ service_name }}:tag"}
+# must match this policy name.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_slug }}-{{ service_name }}
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_slug }}-{{ service_name }}
+  filterTags:
+    pattern: '^sha-[a-f0-9]{7}$'
+  policy:
+    alphabetical:
+      order: asc
+
+---
+# Optional stable release policy; the first service keeps the same convention.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: {{ project_slug }}-{{ service_name }}-release
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: {{ project_slug }}-{{ service_name }}
+  filterTags:
+    pattern: '^release$'
+  policy:
+    alphabetical:
+      order: asc
