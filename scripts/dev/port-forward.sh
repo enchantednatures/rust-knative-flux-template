@@ -19,6 +19,8 @@ fi
 
 export KUBECONFIG="$KUBECONFIG_PATH"
 
+SERVICE_NAME="{{ project_name | replace: "_", "-" }}"
+
 echo "Setting up port forwarding to local services..."
 echo ""
 
@@ -30,6 +32,12 @@ sleep 1
 echo -e "${YELLOW}→${NC} Redis (6379)"
 kubectl port-forward -n redis svc/redis 6379:6379 >/dev/null 2>&1 &
 REDIS_PID=$!
+
+{% if workload_type == "Deployment" %}
+echo -e "${YELLOW}→${NC} Application (8080)"
+kubectl port-forward -n default svc/"${SERVICE_NAME}" 8080:{{ workload_service_port }} >/dev/null 2>&1 &
+APP_PID=$!
+{% endif %}
 
 # RustFS if it exists
 RUSTFS_PID=""

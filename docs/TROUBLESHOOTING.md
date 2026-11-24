@@ -213,6 +213,47 @@ cat src/lib.rs
 
 ## Kubernetes Issues
 
+{% if workload_type == "Deployment" %}
+### Deployment Not Ready
+
+**Symptoms**:
+```
+kubectl rollout status deployment/{{ project_name }} -n {{ project_name }}
+# Shows: waiting for rollout to finish
+```
+
+**Solutions**:
+
+1. Describe the Deployment and pods:
+```bash
+kubectl describe deployment {{ project_name }} -n {{ project_name }}
+kubectl get pods -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }}
+kubectl describe pod -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }}
+```
+
+2. View pod logs:
+```bash
+kubectl logs -f -l app.kubernetes.io/name={{ project_name }} -n {{ project_name }}
+```
+
+3. Check the ReplicaSet and events:
+```bash
+kubectl get rs -n {{ project_name }}
+kubectl get events -n {{ project_name }} --sort-by=.lastTimestamp
+```
+
+4. Check the Service endpoints:
+```bash
+kubectl get svc,endpoints -n {{ project_name }}
+```
+
+5. For Ingress failures, check the controller and `ingress.className`:
+```bash
+kubectl describe ingress {{ project_name }} -n {{ project_name }}
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=100
+```
+
+{% else %}
 ### Knative Service Not Ready
 
 **Symptoms**:
@@ -247,6 +288,7 @@ kubectl get ksvc {{ project_name }} -n {{ project_name }} -o jsonpath='{.status.
 - `ConfigurationsReady: False` - ConfigMap/Secret missing
 - `Ready: False` - Pod not running
 - `RoutesReady: False` - Networking issue
+{% endif %}
 
 ### ImagePullBackOff
 
@@ -815,16 +857,22 @@ What to do:
 
 Verify:
 ```bash
+{% if workload_type == "Deployment" %}
+kubectl get deployment <service> -n <namespace> -o jsonpath='{.spec.template.spec.containers[*].image}'
+{% else %}
 kubectl get ksvc <service> -n <namespace> -o jsonpath='{.spec.template.spec.containers[*].image}'
+{% endif %}
 ```
 
 ### require-pod-resources
 
 A policy that requires every container to declare requests and limits rejects pods with no `resources` block. The template already ships:
-- app Knative Service: request and limits in `services.app.resources`.
+- app {% if workload_type == "Deployment" %}Deployment{% else %}Knative Service{% endif %}: request and limits in `services.app.resources`.
 - CNPG `Cluster`: pod-level `resources` (requests and limits).
 - `Pooler`: a `pgbouncer` container with requests and limits.
+{% if event_source_kafka and workload_type == "Knative" %}
 - Kafka DLQ Knative Service: requests and limits.
+{% endif %}
 
 If a policy also caps values, patch them per environment in the overlay (a JSON6902 or strategic-merge patch on the HelmRelease `spec.values`). A missing `resources` block on an extra sidecar or init container is the usual cause when the app is admitted but a helper pod is not.
 
@@ -882,7 +930,11 @@ kubectl logs deployment/{{ project_name }} -n {{ project_name }}
 
 2. Describe resources:
 ```bash
+{% if workload_type == "Deployment" %}
+kubectl describe deployment {{ project_name }} -n {{ project_name }}
+{% else %}
 kubectl describe ksvc {{ project_name }} -n {{ project_name }}
+{% endif %}
 kubectl describe pod <pod-name> -n {{ project_name }}
 ```
 
@@ -912,11 +964,14 @@ kubectl version --client
 # Cluster info
 kubectl cluster-info
 
-# Service status
+# Workload status
+{% if workload_type == "Deployment" %}
+kubectl get deployment,service,pdb {{ project_name }} -n {{ project_name }} -o yaml
+kubectl get pods -n {{ project_name }} -l app.kubernetes.io/name={{ project_name }} -o yaml
+{% else %}
 kubectl get ksvc {{ project_name }} -n {{ project_name }} -o yaml
-
-# Pod status
 kubectl get pods -n {{ project_name }} -l serving.knative.dev/service={{ project_name }} -o yaml
+{% endif %}
 
 # Service logs
 kubectl logs deployment/{{ project_name }} -n {{ project_name }}

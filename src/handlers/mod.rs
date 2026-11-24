@@ -10,4 +10,7 @@ pub mod kafka;
 {%- if feature_s3 %}
 pub mod storage;
 {%- endif %}
+{%- if workload_type == "Deployment" %}
+pub mod stream;
+{%- endif %}
 pub mod validation;

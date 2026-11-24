@@ -102,13 +102,15 @@ spec:
   wait: true
   timeout: 5m
   {%- if feature_flagger or feature_postgres %}
+  {%- if feature_postgres or workload_type == "Knative" %}
   dependsOn:
-    {%- if feature_flagger %}
+    {%- if feature_flagger and workload_type == "Knative" %}
     - name: flagger
     {%- endif %}
     {%- if feature_postgres %}
     - name: cnpg-operator
     {%- endif %}
+  {%- endif %}
   {%- endif %}
   {%- if feature_postgres %}
   healthChecks:

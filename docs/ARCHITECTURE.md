@@ -574,6 +574,38 @@ See `docs/TESTING.md` for detailed testing strategy.
 
 ## Deployment Architecture
 
+{% if workload_type == "Deployment" %}
+```
+Git Repository
+    │
+    ├─ Application code
+    ├─ Kubernetes manifests (deploy/base, deploy/overlays)
+    ├─ Helm chart (deploy/chart)
+    ├─ Configuration (config/)
+    │
+    ▼
+FluxCD GitRepository
+    │
+    ├─ Polls Git every 1 minute
+    │
+    ▼
+FluxCD Kustomization
+    │
+    ├─ Applies Kustomize patches (per environment)
+    │
+    ▼
+HelmRelease
+    │
+    ├─ Deployment (fixed replicas)
+    ├─ Service (ClusterIP / NodePort / LoadBalancer)
+    ├─ PodDisruptionBudget (optional)
+    ├─ Ingress (optional)
+    ├─ ConfigMaps/Secrets
+    │
+    ▼
+Pods Running on Nodes
+```
+{% else %}
 ```
 Git Repository
     │
@@ -609,6 +641,7 @@ Knative Controller
     ▼
 Pods Running on Nodes
 ```
+{% endif %}
 
 See `docs/DEPLOYMENT.md` for detailed deployment procedures.
 

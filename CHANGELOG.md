@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `workload_type` prompt (`Knative` default, `Deployment` alternative) for
+  long-lived services such as WebSockets and SSE. Deployment mode renders an
+  `apps/v1 Deployment`, a core Service, and an optional PodDisruptionBudget
+  with per-environment replicas, rolling-update controls,
+  `terminationGracePeriodSeconds`, and `preStopSleepSeconds`. It also adds an
+  optional standard `networking.k8s.io/v1 Ingress` with a pass-through
+  annotations map, `ingressClassName`, host/path, and TLS values. Knative-only
+  features (Flagger, KafkaSource/Trigger, PingSource, DomainMapping) are
+  suppressed in Deployment mode. A new `GET /api/v1/stream` SSE example,
+  `docs/LONG_RUNNING_WORKLOADS.md`, render assertions, and a Kind E2E that keeps
+  the connection open past Knative's 300s timeout cover the new mode.
 - `kafka_managed_provider` prompt (under `kafka_managed_cluster`, default
   `redpanda`; set `strimzi` for a Strimzi operator). The generated HelmRelease
   renders the chosen provider, and `APP__KAFKA__BROKER_URL` uses the Redpanda

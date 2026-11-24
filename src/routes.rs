@@ -16,6 +16,9 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handlers::{api, events, health};
+{%- if workload_type == "Deployment" %}
+use crate::handlers::stream;
+{%- endif %}
 use crate::middleware::{request_id_middleware, security_headers_middleware};
 use crate::state::AppState;
 
@@ -32,6 +35,9 @@ use crate::state::AppState;
         {%- if feature_postgres %}
         crate::handlers::items::upsert_item,
         crate::handlers::items::get_item,
+        {%- endif %}
+        {%- if workload_type == "Deployment" %}
+        crate::handlers::stream::stream,
         {%- endif %}
     ),
     components(
@@ -58,6 +64,9 @@ use crate::state::AppState;
         {%- endif %}
         {%- if feature_postgres %}
         (name = "Items", description = "PostgreSQL demo item CRUD"),
+        {%- endif %}
+        {%- if workload_type == "Deployment" %}
+        (name = "Streaming", description = "Long-lived Server-Sent Events"),
         {%- endif %}
     ),
     info(
@@ -123,5 +132,8 @@ fn api_v1_routes() -> Router<AppState> {
         {%- if feature_postgres %}
         .route("/items", post(crate::handlers::items::upsert_item))
         .route("/items/{key}", get(crate::handlers::items::get_item))
+        {%- endif %}
+        {%- if workload_type == "Deployment" %}
+        .route("/stream", get(stream::stream))
         {%- endif %}
 }

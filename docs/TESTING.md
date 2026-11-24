@@ -310,14 +310,14 @@ with the template anymore.
 |-------|-------|----------------|
 | Template generation matrix (template repo CI) | `.github/workflows/template-generate-and-validate.yaml` (`generate-and-validate` job) | 12 feature combinations generate, format, lint, and compile |
 | Full-stack validation | same workflow, `full-stack` job | All-features project builds (debug + release), Docker image builds, Helm chart and overlays render, Flux config renders |
-| Live E2E (template repo CI) | `.github/workflows/template-e2e-test.yaml` | Kind + Knative + Flux deploy of the generated project, health/event/storage assertions per scenario |
+| Live E2E (template repo CI) | `.github/workflows/template-e2e-test.yaml` | Kind + Flux deploy of the generated project, health/event/storage assertions per scenario, plus a 305s SSE stream for Deployment mode |
 | Local smoke | `make local-up` then `make dev-test` | The service runs in a real Kind cluster with the same manifests |
 
 To reproduce a live cluster locally, use the same path the E2E job uses:
 
 ```bash
-make local-up        # Kind + Knative + Flux + app
-make dev-status      # confirm the Knative service is Ready
+make local-up        # Kind{% if workload_type == "Knative" %} + Knative{% endif %} + Flux + app
+make dev-status      # confirm the {% if workload_type == "Deployment" %}Deployment{% else %}Knative service{% endif %} is Ready
 make dev-test        # run the integration suite against the cluster
 make local-down      # tear it down
 ```
