@@ -82,22 +82,6 @@ SERVICE="${SERVICE//_/-}"
 echo "Building and deploying application (service: ${SERVICE})..."
 echo ""
 
-# Check if this is a template project (Cargo.toml.liquid with template variables)
-if [[ -f "${PROJECT_ROOT}/Cargo.toml.liquid" ]] && grep -q {% raw %} "{{ crate_name }}" {% endraw %} "${PROJECT_ROOT}/Cargo.toml.liquid"; then
-	echo -e "${YELLOW}⚠ Template Project Detected${NC}"
-	echo "This is a cargo-generate template repository."
-	echo ""
-	echo "To use this template:"
-	echo "  1. Create a new project: cargo generate --path <path-to-this-template>"
-	echo "  2. Or use it directly by rendering templates first"
-	echo ""
-	echo -e "${YELLOW}→${NC} Skipping application deployment (no concrete project to build)"
-	echo ""
-	echo -e "${GREEN}✓ Infrastructure is ready for a generated project${NC}"
-	echo ""
-	exit 0
-fi
-
 # Verify Cargo.toml exists
 if [[ ! -f "${PROJECT_ROOT}/Cargo.toml" ]]; then
 	echo -e "${RED}✗ Error: Cargo.toml not found${NC}"
