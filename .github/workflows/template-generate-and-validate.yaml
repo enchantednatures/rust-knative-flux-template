@@ -1460,7 +1460,8 @@ jobs:
           LEAKS=(
             AGENTS.md
             CONTRIBUTING.md
-            crates
+            crates/axum-cloudevents
+            crates/axum-cloudevents-macros
             docs/FEATURE_ANALYSIS.md
             docs/IMPROVEMENTS_SUMMARY.md
             docs/CLOUDEVENTS_KAFKA_RESEARCH.md
