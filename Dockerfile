@@ -23,9 +23,11 @@ RUN cargo install cargo-chef
 
 WORKDIR /app
 
-# Prepare the recipe (analyzes dependencies without building)
+# Prepare the recipe (analyzes dependencies without building). The private
+# Kellnr index needs the token even for metadata resolution.
 COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+RUN --mount=type=secret,id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN \
+    cargo chef prepare --recipe-path recipe.json
 
 # ==============================================================================
 # Stage 2: Build dependencies using chef recipe
