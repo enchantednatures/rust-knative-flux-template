@@ -1,0 +1,16 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+{% if include_postgres %}
+# This service gets its own database on the shared CloudNativePG cluster. The
+# operator creates/owns it; the service must never create a second Cluster,
+# Pooler, ObjectStore, ScheduledBackup, or operator.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ service_name }}
+spec:
+  name: {{ db_name }}
+  owner: app
+  cluster:
+    name: {{ pg_cluster }}
+  ensure: present
+{% endif %}

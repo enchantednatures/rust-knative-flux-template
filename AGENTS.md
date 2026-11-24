@@ -173,6 +173,7 @@ The template bridges these conventions so generated projects work seamlessly acr
 ## Code Style Guidelines
 
 ### File Organization
+- **Workspace layout**: The generated project is a Cargo workspace. The first service is the root package (`Cargo.toml` holds both `[package]` and `[workspace]`); shared crates live in `crates/` (workspace members); additional services are added under `services/<name>/` by `make add-service` and appended to `[workspace].members` explicitly.
 - **Modules**: Organize by domain (handlers/, config.rs, state.rs, error.rs, observability.rs)
 - **One module per file**: Use `mod.rs` for public re-exports
 - **lib.rs**: Public API exports; main.rs is application entry point only

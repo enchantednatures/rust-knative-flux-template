@@ -91,7 +91,7 @@ All CloudEvents 1.0 messages must include these fields:
 
 ## 2. Existing Rust CloudEvents Crates
 
-### Official: `cloudevents-sdk` (v0.9.0)
+### Official: `cloudevents-sdk` (v1.2.1)
 
 **Repository**: https://github.com/cloudevents/sdk-rust  
 **Crate**: https://crates.io/crates/cloudevents-sdk

@@ -11,7 +11,14 @@ license = "MIT"
 name = "{{ crate_name }}"
 path = "src/main.rs"
 
-[dependencies]
+[workspace]
+# The first service is the root package; shared crates live under crates/.
+# Additional services are appended explicitly to this list by `make add-service`
+# (a `services/*` glob would fail while services/ contains only README.md).
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.dependencies]
 # Async Runtime
 tokio = { version = "1.41", features = ["full"] }
 {% if workload_type == "Deployment" %}
@@ -31,13 +38,6 @@ serde_json = "1.0"
 # Configuration
 figment = { version = "0.10", features = ["toml", "env", "test"] }
 
-# Validation
-validator = { version = "0.20", features = ["derive"] }
-
-# Rate Limiting
-governor = "0.8"
-tower_governor = "0.7"
-
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
@@ -47,8 +47,6 @@ axum-cloudevents = { version = "0.1", registry = "kellnr" }
 
 # Observability - Tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.32"
 
 # Observability - OpenTelemetry
 opentelemetry = "0.31"
@@ -66,11 +64,84 @@ metrics-exporter-prometheus = "0.18"
 # Redis (no pool - multiplexed connection)
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
-{% if feature_kafka %}
-# Kafka Event Publishing
-rdkafka = { version = "0.38", features = ["cmake-build", "tracing"] }
+# UUID generation (for request IDs, event IDs)
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
-# Time handling (for Kafka event timestamps)
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+[dependencies]
+{% if workload_type == "Deployment" %}
+# Long-lived streaming (Server-Sent Events)
+async-stream = { workspace = true }
+{% endif %}
+# Async Runtime
+tokio = { workspace = true }
+
+# Web Framework
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Configuration
+figment = { workspace = true }
+
+# Validation
+validator = { version = "0.20", features = ["derive"] }
+
+# Rate Limiting
+governor = "0.8"
+tower_governor = "0.7"
+
+# OpenAPI
+utoipa = { workspace = true }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+
+# CloudEvents support (private Kellnr registry)
+axum-cloudevents = { workspace = true }
+
+# Shared infrastructure (config, state, observability, middleware, health,
+# Kafka publisher, startup bootstrap). Features mirror the template flags.
+service-core = { path = "crates/service-core", features = [
+  {%- if feature_postgres %}
+  "postgres",
+  {%- endif %}
+  {%- if feature_s3 %}
+  "s3",
+  {%- endif %}
+  {%- if feature_kafka %}
+  "kafka",
+  {%- endif %}
+] }
+
+# Observability - Tracing
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.32"
+
+# Observability - OpenTelemetry
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+
+# B3 Propagation (Critical for Knative)
+opentelemetry-zipkin = { workspace = true }
+
+# Metrics
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+
+# Redis (no pool - multiplexed connection)
+redis = { workspace = true }
+
+{% if feature_kafka %}
+# Time handling (Kafka event timestamps and demo event construction)
 chrono = { version = "0.4", features = ["serde"] }
 {% endif %}
 
@@ -88,11 +159,11 @@ chrono = { version = "0.4", features = ["serde"] }
 {% endif %}
 
 # UUID generation (for request IDs, event IDs)
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { workspace = true }
 
 # Utilities
-thiserror = "2.0"
-anyhow = "1.0"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 regex = "1.0"
 once_cell = "1.0"
 
@@ -111,7 +182,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Benchmarking
 criterion = { version = "0.5", features = ["async_tokio"] }
 {%- if feature_s3 %}
-figment = { version = "0.10", features = ["test"] }
+figment = { workspace = true }
 {%- endif %}
 
 # Build dependencies

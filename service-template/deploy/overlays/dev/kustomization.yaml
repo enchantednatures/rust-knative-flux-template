@@ -1,0 +1,134 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Per-service dev overlay. The root dev overlay includes this directory as
+# ../../../services/{{ service_name }}/deploy/overlays/dev.
+namespace: {{ target_namespace_dev }}
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: HelmRelease
+      name: {{ service_name }}
+    # JSON6902 because the env list must be REPLACED wholesale: a strategic
+    # merge would name-merge it with the base and could silently keep the wrong
+    # database/broker values.
+    patch: |-
+      - op: replace
+        path: /spec/values/services/app/image
+        value:
+          repository: "kind-registry-dev:5000/{{ project_slug }}-{{ service_name }}"
+          tag: "dev"
+      {% if workload_deployment %}
+      - op: replace
+        path: /spec/values/services/app/workload/replicas
+        value: 1
+      {% else %}
+      - op: replace
+        path: /spec/values/services/app/scaling
+        value:
+          minScale: 0
+          maxScale: 3
+      {% endif %}
+      - op: replace
+        path: /spec/values/services/app/resources
+        value:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+      # Full per-service dev env list. It must include every base entry the
+      # service needs; a partial copy would point APP__POSTGRES__DATABASE at the
+      # platform's "app" database instead of this service's own database.
+      - op: replace
+        path: /spec/values/services/app/env
+        value:
+          - name: APP_ENV
+            value: "development"
+          - name: APP__SERVER__PORT
+            value: "8080"
+          - name: APP__REDIS__URL
+            value: "{{ redis_url }}"
+          {% if include_s3 %}
+          # Same project-level object-bucket claim as the base; the RustFS init
+          # Job mimics the provisioner contract in local Kind.
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: AWS_SECRET_ACCESS_KEY
+          - name: BUCKET_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_HOST
+          - name: BUCKET_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_PORT
+          - name: APP__S3__ENDPOINT
+            value: "http://$(BUCKET_HOST):$(BUCKET_PORT)"
+          - name: APP__S3__BUCKET
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_NAME
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          {% endif %}
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "{{ otel_endpoint }}"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "{{ service_name }}-dev"
+          - name: APP__TELEMETRY__LOG_LEVEL
+            value: "debug"
+          - name: RUST_LOG
+            value: "debug,hyper=info,tower=info"
+          {% if include_postgres %}
+          - name: APP__POSTGRES__URL
+            valueFrom:
+              secretKeyRef:
+                name: "{{ pg_app_secret }}"
+                key: uri
+          - name: APP__POSTGRES__DATABASE
+            value: "{{ db_name }}"
+          {% if pg_pooler_host != "" %}
+          - name: APP__POSTGRES__HOST
+            value: "{{ pg_pooler_host }}"
+          {% endif %}
+          {% endif %}
+          {% if kafka_publish or kafka_source %}
+          - name: APP__KAFKA__BROKER_URL
+            value: "{{ kafka_bootstrap_servers }}"
+          {% endif %}
+
+      {% if kafka_source and workload_deployment == false %}
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
+        value:
+          - "{{ kafka_bootstrap_servers }}"
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/consumers
+        value: 1
+      - op: replace
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/initialOffset
+        value: earliest
+      {% endif %}
+      {% if enable_flagger and workload_deployment == false %}
+      # Canary gates must query the dev Prometheus explicitly; never rely on
+      # the chart's dev default.
+      - op: replace
+        path: /spec/values/services/app/flagger/metrics/prometheusAddress
+        value: "{{ canary_prometheus_url_dev }}"
+      {% endif %}

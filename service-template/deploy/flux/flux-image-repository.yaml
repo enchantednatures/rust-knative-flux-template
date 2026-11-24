@@ -1,0 +1,11 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  # Per-service repository. The platform's shared image-update automation scans
+  # the whole GitRepository, so no per-service automation is rendered.
+  name: {{ project_slug }}-{{ service_name }}
+  namespace: flux-system
+spec:
+  image: {{ image_registry }}/{{ github_org }}/{{ project_slug }}-{{ service_name }}
+  interval: 1m

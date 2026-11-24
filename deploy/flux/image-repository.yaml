@@ -4,7 +4,11 @@ metadata:
   name: {{ project_name | replace: "_", "-" }}
   namespace: flux-system
 spec:
-  image: {{ image_registry }}/{{ github_org }}/{{ github_repo }}
+  # The platform project slug (same value as the HelmRelease image repository
+  # in deploy/base/helmrelease.yaml), not the Git repository name: the release
+  # workflow builds <registry>/<org>/<project>, so image automation must watch
+  # that image even when the repo is named differently.
+  image: {{ image_registry }}/{{ github_org }}/{{ project_name | replace: "_", "-" }}
   interval: 1m
   # Optional: For private container registries
   # secretRef:

@@ -141,6 +141,7 @@ jobs:
     env:
       SCENARIO: ${{ matrix.scenario }}
       CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
+
       WORKLOAD_TYPE: ${{ matrix.workload_type || 'Knative' }}
     steps:
       - name: Checkout repository
@@ -159,10 +160,14 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install system dependencies for Kafka
-        if: matrix.feature_kafka == 'true' || matrix.event_source_kafka == 'true'
+        # Unconditional: every generated project ships service-core with the
+        # optional `kafka` feature, so `--all-features` compiles rdkafka even
+        # when the scenario disables feature_kafka.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev pkg-config
+          sudo apt-get install -y \
+            build-essential pkg-config libssl-dev cmake \
+            libsasl2-dev libcurl4-openssl-dev libzstd-dev zlib1g-dev
         shell: bash
 
       - name: Cache Cargo registry
@@ -385,19 +390,91 @@ jobs:
           cargo fmt --all -- --check
 
           echo "Running Clippy"
-          cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
 
           echo "Building"
-          cargo build --all-features
+          cargo build --workspace --all-features
 
           echo "Compiling tests (no run)"
-          cargo test --all-features --no-run
+          cargo test --workspace --all-features --no-run
 
           echo "Asserting generated-project polish"
           grep -q '^authors = \["CI Bot <ci@github.com>"\]$' Cargo.toml \
             || { echo "FAIL: Cargo.toml authors has stray whitespace"; exit 1; }
           grep -A2 '^    dragonfly:$' deploy/base/helmrelease.yaml | grep -q '^      enabled: false$' \
             || { echo "FAIL: base HelmRelease is missing dragonfly.enabled=false"; exit 1; }
+        shell: bash
+
+      - name: Assert no template-only artifacts leaked
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          status=0
+          for path in \
+            service-template \
+            .omo \
+            .sisyphus \
+            .specify \
+            scripts/test-template-matrix.sh \
+            scripts/test-service-renders.sh \
+            generated \
+            .github/workflows/dev-setup-validation.yaml \
+            .github/workflows/opencode.yml; do
+            if [ -e "$path" ]; then
+              echo "FAIL: template-only artifact leaked into generated output: $path"
+              status=1
+            fi
+          done
+          [ "$status" -eq 0 ]
+          echo "✓ no template-only artifacts leaked"
+        shell: bash
+
+      - name: Validate generated CI and service discovery
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          python3 - <<'PY'
+          import yaml
+
+          for path in (".github/workflows/ci.yaml", ".github/workflows/release.yaml"):
+              with open(path, encoding="utf-8") as handle:
+                  document = yaml.safe_load(handle)
+              jobs = (document or {}).get("jobs")
+              if not isinstance(jobs, dict) or not jobs:
+                  raise SystemExit(f"{path}: missing jobs mapping")
+          print("ci.yaml/release.yaml parse")
+          PY
+
+          rows=$(bash scripts/list-services.sh)
+          count=$(printf '%s\n' "$rows" | awk 'NF' | wc -l | tr -d ' ')
+          [ "$count" -eq 1 ] || {
+            echo "FAIL: expected exactly one root service, discovered $count"
+            printf '%s\n' "$rows"
+            exit 1
+          }
+
+          discovered_dir=$(printf '%s\n' "$rows" | awk -F'\t' 'NF { print $2; exit }')
+          discovered_slug=$(printf '%s\n' "$rows" | awk -F'\t' 'NF { print $1; exit }')
+          [ "$discovered_dir" = "." ] || {
+            echo "FAIL: root service directory is '$discovered_dir' (expected '.')"
+            exit 1
+          }
+          [ "$discovered_slug" = "example-app-${{ env.SCENARIO }}" ] || {
+            echo "FAIL: root service slug is '$discovered_slug' (expected 'example-app-${{ env.SCENARIO }}')"
+            exit 1
+          }
+          echo "✓ generated CI parses and exactly the root service is discovered"
+        shell: bash
+
+      - name: Check service-core feature matrix
+        # Generated projects only (this repo has no root manifest). Proves
+        # each service-core feature compiles in isolation for every scenario.
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+          bash scripts/check-feature-matrix.sh
         shell: bash
 
       - name: Validate PostgreSQL manifests
@@ -1157,11 +1234,11 @@ jobs:
           echo "Running formatting check"
           cargo fmt --all -- --check
           echo "Running Clippy"
-          cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
           echo "Building (debug)"
-          cargo build --all-features
+          cargo build --workspace --all-features
           echo "Building (release profile, the profile the Docker image ships)"
-          cargo build --release --all-features
+          cargo build --workspace --release --all-features
         shell: bash
 
       - name: Build generated container image
@@ -1316,13 +1393,31 @@ jobs:
           done
           docker exec redis redis-cli ping
 
-          cargo test --all-features
+          cargo test --workspace --all-features
         shell: bash
 
       - name: Assert no leaked template syntax or CI placeholders
         run: |
           set -euo pipefail
           cd "$GENERATED_DIR"
+
+          status=0
+          for path in \
+            service-template \
+            .omo \
+            .sisyphus \
+            .specify \
+            scripts/test-template-matrix.sh \
+            scripts/test-service-renders.sh \
+            generated \
+            .github/workflows/dev-setup-validation.yaml \
+            .github/workflows/opencode.yml; do
+            if [ -e "$path" ]; then
+              echo "FAIL: template-only artifact leaked into generated output: $path"
+              status=1
+            fi
+          done
+          [ "$status" -eq 0 ]
 
           # Scoped leak gate. Excludes:
           #   - .github/workflows        GitHub Actions dollar-double-brace expressions

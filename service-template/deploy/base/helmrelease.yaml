@@ -1,0 +1,258 @@
+{% assign service_name = service_slug | replace: "_", "-" %}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  # One release per service. The release name is the service slug, not
+  # <project>-<service>; global.fullnameOverride below makes the rendered
+  # workload name exactly the same slug.
+  name: {{ service_name }}
+spec:
+  interval: 10m
+  chart:
+    spec:
+      # Resolved from the platform GitRepository root. Every service renders the
+      # same local wrapper chart, which depends on the pinned ksvc chart (1.2.1).
+      chart: ./deploy/chart
+      sourceRef:
+        # FULL sourceRef: the PLATFORM GitRepository, never this service.
+        kind: GitRepository
+        name: {{ project_slug }}
+        namespace: flux-system
+      reconcileStrategy: Revision
+  {% if kafka_source and workload_deployment == false %}
+  # Knative >=1.23 rejects valueFrom.fieldRef env vars and the ksvc chart's DLQ
+  # service hardcodes POD_NAME/POD_NAMESPACE via fieldRef. Strip the env list
+  # post-render; the event_display image does not need it.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Service
+              name: "{{ service_name }}-{{ kafka_topic }}-dlq"
+            patch: |-
+              - op: replace
+                path: /spec/template/spec/containers/0/env
+                value: []
+  {% endif %}
+  values:
+    global:
+      fullnameOverride: "{{ service_name }}"
+      labels:
+        app.kubernetes.io/part-of: "{{ project_slug }}"
+
+    services:
+      # A named services key is required because kafka.sources.*.sink must
+      # reference it. An empty nameOverride makes the workload name exactly
+      # global.fullnameOverride (the service slug).
+      app:
+        nameOverride: ""
+        image:
+          repository: "{{ image_registry }}/{{ github_org }}/{{ project_slug }}-{{ service_name }}"
+          tag: "latest"  # {"$imagepolicy": "flux-system:{{ project_slug }}-{{ service_name }}:tag"}
+        {% if workload_deployment %}
+        # Plain Deployment workload. Knative autoscaling annotations and HPA are
+        # never rendered in this mode (chart 1.2.1 has no HPA support).
+        workload:
+          type: Deployment
+          replicas: 2
+          strategy:
+            maxUnavailable: 0
+            maxSurge: 1
+          terminationGracePeriodSeconds: 300
+        # Core Service exposure. Change service.type to NodePort/LoadBalancer
+        # when this service must be reachable from outside the cluster; there is
+        # no Knative URL/ingress in Deployment mode.
+        service:
+          type: ClusterIP
+          port: 80
+          sessionAffinity: None
+        # Exactly one of minAvailable/maxUnavailable may be non-zero.
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        {% else %}
+        workload:
+          type: Knative
+        scaling:
+          minScale: 1
+          maxScale: 10
+          target: 100
+          containerConcurrency: 100
+          timeoutSeconds: 300
+        {% endif %}
+        port: 8080
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        probes:
+          liveness:
+            path: /health/live
+            port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readiness:
+            path: /health/ready
+            port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+              - ALL
+        env:
+          - name: APP_ENV
+            value: "production"
+          - name: APP__SERVER__PORT
+            value: "8080"
+          # Only the dev overlay replaces this with a literal dev URL; the base
+          # and staging/prod keep the project-level Redis secret reference.
+          - name: APP__REDIS__URL
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_slug }}-secrets"
+                key: redis-url
+          {% if include_s3 %}
+          # Reuse the project-level ObjectBucketClaim contract: the first-service
+          # release provisions "<project>-app-data" and the bucket provisioner
+          # publishes a claim-named Secret (credentials) and ConfigMap (bucket
+          # identity) in the target namespace. Added services MUST NOT declare
+          # their own bucket claims; the project-level claim is the only one.
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: AWS_SECRET_ACCESS_KEY
+          # BUCKET_HOST/BUCKET_PORT must precede APP__S3__ENDPOINT: Kubernetes
+          # expands $(VAR) using earlier env entries only.
+          - name: BUCKET_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_HOST
+          - name: BUCKET_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_PORT
+          - name: APP__S3__ENDPOINT
+            value: "http://$(BUCKET_HOST):$(BUCKET_PORT)"
+          - name: APP__S3__BUCKET
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ project_slug }}-app-data"
+                key: BUCKET_NAME
+          - name: APP__S3__REGION
+            value: "us-east-1"
+          {% endif %}
+          - name: APP__TELEMETRY__OTLP_ENDPOINT
+            value: "{{ otel_endpoint }}"
+          - name: APP__TELEMETRY__SERVICE_NAME
+            value: "{{ service_name }}"
+          {% if include_postgres %}
+          # App DSN from the operator-generated <cluster>-app secret. This
+          # service owns only a Database CR (base/database.yaml), never a second
+          # Cluster/Pooler/ObjectStore/backup stack.
+          - name: APP__POSTGRES__URL
+            valueFrom:
+              secretKeyRef:
+                name: "{{ pg_app_secret }}"
+                key: uri
+          - name: APP__POSTGRES__DATABASE
+            value: "{{ db_name }}"
+          {% if pg_pooler_host != "" %}
+          # Route the sqlx pool through the shared PgBouncer Pooler. The CNPG
+          # `uri` secret points at <cluster>-rw, so this override swaps only the
+          # host while keeping the credentials from that same secret.
+          - name: APP__POSTGRES__HOST
+            value: "{{ pg_pooler_host }}"
+          {% endif %}
+          {% endif %}
+          {% if kafka_publish or kafka_source %}
+          # Base carries the default broker; staging/prod overlays append their
+          # own broker env entry. Consuming via KafkaSource also uses the
+          # kafka.sources.*.bootstrapServers value below.
+          - name: APP__KAFKA__BROKER_URL
+            value: "{{ kafka_bootstrap_servers }}"
+          {% endif %}
+        {% if include_postgres %}
+        # PostgreSQL server CA certificate generated and rotated by the CNPG
+        # operator (secret <cluster>-ca, key ca.crt). Mounted where
+        # config/*.toml's ssl_root_cert_path expects it.
+        volumeMounts:
+          - name: postgres-ca
+            mountPath: /etc/secrets/pg-ca
+            readOnly: true
+        volumes:
+          - name: postgres-ca
+            secret:
+              secretName: "{{ pg_ca_secret }}"
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        {% endif %}
+        {% if enable_flagger and workload_deployment == false %}
+        # Canary is Knative-only in chart 1.2.1. The template also prunes this
+        # file for Deployment mode; the Liquid guard is defence in depth.
+        # Disable the chart's k6 webhook and query the environment's Prometheus.
+        flagger:
+          enabled: true
+          loadTest:
+            enabled: false
+          metrics:
+            prometheusAddress: "{{ canary_prometheus_url_dev }}"
+        {% endif %}
+
+    {% if kafka_source and workload_deployment == false %}
+    # Knative-only. The map key must equal the topic so the DLQ postRenderer
+    # target ("<service>-<topic>-dlq") matches the chart-generated Service.
+    kafka:
+      sources:
+        {{ kafka_topic }}:
+          topic: "{{ kafka_topic }}"
+          consumerGroup: "{{ kafka_consumer_group }}"
+          bootstrapServers:
+            - "{{ kafka_bootstrap_servers }}"
+          consumers: 3
+          initialOffset: latest
+          # Must reference the services key above; Deployment workloads are
+          # rejected by the chart and pruned by the template.
+          sink: "app"
+          delivery:
+            retry: 5
+            backoffPolicy: exponential
+            backoffDelay: "PT1S"
+          dlq:
+            enabled: true
+            image:
+              repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
+              tag: "latest"
+            scaling:
+              minScale: 0
+              maxScale: 2
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "32Mi"
+              limits:
+                cpu: "200m"
+                memory: "128Mi"
+    {% endif %}

@@ -1,8 +1,6 @@
-{%- if feature_kafka -%}
-use metrics::{describe_counter, describe_histogram};
-{%- else -%}
 use metrics::describe_counter;
-{%- endif %}
+#[cfg(feature = "kafka")]
+use metrics::describe_histogram;
 
 use metrics_exporter_prometheus::PrometheusHandle;
 use opentelemetry::propagation::TextMapCompositePropagator;
@@ -23,42 +21,46 @@ use crate::config::TelemetryConfig;
 /// - kafka_events_failed_total: Counter for failed publish attempts
 /// - kafka_publish_latency_ms: Histogram for publishing latency
 /// - HTTP request metrics (via tower-http)
-{%- if feature_kafka %}
 ///
 /// Kafka metrics are tagged with:
 /// - topic: The Kafka topic where events are published
 /// - error_type: Type of error (broker_unreachable, publish_failed, etc.)
-{%- endif %}
-pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
+///
+/// `service_name` is recorded as the global `service` label (pass the
+/// application package name so dashboards stay stable across the refactor).
+pub fn init_metrics(service_name: &str) -> anyhow::Result<PrometheusHandle> {
     // Initialize the metrics-exporter-prometheus and get the handle for rendering
     let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
-        .add_global_label("service", env!("CARGO_PKG_NAME"))
+        .add_global_label("service", service_name)
         .install_recorder()?;
 
     // Pre-register metrics with descriptions to ensure Prometheus format is emitted
     // even before any requests are made
     describe_counter!("http_requests_total", "Total number of HTTP requests");
     describe_counter!("app_info", "Application information and version");
-    {%- if feature_s3 and feature_bucket_notifications %}
-    describe_counter!(
-        "bucket_notifications_received_total",
-        "Total number of Ceph RGW bucket notifications received"
-    );
-    {%- endif %}
-    {%- if feature_kafka %}
-    describe_counter!(
-        "kafka_events_published_total",
-        "Total number of Kafka events published successfully"
-    );
-    describe_counter!(
-        "kafka_events_failed_total",
-        "Total number of Kafka event publish failures"
-    );
-    describe_histogram!(
-        "kafka_publish_latency_ms",
-        "Kafka event publishing latency in milliseconds"
-    );
-    {%- endif %}
+
+    #[cfg(feature = "s3")]
+    {
+        describe_counter!(
+            "bucket_notifications_received_total",
+            "Total number of Ceph RGW bucket notifications received"
+        );
+    }
+    #[cfg(feature = "kafka")]
+    {
+        describe_counter!(
+            "kafka_events_published_total",
+            "Total number of Kafka events published successfully"
+        );
+        describe_counter!(
+            "kafka_events_failed_total",
+            "Total number of Kafka event publish failures"
+        );
+        describe_histogram!(
+            "kafka_publish_latency_ms",
+            "Kafka event publishing latency in milliseconds"
+        );
+    }
 
     // Record an initial metric to ensure the exporter has something to render
     let app_info = metrics::counter!("app_info");

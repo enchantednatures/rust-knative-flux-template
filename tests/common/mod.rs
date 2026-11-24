@@ -35,20 +35,13 @@ pub async fn create_test_state() -> AppState {
 
     // Initialize metrics properly (same as production) to ensure tests match runtime behavior
     let metrics_handle = METRICS_HANDLE
-        .get_or_init(|| observability::init_metrics().expect("Failed to initialize metrics"))
+        .get_or_init(|| {
+            observability::init_metrics(env!("CARGO_PKG_NAME"))
+                .expect("Failed to initialize metrics")
+        })
         .clone();
 
-{%- if feature_s3 and feature_kafka %}
-    let storage = create_test_storage();
-    AppState::new(conn, storage, None{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
-{%- elsif feature_s3 %}
-    let storage = create_test_storage();
-    AppState::new(conn, storage{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
-{%- elsif feature_kafka %}
-    AppState::new(conn, None{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
-{%- else %}
-    AppState::new(conn{%- if feature_postgres %}, None{%- endif %}, metrics_handle)
-{%- endif %}
+    AppState::builder(conn, metrics_handle){%- if feature_s3 %}.storage(create_test_storage()){%- endif %}{%- if feature_kafka %}.kafka_publisher(None){%- endif %}{%- if feature_postgres %}.postgres(None){%- endif %}.build().expect("Failed to build test AppState")
 }
 
 /// Build a `TestServer` for the app router with a synthetic peer address.

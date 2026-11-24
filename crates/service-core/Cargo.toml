@@ -1,0 +1,72 @@
+[package]
+name = "service-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+description = "Shared infrastructure for Rust Knative + FluxCD services"
+
+[features]
+default = []
+postgres = ["dep:sqlx"]
+s3 = ["dep:opendal"]
+kafka = ["dep:rdkafka"]
+
+[dependencies]
+# Async runtime (startup helpers use tokio::fs for the PostgreSQL CA bundle)
+tokio = { workspace = true }
+
+# Web framework (health endpoints, middleware, error responses)
+axum = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Configuration
+figment = { workspace = true }
+
+# OpenAPI
+utoipa = { workspace = true }
+
+# Observability - Tracing
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.32"
+
+# Observability - OpenTelemetry
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+
+# B3 Propagation (Critical for Knative)
+opentelemetry-zipkin = { workspace = true }
+
+# Metrics
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+
+# Redis (no pool - multiplexed connection)
+redis = { workspace = true }
+
+# UUID generation (for request IDs, event IDs)
+uuid = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Validation (AppError::from(ValidationErrors))
+validator = { version = "0.20", features = ["derive"] }
+
+# RFC3339 CloudEvents timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Optional infrastructure (enabled by feature)
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "chrono", "json"], optional = true }
+opendal = { version = "0.55", default-features = false, features = ["services-s3", "services-memory"], optional = true }
+rdkafka = { version = "0.38", features = ["cmake-build", "tracing"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tower = { workspace = true }

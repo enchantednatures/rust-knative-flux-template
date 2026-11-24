@@ -1,0 +1,31 @@
+# Development environment configuration.
+
+[telemetry]
+service_name = "{{ service_slug }}-dev"
+log_level = "debug"
+otlp_endpoint = "http://localhost:4317"
+
+{% if include_s3 %}
+[s3]
+endpoint = "http://localhost:9000"
+bucket = "data"
+region = "us-east-1"
+{% endif %}
+
+{% if kafka_publish %}
+[kafka]
+broker_url = "{{ kafka_bootstrap_servers }}"
+topic = "{{ kafka_topic }}"
+timeout_ms = 5000
+{% endif %}
+
+{% if include_postgres %}
+[postgres]
+url = ""
+host = ""
+database = "{{ db_name }}"
+ssl_mode = "verify-full"
+ssl_root_cert_path = "/etc/secrets/pg-ca/ca.crt"
+run_migrations = true
+max_connections = 5
+{% endif %}

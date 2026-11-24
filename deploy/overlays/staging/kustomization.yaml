@@ -5,6 +5,9 @@ namespace: {{ target_namespace }}
 
 resources:
   - ../../base
+  # Added services register their self-contained per-environment deploy
+  # subtree here (written by `make add-service`):
+  # - ../../../services/<service>/deploy/overlays/staging
   {% if target_namespace != "default" %}
   - namespace.yaml
   {% endif %}
