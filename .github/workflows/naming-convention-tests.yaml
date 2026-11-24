@@ -169,11 +169,11 @@ jobs:
           echo "✓ no underscores in Kubernetes resource names"
 
           # 6. Local build/deploy script baked names
-          grep -qF "SERVICE_NAME=\"${{ matrix.expected_k8s }}\"" scripts/dev/build-and-deploy.sh \
-            || fail "build-and-deploy.sh SERVICE_NAME mismatch"
+          grep -qF "PROJECT_NAME=\"${{ matrix.expected_k8s }}\"" scripts/dev/build-and-deploy.sh \
+            || fail "build-and-deploy.sh PROJECT_NAME mismatch"
           grep -qF "CRATE_NAME=\"${{ matrix.expected_crate }}\"" scripts/dev/build-and-deploy.sh \
             || fail "build-and-deploy.sh CRATE_NAME mismatch"
-          echo "✓ build-and-deploy.sh SERVICE_NAME / CRATE_NAME"
+          echo "✓ build-and-deploy.sh PROJECT_NAME / CRATE_NAME"
 
           # 7. Docker image reference in the HelmRelease uses the hyphenated name
           grep -qF "repository: \"ghcr.io/test-org/${{ matrix.expected_k8s }}\"" deploy/base/helmrelease.yaml \
