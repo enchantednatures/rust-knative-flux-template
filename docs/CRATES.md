@@ -38,17 +38,28 @@ commit `.cargo/credentials.toml`; it is ignored by git.
 ## CI
 
 The generated `.github/workflows/ci.yaml` and `release.yaml.liquid` read the
-token from the `KELLNR_TOKEN` repository secret. Add it before the first
-pipeline run:
+token from the `KELLNR_TOKEN` repository secret. Authenticate the local Cargo
+client once (`cargo login --registry kellnr`, or set
+`CARGO_REGISTRIES_KELLNR_TOKEN`), then set the secret with the generated helper:
 
 ```bash
-gh secret set KELLNR_TOKEN --repo <org>/<repo>
+make ci-secrets
 ```
 
-The value can be piped from stdin to keep it out of shell history:
+`make ci-secrets` reads the token from `CARGO_REGISTRIES_KELLNR_TOKEN`,
+`KELLNR_TOKEN`, or the `[registries.kellnr]` entry in
+`$CARGO_HOME/{credentials,config}.toml` and calls `gh secret set`. The token is
+never printed. `make deploy` runs the same helper best-effort before pushing,
+so the first CI run after a deploy has the secret.
+
+You can also set it manually; piping from stdin keeps the value out of shell
+history:
 
 ```bash
-printf '%s' "$KELLNR_TOKEN" | gh secret set KELLNR_TOKEN --repo <org>/<repo>
+printf '%s' "$CARGO_REGISTRIES_KELLNR_TOKEN" \
+  | gh secret set KELLNR_TOKEN --repo <org>/<repo>
+# check it
+make ci-secrets-check
 ```
 
 If the secret is missing, the pipeline fails early with a clear error. Fork pull
@@ -100,6 +111,7 @@ To consume a new release here:
 | --- | --- | --- |
 | `registry kellnr requires authentication` | No token available | `cargo login --registry kellnr` or set `CARGO_REGISTRIES_KELLNR_TOKEN` |
 | `no matching package named axum-cloudevents` | Wrong index or version | Check `.cargo/config.toml` and the published version |
+| CI fails with `KELLNR_TOKEN repository secret is required` | Repo secret not set | `make ci-secrets` (or `gh secret set KELLNR_TOKEN`) |
 | Docker build fails with an auth error | BuildKit secret not passed | Use `--secret id=cargo_token,env=CARGO_REGISTRIES_KELLNR_TOKEN` |
 | CI fails only on fork PRs | Secrets are not exposed to forks | Run the workflow from a branch in the main repository or provide a read-only public token |
 

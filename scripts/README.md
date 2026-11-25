@@ -7,6 +7,7 @@ Utility scripts for local development, bootstrapping, and manifest validation.
 ```
 scripts/
 ├── bootstrap-git-auth.sh         # Create the Flux SSH deploy-key Secret
+├── bootstrap-ci-secrets.sh       # Set the KELLNR_TOKEN Actions secret
 ├── setup-github-runners.sh       # Register the ARC runner scale set secrets
 ├── validate-postgres-manifests.sh # Validate CloudNativePG manifests
 └── dev/                          # Local Kind lifecycle
@@ -49,6 +50,15 @@ See the [main README](../README.md) for every Makefile target and
 
 Creates the `flux-system` SSH deploy-key Secret used by the Flux
 `GitRepository` for private repositories. Invoked by `make git-auth`.
+
+#### `bootstrap-ci-secrets.sh`
+
+Sets the `KELLNR_TOKEN` GitHub Actions secret that CI and Docker builds use to
+resolve `axum-cloudevents` from Kellnr. It reads the token from
+`CARGO_REGISTRIES_KELLNR_TOKEN`/`KELLNR_TOKEN` or the `[registries.kellnr]`
+entry in the local Cargo config and calls `gh secret set` without printing the
+value. Invoked by `make ci-secrets`; `make deploy` runs it best-effort as a
+preflight. Use `make ci-secrets-check` to verify the secret.
 
 #### `setup-github-runners.sh`
 

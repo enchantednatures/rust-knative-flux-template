@@ -1085,6 +1085,14 @@ deploy/
 ```
 
 ## Recent Changes
+- ci-secrets-automation: Added `scripts/bootstrap-ci-secrets.sh` and
+  `make ci-secrets`/`make ci-secrets-check` to set/verify the `KELLNR_TOKEN`
+  Actions secret from the local Cargo/Kellnr token via `gh secret set` (token
+  never printed; `--check`, `--dry-run`, `--optional`, and origin-remote
+  fallback when `github_org`/`github_repo` are placeholders). `make deploy` runs
+  the helper best-effort before pushing. GitHub does not offer account-wide
+  Actions secrets for user accounts, so a per-repo helper is the portable path;
+  an organization secret (`visibility: all`) remains the zero-touch option.
 - kellnr-published-crates: Moved `axum-cloudevents` and `axum-cloudevents-macros`
   out of the template into `enchantednatures/axum-cloudevents` (the old
   Copilot-generated 4-crate implementation is preserved on the

@@ -67,7 +67,10 @@ A production-ready Rust microservice for {% if workload_type == "Deployment" %}l
 
 > `axum-cloudevents` is fetched from the private Kellnr registry. Authenticate
 > once with `cargo login --registry kellnr` or set
-> `CARGO_REGISTRIES_KELLNR_TOKEN`. CI uses the `KELLNR_TOKEN` repository secret.
+> `CARGO_REGISTRIES_KELLNR_TOKEN`. CI uses the `KELLNR_TOKEN` repository secret;
+> set it before the first pipeline run with `make ci-secrets` (it reads the
+> local Cargo token and calls `gh secret set`). `make deploy` also runs the
+> helper best-effort before pushing.
 
 Knative Serving 1.12+ is required for the default Knative workload. Deployment
 mode does not need Knative.
@@ -450,7 +453,8 @@ cargo bench                     # criterion benchmarks
 CI runs the same commands for the all-features project, plus a release-profile
 build. The `axum-cloudevents` dependency resolves from Kellnr, so CI needs the
 `KELLNR_TOKEN` repository secret and local development needs
-`cargo login --registry kellnr` (or `CARGO_REGISTRIES_KELLNR_TOKEN`). See
+`cargo login --registry kellnr` (or `CARGO_REGISTRIES_KELLNR_TOKEN`). Run
+`make ci-secrets` once to copy the local token into the repository secret; see
 `docs/CRATES.md`.
 
 ### Building the Image
