@@ -57,7 +57,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 # Validation (AppError::from(ValidationErrors))
-validator = { version = "0.20", features = ["derive"] }
+validator = { version = "0.21", features = ["derive"] }
 
 # RFC3339 CloudEvents timestamps
 chrono = { version = "0.4", features = ["serde"] }
