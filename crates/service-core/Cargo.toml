@@ -32,7 +32,7 @@ utoipa = { workspace = true }
 # Observability - Tracing
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.34"
 
 # Observability - OpenTelemetry
 opentelemetry = { workspace = true }
