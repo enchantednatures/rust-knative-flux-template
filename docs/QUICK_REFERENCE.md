@@ -123,6 +123,10 @@ cargo test       # Run all tests
 cargo generate --git https://github.com/your-org/rust-knative-flux-template
 ```
 
+The answers are recorded in `.cargo-generate/values.toml`; pull later template
+changes with `make template-update` (`APPLY=1` to merge, `NAME=<slug>` for one
+service). See `docs/UPGRADING.md`.
+
 ### Select Features
 - **Project name**: Your service name
 - **S3 storage**: true/false (optional)

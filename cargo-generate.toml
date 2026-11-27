@@ -11,6 +11,10 @@ ignore = [
   "tests/add-service",
   "tests/e2e",
   "scripts/test-service-renders.sh",
+  # Generation-input snapshot tooling is template-authoring only. The runtime
+  # helper (scripts/update-from-template.sh) does ship.
+  "scripts/check-template-values.sh",
+  "scripts/test-template-values.sh",
   ".opencode",
   ".specify",
   "target",

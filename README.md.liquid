@@ -63,6 +63,7 @@ A production-ready Rust microservice for {% if workload_type == "Deployment" %}l
 | helm | 3.14+ | chart rendering |
 | kustomize | 5.4+ | overlay rendering |
 | Flux CLI | 2.3+ | `make bootstrap` / `make deploy` (real clusters) |
+| cargo-generate | 0.23+ | `make template-update` (template upgrades) |
 | Kellnr access | — | `axum-cloudevents` dependency (see `docs/CRATES.md`) |
 
 > `axum-cloudevents` is fetched from the private Kellnr registry. Authenticate
@@ -303,6 +304,8 @@ See `docs/SELF_HOSTED_RUNNERS.md`.
 
 ```
 {{ project_name }}/
+├── .cargo-generate/
+│   └── values.toml         # generation inputs (used by `make template-update`)
 ├── src/
 │   ├── main.rs             # Entry point and graceful shutdown
 │   ├── lib.rs              # Module exports
@@ -472,6 +475,26 @@ installs `ca-certificates`, `curl`, and `tzdata` and runs as the non-root
 `appuser`. The Docker `HEALTHCHECK` calls `/health/live` with `curl`;
 Kubernetes probes are configured by the chart in both workload modes. The
 Kellnr token is a BuildKit secret and is never written into an image layer.
+
+## Updating from the Template
+
+The answers used to generate this project are recorded in
+`.cargo-generate/values.toml` (commit it), and every service records its own in
+`services/<slug>/.cargo-generate/values.toml`. `make template-update` re-renders
+the template with those values and three-way merges the result:
+
+```bash
+git switch -c template-update
+make template-update                  # preview; writes nothing
+make template-update ARGS='--diff'    # preview with the per-file patch
+make template-update APPLY=1          # merge into the working tree
+make template-update NAME=orders-api  # only services/orders-api
+```
+
+The merge base is the release recorded in the snapshot, so local edits and
+upstream changes are both preserved; conflicts are left in the files with
+`<<<<<<<` markers for you to resolve. Requires `cargo-generate >= 0.23`. See
+`docs/UPGRADING.md` for the full flow and limits.
 
 ## Observability
 

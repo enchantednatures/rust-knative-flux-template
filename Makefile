@@ -253,6 +253,38 @@ add-service: ## Add a service (usage: make add-service NAME=<slug> [WORKLOAD=kna
 	./scripts/add-service.sh --name '$(ADD_SERVICE_SLUG)' $(ADD_SERVICE_ARGS) $(ARGS)
 
 # ============================================================================
+# Template Update Commands
+# ============================================================================
+#
+# Re-renders the template with the inputs recorded in .cargo-generate/values.toml
+# and three-way merges the result into this checkout (base = the template release
+# recorded in the snapshot). Preview is the default; nothing is written.
+#
+#   make template-update                      # preview root + services
+#   make template-update APPLY=1              # merge the changes
+#   make template-update NAME=orders-api      # only services/orders-api
+#   make template-update REF=v1.2.0           # update to a specific template ref
+#   make template-update ARGS='--diff'        # print the patch in the preview
+.PHONY: template-update
+template-update: ## Pull template changes (preview; APPLY=1, NAME=<slug>, REF=<ref>)
+	@if [ ! -f scripts/update-from-template.sh ]; then \
+		echo "${RED}✗ scripts/update-from-template.sh not found${NC}"; \
+		exit 1; \
+	fi
+	@if [ ! -f .cargo-generate/values.toml ]; then \
+		echo "${RED}✗ .cargo-generate/values.toml not found${NC}"; \
+		echo "  This project was generated before inputs were recorded; regenerate"; \
+		echo "  once from the template (or write the file by hand) and re-run."; \
+		exit 1; \
+	fi
+	@bash scripts/update-from-template.sh \
+		$(if $(filter 1 true yes,$(strip $(APPLY))),--apply,) \
+		$(if $(strip $(NAME)),--service '$(subst _,-,$(strip $(NAME)))',) \
+		$(if $(strip $(REF)),--ref '$(strip $(REF))',) \
+		$(if $(filter 1 true yes,$(strip $(ROOT_ONLY))),--root-only,) \
+		$(ARGS)
+
+# ============================================================================
 # Component-Specific Commands
 # ============================================================================
 

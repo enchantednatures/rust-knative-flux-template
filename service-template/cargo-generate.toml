@@ -18,6 +18,9 @@
 
 [template]
 cargo_generate_version = ">=0.23.0"
+# Template release (metadata only; bumped with the root cargo-generate.toml).
+# Recorded in each service snapshot as the merge base for template updates.
+version = "1.0.0"
 # Author-facing guide only. It is named README.author.md because cargo-generate
 # matches ignore paths against the RENDERED output path: ignoring "README.md"
 # would also suppress the generated service's README.md.liquid (Todo 13).

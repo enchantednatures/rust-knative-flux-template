@@ -5,6 +5,7 @@ Guide for upgrading {{ project_name }} template and projects generated from it.
 ## Table of Contents
 
 - [Template Versioning](#template-versioning)
+- [Template Inputs Snapshot](#template-inputs-snapshot)
 - [Upgrading the Template](#upgrading-the-template)
 - [Upgrading Generated Projects](#upgrading-generated-projects)
 - [Breaking Changes](#breaking-changes)
@@ -36,6 +37,19 @@ cargo_generate_version = ">=0.23.0"   # minimum cargo-generate CLI
 bumped with each tagged release. `cargo_generate_version` is the minimum CLI
 version the config schema requires.
 
+The release version is mirrored in two additional places, kept in sync by
+`scripts/check-template-values.sh` (run it in CI and before tagging):
+
+- `TEMPLATE_VALUES_VERSION` in `post-generate.rhai` — recorded in every project's
+  `.cargo-generate/values.toml` as the snapshot version;
+- `service-template/cargo-generate.toml` — recorded in every service snapshot.
+
+The post-generation hook (or `scripts/add-service.sh` for services) records that
+version, so a project's `make template-update` uses `v<version>` as the
+three-way merge base. Tag releases accordingly (the helper warns and degrades to
+a two-way report when the tag is missing, e.g. for projects generated from an
+unreleased branch).
+
 ### Generated project versions
 
 A generated project starts at `0.1.0` in both `Cargo.toml` and
@@ -64,6 +78,49 @@ gh release list --repo enchantednatures/rust-knative-flux-template
 # Or check git tags
 git tag --list 'v*'
 ```
+
+---
+
+## Template Inputs Snapshot
+
+Generation records every answer in `.cargo-generate/values.toml` (commit it):
+
+```toml
+[template]
+version = "1.0.0"      # template release the project was rendered from
+name = "my-service"    # the --name input (decides the crate name)
+
+[values]
+project_name = "my-service"
+feature_postgres = true
+# …every answered placeholder, including the conditional ones
+```
+
+The file is ordinary TOML and is read by `cargo generate --template-values-file`,
+so a project can always be re-rendered non-interactively:
+
+```bash
+cargo generate --path <template> \
+  --name "$(awk -F'"' '/^name = /{print $2}' .cargo-generate/values.toml)" \
+  --template-values-file .cargo-generate/values.toml \
+  --silent --allow-commands --destination /tmp/regenerated
+```
+
+`make template-update` does this for you and merges the result (see
+[Option 1](#option-1-make-template-update-recommended)).
+
+Notes:
+
+- Editing a value changes **future** regenerations only; it does not modify the
+  current project. Disabling a feature also does not delete files that were
+  already generated — generate fresh for structural changes.
+- Services added with `make add-service` record their own
+  `services/<slug>/.cargo-generate/values.toml`, including the `--name` that
+  decides the service crate name.
+- No prompt asks for a secret, and the snapshot is committed. If you add a
+  secret-bearing prompt to a fork, exclude its value from the snapshot.
+- Projects generated before this feature have no snapshot; generate once from
+  the template (or write the file by hand) to opt in.
 
 ---
 
@@ -128,45 +185,77 @@ gh release create v1.0.0 \
 
 ## Upgrading Generated Projects
 
-### Option 1: Re-generate from Latest Template (Recommended)
+### Option 1: `make template-update` (Recommended)
+
+**When to use**: any template update — the helper three-way merges, so your
+edits survive.
+
+The helper re-renders the template twice with `.cargo-generate/values.toml`:
+
+- **base**: the release recorded in the snapshot (`v<version>` tag)
+- **theirs**: the ref you update to (default: the recorded `template_ref`)
+
+and merges `base → theirs` into your checkout. Files you never touched are
+replaced, files you changed are merged (or kept), and upstream deletions are
+applied only when the file is unmodified locally.
+
+```bash
+git switch -c template-update          # work on a branch; the helper never commits
+make template-update                   # preview: summary + nothing written
+make template-update ARGS='--diff'     # preview with the per-file patch
+make template-update APPLY=1           # merge into the working tree
+```
+
+Useful switches:
+
+```bash
+make template-update REF=v1.2.0        # update to a specific template ref
+make template-update ROOT_ONLY=1       # skip services/<slug> updates
+make template-update NAME=orders-api   # only services/orders-api
+make template-update ARGS='--base-ref v1.0.0'   # override the merge base
+```
+
+Every service with a snapshot is updated too (`services/<slug>`), and its
+recorded version advances so the next update starts from the right base.
+
+**After applying**:
+
+```bash
+git diff                               # review; resolve '<<<<<<<' markers
+cargo fmt --all
+cargo test
+kubectl kustomize deploy/overlays/dev  # manifests still render
+```
+
+If the template added a placeholder that has no default, the render fails with a
+"missing default value" hint: add that key to `.cargo-generate/values.toml` and
+re-run.
+
+Requires `git` and `cargo-generate >= 0.23`. The script refuses to write over a
+dirty worktree unless you pass `ARGS='--force'`, and it never commits.
+
+### Option 2: Re-generate and diff by hand
+
+**When to use**: you want to inspect a completely fresh render, or the merge
+base tag is unavailable.
+
+```bash
+cargo generate --path <template> \
+  --name "$(awk -F'"' '/^name = /{print $2}' .cargo-generate/values.toml)" \
+  --template-values-file .cargo-generate/values.toml \
+  --silent --allow-commands --destination /tmp/regenerated
+
+diff -ruN --exclude=.git --exclude=target /tmp/regenerated/my-service .
+```
+
+Copy over the files you want to take, or use `git merge-file` per file with the
+previous release's render as the base.
+
+### Option 3: Manual Migration
 
 **When to use**:
 - Major version changes
 - Many breaking changes
-- Early in project lifecycle
-
-**Process**:
-```bash
-# Backup your project
-cp -r my-service my-service.backup
-
-# Generate new project
-cargo generate --git https://github.com/your-org/rust-knative-flux-template \
-  --name my-service-v2
-
-# Copy your code changes to new project
-# - src/handlers/ (your custom handlers)
-# - config/*.toml (your config)
-# - deploy/overlays/ (your environment configs)
-
-# Update dependencies
-cd my-service-v2
-cargo build
-
-# Run tests
-cargo test
-
-# Switch to new version
-cd ..
-mv my-service my-service-old
-mv my-service-v2 my-service
-```
-
-### Option 2: Manual Migration
-
-**When to use**:
-- Minor/Patch version upgrades
-- Few breaking changes
 - Established project with many customizations
 
 **Process**:
@@ -535,11 +624,14 @@ curl https://my-service.example.com/health/ready
 
 Before upgrading:
 - [ ] Review CHANGELOG.md for breaking changes
-- [ ] Backup current working directory
-- [ ] Create backup branch: `git checkout -b backup-v1.0.0`
-- [ ] Commit all current work
+- [ ] Create a branch: `git switch -c template-update`
+- [ ] Commit all current work (the helper refuses a dirty worktree)
+- [ ] Snapshot exists: `.cargo-generate/values.toml`
 
 During upgrade:
+- [ ] `make template-update` — review the preview
+- [ ] `make template-update APPLY=1` — merge
+- [ ] Resolve any `<<<<<<<` conflict markers
 - [ ] Update Rust toolchain
 - [ ] Update Cargo.toml dependencies
 - [ ] Update configuration files

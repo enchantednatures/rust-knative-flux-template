@@ -9,6 +9,7 @@ scripts/
 ├── bootstrap-git-auth.sh         # Create the Flux SSH deploy-key Secret
 ├── bootstrap-ci-secrets.sh       # Set the KELLNR_TOKEN Actions secret
 ├── setup-github-runners.sh       # Register the ARC runner scale set secrets
+├── update-from-template.sh       # Re-render + three-way merge template changes
 ├── validate-postgres-manifests.sh # Validate CloudNativePG manifests
 └── dev/                          # Local Kind lifecycle
     ├── setup-kind.sh             # Create the Kind cluster + local registry
@@ -64,6 +65,17 @@ preflight. Use `make ci-secrets-check` to verify the secret.
 
 Creates the `github-auth-secret` the ARC runner scale set needs. Only relevant
 when the project was generated with `feature_gha_runner`.
+
+#### `update-from-template.sh`
+
+Re-renders the template with `.cargo-generate/values.toml` at two refs (the
+recorded release as the base, the target ref as theirs) and three-way merges the
+result into the checkout. Preview by default; `--apply` writes it. Driven by the
+`make template-update` target. Template-only companion scripts (not shipped):
+
+- `check-template-values.sh` — CI guard: the hook's placeholder list and the
+  version constants match `cargo-generate.toml`; `--fix` regenerates them.
+- `test-template-values.sh` — end-to-end test for the snapshot and update flow.
 
 ### Development Scripts
 
