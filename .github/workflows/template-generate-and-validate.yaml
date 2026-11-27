@@ -1379,6 +1379,33 @@ jobs:
           echo "✓ flux config dev rendered"
         shell: bash
 
+      - name: Validate CI secret helper
+        run: |
+          set -euo pipefail
+          cd "$GENERATED_DIR"
+
+          test -x scripts/bootstrap-ci-secrets.sh \
+            || { echo "FAIL: scripts/bootstrap-ci-secrets.sh missing or not executable"; exit 1; }
+          bash -n scripts/bootstrap-ci-secrets.sh
+
+          grep -q '^ci-secrets:' Makefile \
+            || { echo "FAIL: Makefile is missing the ci-secrets target"; exit 1; }
+          grep -q '^ci-secrets-check:' Makefile \
+            || { echo "FAIL: Makefile is missing the ci-secrets-check target"; exit 1; }
+          grep -q 'bootstrap-ci-secrets.sh --repo' Makefile \
+            || { echo "FAIL: make deploy does not run the ci-secrets preflight"; exit 1; }
+
+          out=$(CARGO_REGISTRIES_KELLNR_TOKEN=dummy-token \
+            scripts/bootstrap-ci-secrets.sh --repo owner/repo --dry-run)
+          grep -q 'Would set KELLNR_TOKEN for owner/repo' <<<"$out" \
+            || { echo "FAIL: ci-secrets dry run did not resolve the repository"; exit 1; }
+          if grep -q 'dummy-token' <<<"$out"; then
+            echo "FAIL: ci-secrets printed the token value"
+            exit 1
+          fi
+          echo "✓ ci-secrets helper renders, resolves the repo, and does not print the token"
+        shell: bash
+
       - name: Run generated test suite
         run: |
           set -euo pipefail

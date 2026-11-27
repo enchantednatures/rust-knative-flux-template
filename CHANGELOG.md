@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `make ci-secrets` (via `scripts/bootstrap-ci-secrets.sh`) sets the
+  `KELLNR_TOKEN` GitHub Actions secret from the local Cargo/Kellnr token with
+  `gh secret set`, without printing the value. `make deploy` runs the helper
+  best-effort before pushing, so the first CI run has the secret. The helper
+  supports `--check`/`make ci-secrets-check`, `--dry-run`, `--optional`, and
+  falls back to the origin remote when the template's `github_org`/
+  `github_repo` values are placeholders.
 - `workload_type` prompt (`Knative` default, `Deployment` alternative) for
   long-lived services such as WebSockets and SSE. Deployment mode renders an
   `apps/v1 Deployment`, a core Service, and an optional PodDisruptionBudget

@@ -27,6 +27,9 @@ SERVICE_DIR := $(if $(wildcard services/$(SERVICE)),services/$(SERVICE),.)
 IMAGE ?= {{ image_registry }}/{{ github_org }}/$(PROJECT_NAME)
 SERVICE_IMAGE := $(if $(filter $(PROJECT_NAME),$(SERVICE)),$(IMAGE),$(IMAGE)-$(SERVICE))
 
+# GitHub repository slug used by `make ci-secrets` to set KELLNR_TOKEN.
+CI_REPO ?= {{ github_org }}/{{ github_repo }}
+
 # Kafka resources are per service; the broker itself stays shared.
 KAFKA_CONSUMER_GROUP ?= $(if $(filter $(PROJECT_NAME),$(SERVICE)),$(CRATE_NAME)-consumers,$(SERVICE)-consumers)
 KAFKA_SOURCE_NAME ?= $(if $(filter $(PROJECT_NAME),$(SERVICE)),$(PROJECT_NAME)-kafka-source,$(SERVICE)-kafka-source)
@@ -436,6 +439,14 @@ bootstrap: ## Bootstrap Flux resources (usage: make bootstrap [environment])
 git-auth: ## Create the Flux SSH deploy-key Secret for private repositories
 	@./scripts/bootstrap-git-auth.sh
 
+.PHONY: ci-secrets
+ci-secrets: ## Set the KELLNR_TOKEN Actions secret for CI/Docker (reads the Cargo/Kellnr token)
+	@./scripts/bootstrap-ci-secrets.sh --repo '$(CI_REPO)'
+
+.PHONY: ci-secrets-check
+ci-secrets-check: ## Check whether the KELLNR_TOKEN Actions secret is set
+	@./scripts/bootstrap-ci-secrets.sh --repo '$(CI_REPO)' --check
+
 # deploy moves the working tree to git and lets Flux take over: it commits,
 # pushes, then applies the GitRepository + Kustomizations for the environment
 # (the same apply as `make bootstrap <env>`; a no-op after the first run).
@@ -451,6 +462,9 @@ deploy: ## Commit + push, then (re)apply Flux for an environment (usage: make de
 		echo "${RED}✗ Unknown environment: $$ENV${NC}"; \
 		echo "  Available: $(VALID_ENVS) (also: production, development)"; \
 		exit 1; \
+	fi; \
+	if [ -x scripts/bootstrap-ci-secrets.sh ]; then \
+		./scripts/bootstrap-ci-secrets.sh --repo '$(CI_REPO)' --optional; \
 	fi; \
 	echo "${BLUE}Committing working tree ($$RESOLVED)...${NC}"; \
 	git add -A; \
