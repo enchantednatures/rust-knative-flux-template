@@ -853,6 +853,37 @@ the app env entries per environment instead (see `docs/STORAGE.md`).
 - Prefix env vars with `APP__` (e.g., `APP__REDIS__URL`)
 - Never commit secrets; use Kubernetes secrets
 
+## Generation Inputs Snapshot
+
+Every generated project records its prompt answers in `.cargo-generate/values.toml`
+(written by `post-generate.rhai`), and every service records its own in
+`services/<slug>/.cargo-generate/values.toml` (written by `scripts/add-service.sh`).
+`make template-update` re-renders the template with those values and three-way
+merges the result (base = the recorded release, `v<version>`).
+
+Invariants — CI (`scripts/check-template-values.sh`) enforces all of them:
+
+1. The `TEMPLATE_VALUES_PLACEHOLDERS` list in `post-generate.rhai` must match
+   every placeholder in `cargo-generate.toml` (names, order, no duplicates). Add
+   or rename a placeholder, then run `scripts/check-template-values.sh --fix`.
+2. `TEMPLATE_VALUES_VERSION` (`post-generate.rhai`) must equal
+   `[template] version` (`cargo-generate.toml`), which must equal
+   `[template] version` in `service-template/cargo-generate.toml`. Bump all three
+   together and tag `v<version>`.
+3. `.cargo-generate/.gitkeep` must exist: it creates the directory the Rhai hook
+   writes into (Rhai's `file` module cannot create directories); the hook deletes
+   it afterwards.
+4. Only placeholders that `variable::is_set` reports are written, so conditional
+   prompts need no matching condition in the hook. Do not hand-add conditions.
+5. `[template] name` (cargo-generate's `project-name` built-in, i.e. `--name`) must
+   stay in the snapshot: it decides `crate_name` and is independent of the
+   `project_name` answer. Re-rendering with the wrong name silently renames the crate.
+6. Never add a prompt whose answer is a secret — the snapshot is committed; nor
+   rename/remove a placeholder without running the drift guard.
+
+`scripts/test-template-values.sh` is the end-to-end test (generation, byte-identical
+round trip, `add-service` snapshot, simulated release, merge/conflict/no-op paths).
+
 ## Commit Message Format
 
 Follow Conventional Commits:
@@ -1085,6 +1116,19 @@ deploy/
 ```
 
 ## Recent Changes
+- template-input-snapshot: Generated projects now record their prompt answers in
+  `.cargo-generate/values.toml` (hook-written, committed) and every added service
+  in `services/<slug>/.cargo-generate/values.toml`. `make template-update`
+  (`scripts/update-from-template.sh`) re-renders the template at the recorded
+  release (base) and the target ref (theirs) and three-way merges into the
+  checkout — preview by default, `APPLY=1` to write, `NAME=<slug>` to scope to a
+  service, `REF=<ref>` to pick a release. Snapshots also record `[template] name`
+  (the `--name` input that decides `crate_name`, which is not `project_name`) and
+  the template version, so re-renders keep the crate name and can advance the
+  merge base. `scripts/check-template-values.sh` guards placeholder-list/version
+  drift (root config, hook constant, service-template config) and
+  `scripts/test-template-values.sh` covers generation, round-trip, service
+  snapshots, merge/conflict/no-op paths.
 - ci-secrets-automation: Added `scripts/bootstrap-ci-secrets.sh` and
   `make ci-secrets`/`make ci-secrets-check` to set/verify the `KELLNR_TOKEN`
   Actions secret from the local Cargo/Kellnr token via `gh secret set` (token

@@ -73,6 +73,25 @@ cargo test --all-features
 4. Add a row to the `generate-and-validate` matrix and, if the feature needs a
    cluster, a scenario to `template-e2e-test.yaml`.
 5. Assert both the "on" and "off" shapes in the workflow steps.
+6. Run `scripts/check-template-values.sh --fix` so the generation-inputs snapshot
+   in `post-generate.rhai` lists the new placeholder (CI fails otherwise).
+
+## Changing generation inputs
+
+Every generated project records its answers in `.cargo-generate/values.toml`, and
+`make template-update` uses them to three-way merge template changes. When you
+touch the prompt surface:
+
+- Add/rename/remove a placeholder, then run
+  `scripts/check-template-values.sh --fix`.
+- Bump the release in all three places the guard checks:
+  `[template] version` (`cargo-generate.toml`), `TEMPLATE_VALUES_VERSION`
+  (`post-generate.rhai`), and `service-template/cargo-generate.toml`.
+- Tag the release (`v<version>`): it is the merge base for projects generated
+  from it.
+- Never add a prompt whose answer is a secret — the snapshot is committed.
+- Run `scripts/test-template-values.sh` (the CI job does this) after changing the
+  hook, `add-service.sh`, or `update-from-template.sh`.
 
 ## Reporting bugs and requesting features
 

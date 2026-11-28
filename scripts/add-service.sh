@@ -8,6 +8,10 @@
 # member, and registers the service's deploy subtree in each root overlay.
 # `--dry-run` prints the plan without writing or generating anything.
 #
+# Generation inputs are recorded in services/<slug>/.cargo-generate/values.toml
+# so `make template-update NAME=<slug>` can re-render and three-way merge the
+# service template later.
+#
 # Cluster probing is OPT-IN: `--probe-cluster` performs read-only kubectl
 # queries for CNPG/Kafka/Redpanda; the default never reads a kubeconfig.
 #
@@ -65,7 +69,7 @@ DRY_RUN=0
 FORCE=0
 
 usage() {
-	sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 need_value() {
@@ -1119,6 +1123,16 @@ printf ' --name %q --init --template-values-file %q --destination %q %s %q\n' \
 	"$SLUG" "/tmp/${SLUG}-service-values.toml" "services/$SLUG" "$REF_FLAG" "$TEMPLATE_REF"
 echo
 
+echo "== Generation inputs snapshot =="
+echo "services/$SLUG/.cargo-generate/values.toml (written after a successful render)"
+echo "  template: $TEMPLATE_REPO_URL ($TEMPLATE_REF)"
+if [[ -f "$ROOT/.cargo-generate/values.toml" ]]; then
+	echo "  version:  $(toml_section_value "$ROOT/.cargo-generate/values.toml" template version)"
+else
+	echo "  version:  unknown (project has no .cargo-generate/values.toml)"
+fi
+echo
+
 echo "== Planned registration edits =="
 for _env in dev staging prod; do
 	_overlay="$OVERLAYS/$_env/kustomization.yaml"
@@ -1159,6 +1173,58 @@ toml_q() {
 
 toml_str() {
 	printf '%s = "%s"\n' "$1" "$(toml_q "$2")"
+}
+
+# toml_section_value <file> <section> <key>
+#
+# Reads a simple string value (names, versions) from a generated snapshot. Only
+# used for values that never contain TOML escapes, so no unescaping is done.
+toml_section_value() {
+	local file="$1" section="$2" key="$3"
+	[[ -f "$file" ]] || return 0
+	awk -v section="$section" -v key="$key" '
+		/^[[:space:]]*\[/ {
+			s = $0; sub(/^[[:space:]]*\[/, "", s); sub(/\][[:space:]]*$/, "", s); next
+		}
+		s == section {
+			line = $0
+			if (line ~ ("^[[:space:]]*" key "[[:space:]]*=")) {
+				sub(/^[^=]*=[[:space:]]*/, "", line); sub(/[[:space:]]+$/, "", line)
+				if (line ~ /^".*"$/) { line = substr(line, 2, length(line) - 2) }
+				print line; exit
+			}
+		}
+	' "$file"
+}
+
+# write_service_values_snapshot <target-dir> <values-file> <slug>
+#
+# Records the service's cargo-generate inputs (including the `--name` that
+# decides its crate name) so `make template-update NAME=<slug>` can re-render
+# and three-way merge the service template later. The template version is copied
+# from the project-level snapshot; projects generated before snapshots existed
+# get no version and the update helper falls back to a two-way report.
+write_service_values_snapshot() {
+	local target_dir="$1" values_file="$2" slug="$3"
+	local root_snapshot="$ROOT/.cargo-generate/values.toml"
+	local version
+	version="$(toml_section_value "$root_snapshot" template version)"
+
+	mkdir -p "$target_dir/.cargo-generate"
+	{
+		printf '%s\n' \
+			"# Inputs used to generate this service (cargo-generate)." \
+			"#" \
+			"# \`make template-update NAME=${slug}\` re-renders the service template" \
+			"# with these values and three-way merges the result into this directory." \
+			"" \
+			"[template]"
+		if [[ -n "$version" ]]; then
+			printf 'version = "%s"\n' "$(toml_q "$version")"
+		fi
+		printf 'name = "%s"\n\n' "$(toml_q "$slug")"
+		cat "$values_file"
+	} >"$target_dir/.cargo-generate/values.toml"
 }
 
 generate_and_register() {
@@ -1229,6 +1295,8 @@ generate_and_register() {
 		echo "Error: generated service contains a nested .git directory" >&2
 		return 1
 	fi
+
+	write_service_values_snapshot "$TARGET_DIR" "$values_file" "$SLUG"
 
 	python3 - "$ROOT/Cargo.toml" "services/$SLUG" <<'PYWORKSPACE'
 import re
@@ -1318,6 +1386,8 @@ PYFLUX
 	echo "✓ Service '${SLUG}' generated at services/${SLUG}"
 	echo "  Workload: $([[ "$WORKLOAD_DEPLOYMENT" == true ]] && echo Deployment || echo Knative)"
 	echo "  Workspace member and dev/staging/prod overlay registration updated."
+	echo "  Generation inputs: services/${SLUG}/.cargo-generate/values.toml"
+	echo "  Future service template updates: make template-update NAME=${SLUG}"
 	echo
 	echo "Next steps:"
 	echo "  1. Review services/${SLUG}/README.md and services/${SLUG}/deploy."

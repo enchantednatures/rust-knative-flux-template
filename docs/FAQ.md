@@ -64,6 +64,22 @@ DomainMapping) are not generated for this workload.
 - **Auditable**: Full Git history of deployments
 - **Reproducible**: Same environment from Git
 
+### How do I pull template updates into this project?
+
+The answers used to generate the project are recorded in
+`.cargo-generate/values.toml` (and per service in
+`services/<slug>/.cargo-generate/values.toml`). Use the helper:
+
+```bash
+git switch -c template-update
+make template-update                 # preview; writes nothing
+make template-update APPLY=1         # three-way merge into the working tree
+```
+
+It re-renders the template at the recorded release (base) and the target ref
+(theirs) and merges, so local edits survive. A dry run is the default; conflicts
+are left in the files with `<<<<<<<` markers. See `docs/UPGRADING.md`.
+
 ---
 
 ## Development

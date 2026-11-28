@@ -377,9 +377,12 @@ post = ["post-generate.rhai"]
 
 After template expansion, the hook runs in the expanded project directory and:
 
-1. Runs `cargo clippy --fix` to auto-fix lint issues
-2. Runs `cargo fmt --all` to format all generated code
-3. Removes the `target/` directory created by clippy (so build artifacts are not copied into the generated project)
+1. Runs `cargo fmt --all` to format all generated code
+2. Removes the `target/` directory (so build artifacts are not copied into the generated project)
+3. Records the generation inputs in `.cargo-generate/values.toml` (see below)
+
+Clippy is deliberately **not** run in the hook: a cold `cargo clippy` compiles
+the whole crate graph and can block generation for minutes. CI enforces it.
 
 ### Failure Semantics (Non-Blocking)
 
@@ -408,6 +411,64 @@ Hooks behavior changed across cargo-generate versions. Verified against v0.23.x 
 - Files created or modified by post hooks are **not re-scanned** for `{{ }}` template variables (expansion is already complete). Pre hooks run *before* expansion — do not run `cargo` build/clippy in pre hooks; artifacts created there would be scanned as templates and fail generation.
 - cargo-generate copies everything (except `.git`) from its working copy into the final project, which is why the hook deletes `target/` before finishing.
 
+### Generation Inputs Snapshot
+
+Every generated project gets `.cargo-generate/values.toml`, written by
+`post-generate.rhai`, and every service gets
+`services/<slug>/.cargo-generate/values.toml`, written by `scripts/add-service.sh`.
+The file is committed and is what `make template-update` feeds back to
+`cargo generate --template-values-file`.
+
+How the root snapshot is produced:
+
+- The hook walks `TEMPLATE_VALUES_PLACEHOLDERS` (an explicit list between
+  `// BEGIN/END TEMPLATE VALUES PLACEHOLDERS` markers) and writes a key only when
+  `variable::is_set(name)` is true. That set is exactly the answered/defined
+  placeholders, so conditional prompts (`postgres_*`, `cron_*`,
+  `kafka_managed_*`, the scaling keys, Deployment-mode keys) are captured without
+  duplicating any condition from `cargo-generate.toml`.
+- The list must be explicit: cargo-generate's Rhai API exposes `variable::get`
+  and `variable::is_set` but no enumeration.
+- The engine only ships Rhai's "basic string" package, so TOML escaping is a
+  manual `len`/`sub_string` loop (`template_values_escape`).
+- `[template] version` is the `TEMPLATE_VALUES_VERSION` constant and
+  `[template] name` is cargo-generate's `project-name` built-in. The latter
+  matters: `--name` decides `crate_name`, which is independent of the
+  `project_name` answer, and re-rendering with the wrong name would change the
+  crate name.
+- `.cargo-generate/.gitkeep` ships in the template solely so the directory exists
+  when the hook writes (Rhai's `file` module cannot create directories); the hook
+  deletes it afterwards.
+
+Guards (CI): `scripts/check-template-values.sh` verifies that the hook list
+matches every placeholder in `cargo-generate.toml` (names, order, no duplicates),
+that `TEMPLATE_VALUES_VERSION` and `service-template/cargo-generate.toml`'s
+version match `[template] version`, and that `.gitkeep` exists. Run
+`scripts/check-template-values.sh --fix` after adding or renaming a placeholder
+to regenerate the list and sync the versions.
+
+Version bump checklist (they must move together):
+
+1. `[template] version` in `cargo-generate.toml`
+2. `TEMPLATE_VALUES_VERSION` in `post-generate.rhai`
+3. `[template] version` in `service-template/cargo-generate.toml`
+
+`scripts/test-template-values.sh` is the end-to-end test: it generates a project,
+re-renders from the snapshot (byte-identical), runs `add-service`, and simulates a
+template release to exercise `scripts/update-from-template.sh` (merge, local-edit
+preservation, crate-name preservation, overlay-registration preservation,
+conflicts, version advance, and the service no-op case). The update helper
+itself ships to generated projects behind `make template-update`.
+
+Rules when editing the template:
+
+- Adding, renaming or removing a placeholder requires
+  `scripts/check-template-values.sh --fix` (CI fails otherwise).
+- Conditional placeholders need no extra work: the hook records whatever was
+  defined.
+- Never add a prompt whose answer is a secret — the snapshot is committed.
+- Do not delete `.cargo-generate/.gitkeep` from the template.
+
 ---
 
 ## 📋 Pre-Deployment Checklist
@@ -417,6 +478,8 @@ Before publishing the template:
 - [ ] All `{% raw %}{{ variable }}{% endraw %}` syntax is valid Liquid
 - [ ] Feature conditionals use correct syntax: `{% if feature_name %}`
 - [ ] All new files are included in the template
+- [ ] `scripts/check-template-values.sh` passes (placeholder list + version sync)
+- [ ] `scripts/test-template-values.sh` passes (snapshot round trip + update flow)
 - [ ] Generated code compiles without errors
 - [ ] Generated tests pass
 - [ ] Benchmarks run successfully

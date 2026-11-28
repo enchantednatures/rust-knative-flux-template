@@ -197,6 +197,23 @@ git commit -m "feat: add my feature"
 git push origin feature/my-feature
 ```
 
+### Updating from the Template
+
+The generation inputs live in `.cargo-generate/values.toml` (root) and
+`services/<slug>/.cargo-generate/values.toml` (per service). To pull template
+changes into the checkout:
+
+```bash
+git switch -c template-update
+make template-update                # preview only
+make template-update APPLY=1        # three-way merge into the working tree
+```
+
+Review with `git diff`, resolve any `<<<<<<<` markers, then run `cargo fmt --all`
+and `cargo test` before committing. Use `NAME=<slug>` to scope the update to one
+service. The full flow, including the merge base and its limits, is documented in
+`docs/UPGRADING.md`.
+
 ### Using Kind for Integration Testing
 
 ```bash

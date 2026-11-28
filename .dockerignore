@@ -39,3 +39,6 @@ tests/
 deploy/base/secret.yaml
 .cargo/credentials.toml
 .cargo/credentials
+
+# Generation inputs (tooling metadata, not needed to build the image)
+.cargo-generate/

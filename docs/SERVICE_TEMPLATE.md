@@ -122,6 +122,22 @@ resources:
 The deploy values contract (HelmRelease shape, env wiring, per-environment patches,
 and Kafka DLQ post-renderer) is defined in `docs/SERVICE_TEMPLATE_CONTRACT.md`.
 
+## Updating a Service from the Service Template
+
+`make add-service` records the values it used in
+`services/<service-slug>/.cargo-generate/values.toml` (including the `--name` that
+decides the service crate name and the template release as the merge base). That
+lets the platform's update helper re-render and three-way merge the service
+template later:
+
+```bash
+make template-update NAME=orders-api              # preview (nothing written)
+make template-update NAME=orders-api APPLY=1      # merge into services/orders-api
+```
+
+Plain `make template-update` updates the root project and every service that has a
+snapshot. See `docs/UPGRADING.md` for the merge semantics and limits.
+
 ## Limitations
 
 - No HPA for Deployment workloads.

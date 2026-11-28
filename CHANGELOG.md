@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Generation-input snapshots. Every generated project records its answers in
+  `.cargo-generate/values.toml` (hook-written, committed) and every service added
+  with `make add-service` records its own in
+  `services/<slug>/.cargo-generate/values.toml`. `make template-update`
+  (`scripts/update-from-template.sh`) re-renders the template with those values
+  at the recorded release (base) and the target ref (theirs) and three-way merges
+  the result into the checkout: preview by default, `APPLY=1` to write,
+  `NAME=<slug>` to scope to one service, `REF=<ref>` to pick a release,
+  `ARGS='--base-ref …'` to override the base. Local edits, `add-service`
+  overlay-registration lines, and conflicts are preserved or reported instead of
+  being clobbered. Snapshots also record `[template] name` (the `--name` input
+  that decides `crate_name`, which is independent of `project_name`) and the
+  template version, so re-renders keep the crate name and advance the merge base.
+  `scripts/check-template-values.sh` guards placeholder-list and version drift
+  (root config, hook constant, service-template config) and
+  `scripts/test-template-values.sh` covers generation, byte-identical round trip,
+  service snapshots, and the merge/conflict/no-op paths.
+
 - `make ci-secrets` (via `scripts/bootstrap-ci-secrets.sh`) sets the
   `KELLNR_TOKEN` GitHub Actions secret from the local Cargo/Kellnr token with
   `gh secret set`, without printing the value. `make deploy` runs the helper

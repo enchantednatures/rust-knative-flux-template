@@ -403,6 +403,47 @@ jobs:
             || { echo "FAIL: Cargo.toml authors has stray whitespace"; exit 1; }
           grep -A2 '^    dragonfly:$' deploy/base/helmrelease.yaml | grep -q '^      enabled: false$' \
             || { echo "FAIL: base HelmRelease is missing dragonfly.enabled=false"; exit 1; }
+
+          echo "Verifying the generation inputs snapshot"
+          test -f .cargo-generate/values.toml \
+            || { echo "FAIL: .cargo-generate/values.toml was not written"; exit 1; }
+          test ! -e .cargo-generate/.gitkeep \
+            || { echo "FAIL: .cargo-generate/.gitkeep was not removed"; exit 1; }
+          if grep -nE '\{%|\{\{' .cargo-generate/values.toml; then
+            echo "FAIL: unrendered liquid in the snapshot"; exit 1
+          fi
+          grep -q "^project_name = \"${PROJ_NAME}\"$" .cargo-generate/values.toml \
+            || { echo "FAIL: snapshot does not record project_name"; exit 1; }
+          grep -q "^name = \"${PROJ_NAME}\"$" .cargo-generate/values.toml \
+            || { echo "FAIL: snapshot does not record the --name input"; exit 1; }
+          grep -q '^version = "' .cargo-generate/values.toml \
+            || { echo "FAIL: snapshot does not record the template version"; exit 1; }
+          python3 - .cargo-generate/values.toml <<'PY'
+          import sys, tomllib
+          with open(sys.argv[1], "rb") as fh:
+              data = tomllib.load(fh)
+          assert "values" in data and "template" in data, "missing [values]/[template]"
+          assert data["template"].get("name"), "missing [template] name"
+          assert data["template"].get("version"), "missing [template] version"
+          PY
+
+          # Round-trip the snapshot for the two scenarios that cover the most
+          # conditional prompts (Knative + custom scaling, and Deployment).
+          case "${SCENARIO}" in
+            all-features | long-running)
+              RT_DIR=$(mktemp -d)
+              cargo generate \
+                --path "$TEMPLATE_SRC" \
+                --name "$PROJ_NAME" \
+                --template-values-file "$GENERATED_DIR/.cargo-generate/values.toml" \
+                --destination "$RT_DIR" \
+                --silent \
+                --allow-commands
+              diff -r --exclude=.git "$GENERATED_DIR" "$RT_DIR/$PROJ_NAME" \
+                || { echo "FAIL: the snapshot does not reproduce the generated tree"; exit 1; }
+              echo "✓ snapshot reproduces the generated tree"
+              ;;
+          esac
         shell: bash
 
       - name: Assert no template-only artifacts leaked
@@ -418,6 +459,8 @@ jobs:
             .specify \
             scripts/test-template-matrix.sh \
             scripts/test-service-renders.sh \
+            scripts/check-template-values.sh \
+            scripts/test-template-values.sh \
             generated \
             .github/workflows/dev-setup-validation.yaml \
             .github/workflows/opencode.yml; do
@@ -1145,6 +1188,51 @@ jobs:
           echo "✓ managed Kafka render assertions passed"
         shell: bash
 
+  template-values-guard:
+    name: "Generation inputs guard"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify snapshot placeholder list and version constants
+        run: bash scripts/check-template-values.sh
+        shell: bash
+
+  template-values-flow:
+    name: "Generation inputs flow"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # `cargo fmt` in the post-generation hook resolves the workspace, which
+      # reads the Kellnr index; match the other generation jobs.
+      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install yq
+        run: |
+          sudo curl -sSLo /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+        shell: bash
+
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --locked
+        shell: bash
+
+      - name: Verify the snapshot and the three-way update flow
+        run: bash scripts/test-template-values.sh
+        shell: bash
+
   full-stack:
     name: "Full-stack validation"
     runs-on: ubuntu-latest
@@ -1440,6 +1528,8 @@ jobs:
             .specify \
             scripts/test-template-matrix.sh \
             scripts/test-service-renders.sh \
+            scripts/check-template-values.sh \
+            scripts/test-template-values.sh \
             generated \
             .github/workflows/dev-setup-validation.yaml \
             .github/workflows/opencode.yml; do
