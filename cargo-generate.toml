@@ -200,12 +200,62 @@ kafka_managed_provider = { prompt = "Managed Kafka provider (redpanda or strimzi
 [conditional.'event_source_kafka && kafka_managed_cluster'.placeholders]
 # StorageClass for the managed Redpanda brokers' PVCs.
 kafka_storage_class = { prompt = "StorageClass for the managed Kafka brokers (empty = cluster default)", type = "string", default = "ceph-block" }
+# Managed Kafka TLS is on by default. It uses cert-manager (a self-signed CA
+# chain by default) so the app and KafkaSource trust the broker certificate.
+# Set this to false to keep the plaintext Broker + Trigger path.
+kafka_managed_tls = { prompt = "Enable cert-manager TLS for the managed Kafka cluster (recommended)?", type = "bool", default = true }
+kafka_managed_tls_issuer = { prompt = "Existing cert-manager issuer for the managed Kafka CA (empty = self-signed)", type = "string", default = "" }
+kafka_managed_tls_issuer_kind = { prompt = "Kind of the managed Kafka CA issuer (Issuer or ClusterIssuer)", type = "string", default = "ClusterIssuer" }
+kafka_managed_tls_client_auth = { prompt = "Also issue a client certificate for managed Kafka mTLS?", type = "bool", default = false }
 # Publish Ceph RGW bucket notifications to the managed Kafka cluster. This
 # also requires feature_s3 (there must be a bucket to notify on) and the Rook
 # CephBucketTopic/CephBucketNotification CRDs on the cluster.
 feature_bucket_notifications = { prompt = "Publish Ceph RGW bucket notifications to the managed Kafka cluster (requires S3)?", type = "bool", default = false }
 ceph_object_store_name = { prompt = "Rook CephObjectStore name (used when bucket notifications are enabled)", type = "string", default = "ceph-objectstore" }
 ceph_object_store_namespace = { prompt = "Rook CephObjectStore namespace (used when bucket notifications are enabled)", type = "string", default = "rook-ceph" }
+bucket_notification_put = { prompt = "Enable bucket notifications for S3 put (object created)?", type = "bool", default = true }
+bucket_notification_delete = { prompt = "Enable bucket notifications for S3 delete (object removed)?", type = "bool", default = true }
+bucket_notification_post = { prompt = "Enable bucket notifications for S3 POST (opt-in)?", type = "bool", default = false }
+bucket_notification_copy = { prompt = "Enable bucket notifications for S3 copy (opt-in)?", type = "bool", default = false }
+bucket_notification_multipart = { prompt = "Enable bucket notifications for S3 multipart upload completion (opt-in)?", type = "bool", default = false }
+bucket_notification_delete_marker = { prompt = "Enable bucket notifications for S3 delete-marker creation (opt-in)?", type = "bool", default = false }
+bucket_notification_topic_template = { prompt = "Default bucket-notification topic name template", type = "string", default = "{release}-{bucket}-{event}" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_put'.placeholders]
+bucket_notification_put_partitions = { prompt = "Bucket notification queue partitions (put)", type = "string", default = "3" }
+bucket_notification_put_prefix = { prompt = "Bucket notification key prefix filter (put; empty = none)", type = "string", default = "" }
+bucket_notification_put_suffix = { prompt = "Bucket notification key suffix filter (put; empty = none)", type = "string", default = "" }
+bucket_notification_put_sink = { prompt = "Service key that receives put notifications", type = "string", default = "app" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_delete'.placeholders]
+bucket_notification_delete_partitions = { prompt = "Bucket notification queue partitions (delete)", type = "string", default = "3" }
+bucket_notification_delete_prefix = { prompt = "Bucket notification key prefix filter (delete; empty = none)", type = "string", default = "" }
+bucket_notification_delete_suffix = { prompt = "Bucket notification key suffix filter (delete; empty = none)", type = "string", default = "" }
+bucket_notification_delete_sink = { prompt = "Service key that receives delete notifications", type = "string", default = "app" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_post'.placeholders]
+bucket_notification_post_partitions = { prompt = "Bucket notification queue partitions (post)", type = "string", default = "3" }
+bucket_notification_post_prefix = { prompt = "Bucket notification key prefix filter (post; empty = none)", type = "string", default = "" }
+bucket_notification_post_suffix = { prompt = "Bucket notification key suffix filter (post; empty = none)", type = "string", default = "" }
+bucket_notification_post_sink = { prompt = "Service key that receives post notifications", type = "string", default = "app" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_copy'.placeholders]
+bucket_notification_copy_partitions = { prompt = "Bucket notification queue partitions (copy)", type = "string", default = "3" }
+bucket_notification_copy_prefix = { prompt = "Bucket notification key prefix filter (copy; empty = none)", type = "string", default = "" }
+bucket_notification_copy_suffix = { prompt = "Bucket notification key suffix filter (copy; empty = none)", type = "string", default = "" }
+bucket_notification_copy_sink = { prompt = "Service key that receives copy notifications", type = "string", default = "app" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_multipart'.placeholders]
+bucket_notification_multipart_partitions = { prompt = "Bucket notification queue partitions (multipart)", type = "string", default = "3" }
+bucket_notification_multipart_prefix = { prompt = "Bucket notification key prefix filter (multipart; empty = none)", type = "string", default = "" }
+bucket_notification_multipart_suffix = { prompt = "Bucket notification key suffix filter (multipart; empty = none)", type = "string", default = "" }
+bucket_notification_multipart_sink = { prompt = "Service key that receives multipart notifications", type = "string", default = "app" }
+
+[conditional.'event_source_kafka && kafka_managed_cluster && feature_bucket_notifications && bucket_notification_delete_marker'.placeholders]
+bucket_notification_delete_marker_partitions = { prompt = "Bucket notification queue partitions (delete-marker)", type = "string", default = "3" }
+bucket_notification_delete_marker_prefix = { prompt = "Bucket notification key prefix filter (delete-marker; empty = none)", type = "string", default = "" }
+bucket_notification_delete_marker_suffix = { prompt = "Bucket notification key suffix filter (delete-marker; empty = none)", type = "string", default = "" }
+bucket_notification_delete_marker_sink = { prompt = "Service key that receives delete-marker notifications", type = "string", default = "app" }
 
 [conditional.'!event_source_kafka']
 ignore = [
@@ -220,12 +270,26 @@ ignore = [
   "deploy/kyverno",
 ]
 
-# `kafka_managed_cluster` is only defined when `event_source_kafka` is on, so
-# the expression must tolerate it being undefined.
 [conditional.'event_source_kafka && kafka_managed_cluster == false']
 ignore = [
   "deploy/kyverno",
 ]
+
+[conditional.'event_source_kafka && kafka_managed_cluster == false'.placeholders]
+# External Kafka TLS/SASL. The Secrets live in the target namespace.
+kafka_external_tls = { prompt = "Connect to external Kafka over TLS?", type = "bool", default = false }
+kafka_external_ca_secret = { prompt = "External Kafka CA Secret name (empty = system trust store)", type = "string", default = "" }
+kafka_external_ca_key = { prompt = "External Kafka CA Secret key", type = "string", default = "ca.crt" }
+kafka_external_client_cert_secret = { prompt = "External Kafka client certificate Secret name (empty = no mTLS)", type = "string", default = "" }
+kafka_external_client_cert_key = { prompt = "External Kafka client certificate Secret key", type = "string", default = "tls.crt" }
+kafka_external_client_key_secret = { prompt = "External Kafka client private-key Secret name", type = "string", default = "" }
+kafka_external_client_key_key = { prompt = "External Kafka client private-key Secret key", type = "string", default = "tls.key" }
+kafka_external_sasl = { prompt = "Authenticate to external Kafka with SASL?", type = "bool", default = false }
+kafka_external_sasl_mechanism = { prompt = "External Kafka SASL mechanism", type = "string", default = "SCRAM-SHA-512" }
+kafka_external_sasl_user_secret = { prompt = "External Kafka SASL username Secret name", type = "string", default = "" }
+kafka_external_sasl_user_key = { prompt = "External Kafka SASL username Secret key", type = "string", default = "user" }
+kafka_external_sasl_password_secret = { prompt = "External Kafka SASL password Secret name", type = "string", default = "" }
+kafka_external_sasl_password_key = { prompt = "External Kafka SASL password Secret key", type = "string", default = "password" }
 
 [conditional.'feature_cron'.placeholders]
 cron_schedule = { prompt = "Cron schedule (e.g. '0 * * * *')", type = "string", default = "0 * * * *" }
@@ -296,6 +360,23 @@ ignore = [
 kafka_broker_url = { prompt = "Kafka broker URL (e.g., kafka.kafka.svc.cluster.local:9092)", type = "string", default = "kafka.kafka.svc.cluster.local:9092" }
 kafka_topic = { prompt = "Kafka topic name for event publishing", type = "string", default = "events" }
 kafka_event_name = { prompt = "CloudEvents event name (e.g., com.example.service.event.published)", type = "string", default = "com.example.service.event.published" }
+
+[conditional.'feature_kafka && !event_source_kafka'.placeholders]
+# Publisher-only external Kafka TLS/SASL (the event-source path defines the
+# same settings in its own conditional block).
+kafka_external_tls = { prompt = "Connect to external Kafka over TLS?", type = "bool", default = false }
+kafka_external_ca_secret = { prompt = "External Kafka CA Secret name (empty = system trust store)", type = "string", default = "" }
+kafka_external_ca_key = { prompt = "External Kafka CA Secret key", type = "string", default = "ca.crt" }
+kafka_external_client_cert_secret = { prompt = "External Kafka client certificate Secret name (empty = no mTLS)", type = "string", default = "" }
+kafka_external_client_cert_key = { prompt = "External Kafka client certificate Secret key", type = "string", default = "tls.crt" }
+kafka_external_client_key_secret = { prompt = "External Kafka client private-key Secret name", type = "string", default = "" }
+kafka_external_client_key_key = { prompt = "External Kafka client private-key Secret key", type = "string", default = "tls.key" }
+kafka_external_sasl = { prompt = "Authenticate to external Kafka with SASL?", type = "bool", default = false }
+kafka_external_sasl_mechanism = { prompt = "External Kafka SASL mechanism", type = "string", default = "SCRAM-SHA-512" }
+kafka_external_sasl_user_secret = { prompt = "External Kafka SASL username Secret name", type = "string", default = "" }
+kafka_external_sasl_user_key = { prompt = "External Kafka SASL username Secret key", type = "string", default = "user" }
+kafka_external_sasl_password_secret = { prompt = "External Kafka SASL password Secret name", type = "string", default = "" }
+kafka_external_sasl_password_key = { prompt = "External Kafka SASL password Secret key", type = "string", default = "password" }
 
 [conditional.'!feature_kafka']
 ignore = [

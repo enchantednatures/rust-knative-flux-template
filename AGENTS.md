@@ -719,7 +719,7 @@ deploy/
 │   ├── secret.yaml.example
 │   └── object-storage-secret.yaml.example
 ├── chart/                       # Local Helm chart wrapping the ksvc chart dependency
-│   ├── Chart.yaml               # ksvc 1.2.1 (oci://ghcr.io/enchantednatures/charts)
+│   ├── Chart.yaml               # ksvc 1.4.0 (oci://ghcr.io/enchantednatures/charts)
 │   └── templates/common.yaml
 ├── components/                  # Optional Kustomize Components
 │   └── flagger/                 # Canary + metric templates (staging/prod)
@@ -1085,6 +1085,23 @@ deploy/
 ```
 
 ## Recent Changes
+- managed-kafka-tls: Managed Kafka now defaults to cert-manager TLS
+  (`kafka_managed_tls=true`). The ksvc chart creates a self-signed Issuer, CA
+  Certificate, and CA Issuer, wires Strimzi (`clusterCa.type: cert-manager`) or
+  Redpanda (`tls.certs.default.issuerRef`) to it, and exposes
+  `<project>-kafka-ca` for the app and KafkaSource. TLS mode uses direct
+  KafkaSource sinks (no Broker/Trigger) and the app gets
+  `APP__KAFKA__SECURITY_PROTOCOL=SSL` + CA mount. `kafka_managed_tls=false`
+  keeps the plaintext Broker path. Strimzi TLS requires >=1.3.1 with
+  `CertManagerCaType`.
+- external-kafka-tls: Added `kafka_external_tls`/`kafka_external_sasl` prompts
+  for external Kafka (CA, client cert/key, SASL user/password Secret names) and
+  Rust publisher support for `security_protocol`, `ssl_*`, and `sasl_*`.
+- bucket-notification-queues: Bucket notifications now default `put` + `delete`
+  on, support per-event `partitions`, `prefix`/`suffix`, `sink`, and
+  `topicNameTemplate`, and the chart renders one KafkaSource per enabled event
+  instead of the hand-written `s3-events` source/trigger. Rook TLS notifications
+  use `useSSL: true` + `disableVerifySSL: true`.
 - ci-secrets-automation: Added `scripts/bootstrap-ci-secrets.sh` and
   `make ci-secrets`/`make ci-secrets-check` to set/verify the `KELLNR_TOKEN`
   Actions secret from the local Cargo/Kellnr token via `gh secret set` (token

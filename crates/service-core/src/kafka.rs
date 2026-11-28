@@ -109,6 +109,40 @@ pub struct KafkaPublisher {
     pub config: Arc<KafkaConfig>,
 }
 
+/// Builds the librdkafka client configuration, including TLS and SASL.
+fn build_client_config(config: &KafkaConfig) -> rdkafka::config::ClientConfig {
+    let mut client_config = rdkafka::config::ClientConfig::new();
+    client_config.set("bootstrap.servers", &config.broker_url);
+    client_config.set("compression.type", &config.compression);
+    client_config.set("linger.ms", config.linger_ms.to_string());
+    client_config.set("request.timeout.ms", config.timeout_ms.to_string());
+    client_config.set("retries", config.retries.to_string());
+    client_config.set("security.protocol", &config.security_protocol);
+    if let Some(path) = config.ssl_ca_location.as_deref().filter(|v| !v.is_empty()) {
+        client_config.set("ssl.ca.location", path);
+    }
+    if let Some(path) = config
+        .ssl_certificate_location
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
+        client_config.set("ssl.certificate.location", path);
+    }
+    if let Some(path) = config.ssl_key_location.as_deref().filter(|v| !v.is_empty()) {
+        client_config.set("ssl.key.location", path);
+    }
+    if let Some(mechanism) = config.sasl_mechanism.as_deref().filter(|v| !v.is_empty()) {
+        client_config.set("sasl.mechanism", mechanism);
+    }
+    if let Some(username) = config.sasl_username.as_deref().filter(|v| !v.is_empty()) {
+        client_config.set("sasl.username", username);
+    }
+    if let Some(password) = config.sasl_password.as_deref().filter(|v| !v.is_empty()) {
+        client_config.set("sasl.password", password);
+    }
+    client_config
+}
+
 impl KafkaPublisher {
     /// Creates a new KafkaPublisher
     ///
@@ -120,14 +154,7 @@ impl KafkaPublisher {
     ///
     /// Result containing the initialized publisher or error
     pub async fn new(config: KafkaConfig) -> Result<Self, KafkaError> {
-        use rdkafka::config::ClientConfig;
-
-        let mut client_config = ClientConfig::new();
-        client_config.set("bootstrap.servers", &config.broker_url);
-        client_config.set("compression.type", &config.compression);
-        client_config.set("linger.ms", config.linger_ms.to_string());
-        client_config.set("request.timeout.ms", config.timeout_ms.to_string());
-        client_config.set("retries", config.retries.to_string());
+        let client_config = build_client_config(&config);
 
         let producer = client_config
             .create::<rdkafka::producer::FutureProducer>()
@@ -306,5 +333,76 @@ mod tests {
 
         // Should be valid RFC3339 format
         assert!(chrono::DateTime::parse_from_rfc3339(&event.time).is_ok());
+    }
+
+    fn test_kafka_config() -> KafkaConfig {
+        KafkaConfig {
+            broker_url: "kafka:9092".to_string(),
+            topic: "events".to_string(),
+            event_name: "com.example.test".to_string(),
+            compression: "snappy".to_string(),
+            linger_ms: 5,
+            retries: 3,
+            timeout_ms: 10000,
+            security_protocol: "PLAINTEXT".to_string(),
+            ssl_ca_location: None,
+            ssl_certificate_location: None,
+            ssl_key_location: None,
+            sasl_mechanism: None,
+            sasl_username: None,
+            sasl_password: None,
+        }
+    }
+
+    #[test]
+    fn test_build_client_config_plaintext() {
+        let config = test_kafka_config();
+        let client = build_client_config(&config);
+
+        assert_eq!(client.get("security.protocol"), Some("PLAINTEXT"));
+        assert_eq!(client.get("ssl.ca.location"), None);
+        assert_eq!(client.get("sasl.mechanism"), None);
+    }
+
+    #[test]
+    fn test_build_client_config_tls() {
+        let mut config = test_kafka_config();
+        config.security_protocol = "SSL".to_string();
+        config.ssl_ca_location = Some("/etc/secrets/kafka-ca/ca.crt".to_string());
+        config.ssl_certificate_location = Some("/etc/secrets/kafka-client/tls.crt".to_string());
+        config.ssl_key_location = Some("/etc/secrets/kafka-client/tls.key".to_string());
+
+        let client = build_client_config(&config);
+
+        assert_eq!(client.get("security.protocol"), Some("SSL"));
+        assert_eq!(
+            client.get("ssl.ca.location"),
+            Some("/etc/secrets/kafka-ca/ca.crt")
+        );
+        assert_eq!(
+            client.get("ssl.certificate.location"),
+            Some("/etc/secrets/kafka-client/tls.crt")
+        );
+        assert_eq!(
+            client.get("ssl.key.location"),
+            Some("/etc/secrets/kafka-client/tls.key")
+        );
+    }
+
+    #[test]
+    fn test_build_client_config_sasl_ssl() {
+        let mut config = test_kafka_config();
+        config.security_protocol = "SASL_SSL".to_string();
+        config.ssl_ca_location = Some("/etc/secrets/kafka-ca/ca.crt".to_string());
+        config.sasl_mechanism = Some("SCRAM-SHA-512".to_string());
+        config.sasl_username = Some("user".to_string());
+        config.sasl_password = Some("secret".to_string());
+
+        let client = build_client_config(&config);
+
+        assert_eq!(client.get("security.protocol"), Some("SASL_SSL"));
+        assert_eq!(client.get("sasl.mechanism"), Some("SCRAM-SHA-512"));
+        assert_eq!(client.get("sasl.username"), Some("user"));
+        assert_eq!(client.get("sasl.password"), Some("secret"));
     }
 }

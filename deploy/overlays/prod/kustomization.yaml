@@ -69,8 +69,86 @@ patches:
               name: "{{ ceph_object_store_name }}"
               namespace: "{{ ceph_object_store_namespace }}"
             notifications:
-              put:
-                enabled: true
+              enabled: true
+              events:
+                put:
+                  enabled: {{ bucket_notification_put }}
+{% if bucket_notification_put %}
+                  partitions: {{ bucket_notification_put_partitions }}
+{% if bucket_notification_put_prefix != "" %}
+                  prefix: "{{ bucket_notification_put_prefix }}"
+{% endif %}
+{% if bucket_notification_put_suffix != "" %}
+                  suffix: "{{ bucket_notification_put_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_put_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                delete:
+                  enabled: {{ bucket_notification_delete }}
+{% if bucket_notification_delete %}
+                  partitions: {{ bucket_notification_delete_partitions }}
+{% if bucket_notification_delete_prefix != "" %}
+                  prefix: "{{ bucket_notification_delete_prefix }}"
+{% endif %}
+{% if bucket_notification_delete_suffix != "" %}
+                  suffix: "{{ bucket_notification_delete_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_delete_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                post:
+                  enabled: {{ bucket_notification_post }}
+{% if bucket_notification_post %}
+                  partitions: {{ bucket_notification_post_partitions }}
+{% if bucket_notification_post_prefix != "" %}
+                  prefix: "{{ bucket_notification_post_prefix }}"
+{% endif %}
+{% if bucket_notification_post_suffix != "" %}
+                  suffix: "{{ bucket_notification_post_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_post_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                copy:
+                  enabled: {{ bucket_notification_copy }}
+{% if bucket_notification_copy %}
+                  partitions: {{ bucket_notification_copy_partitions }}
+{% if bucket_notification_copy_prefix != "" %}
+                  prefix: "{{ bucket_notification_copy_prefix }}"
+{% endif %}
+{% if bucket_notification_copy_suffix != "" %}
+                  suffix: "{{ bucket_notification_copy_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_copy_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                multipart:
+                  enabled: {{ bucket_notification_multipart }}
+{% if bucket_notification_multipart %}
+                  partitions: {{ bucket_notification_multipart_partitions }}
+{% if bucket_notification_multipart_prefix != "" %}
+                  prefix: "{{ bucket_notification_multipart_prefix }}"
+{% endif %}
+{% if bucket_notification_multipart_suffix != "" %}
+                  suffix: "{{ bucket_notification_multipart_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_multipart_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                delete-marker:
+                  enabled: {{ bucket_notification_delete_marker }}
+{% if bucket_notification_delete_marker %}
+                  partitions: {{ bucket_notification_delete_marker_partitions }}
+{% if bucket_notification_delete_marker_prefix != "" %}
+                  prefix: "{{ bucket_notification_delete_marker_prefix }}"
+{% endif %}
+{% if bucket_notification_delete_marker_suffix != "" %}
+                  suffix: "{{ bucket_notification_delete_marker_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_delete_marker_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
             {% endif %}
           {% endif %}
       {% endif %}

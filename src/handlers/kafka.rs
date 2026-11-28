@@ -41,6 +41,13 @@ mod tests {
             linger_ms: 5,
             retries: 3,
             timeout_ms: 10000,
+            security_protocol: "PLAINTEXT".to_string(),
+            ssl_ca_location: None,
+            ssl_certificate_location: None,
+            ssl_key_location: None,
+            sasl_mechanism: None,
+            sasl_username: None,
+            sasl_password: None,
         };
 
         let event = create_dummy_event(&config, "/api/v1/handler");

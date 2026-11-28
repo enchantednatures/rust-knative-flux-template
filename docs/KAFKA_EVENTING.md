@@ -86,6 +86,38 @@ application namespace.
 
 ### What gets rendered
 
+{% if kafka_managed_tls %}
+- **{{ kafka_managed_provider }}** cluster `<project>-kafka` (1 replica, 10Gi on
+  the `{{ kafka_storage_class }}` StorageClass) with a TLS Kafka listener on
+  `9093`. The chart creates a cert-manager self-signed Issuer, a CA
+  Certificate (`<project>-kafka-ca`), and a CA Issuer, then wires that issuer
+  into the provider. The app and KafkaSource trust `<project>-kafka-ca`.
+- **KafkaSource** `<project>-{{ kafka_topic }}-kafka-source` that consumes the
+  topic and sinks **directly to the `app` Knative Service** over TLS.
+- Per-event notification queues (when enabled) also render a KafkaSource that
+  sinks directly to its configured service.
+
+TLS is the default. The chart does **not** render a Knative Kafka Broker in TLS
+mode: the Broker's auth Secret needs both `protocol` and `ca.crt`, which cannot
+be composed declaratively from a cert-manager Secret. KafkaSource delivery is
+used instead.
+
+{% if kafka_managed_provider == "strimzi" %}
+The Strimzi bootstrap Service is
+`<project>-kafka-kafka-bootstrap.<namespace>.svc.cluster.local:9093`, and the
+app receives `APP__KAFKA__BROKER_URL=<project>-kafka-kafka-bootstrap:9093`
+with `APP__KAFKA__SECURITY_PROTOCOL=SSL`.
+{% else %}
+The Redpanda bootstrap Service is
+`<project>-kafka.<namespace>.svc.cluster.local:9093`, and the app receives
+`APP__KAFKA__BROKER_URL=<project>-kafka:9093` with
+`APP__KAFKA__SECURITY_PROTOCOL=SSL`.
+{% endif %}
+
+Set `kafka_managed_tls=false` at generation time to keep the plaintext
+Broker + Trigger path below.
+
+{% else %}
 - **{{ kafka_managed_provider }}** cluster `<project>-kafka` (1 replica, 10Gi on
   the `{{ kafka_storage_class }}` StorageClass, no TLS/SASL) plus the source
   **Topic** (`{{ kafka_topic }}`). Set `kafka_storage_class` at generation time;
@@ -112,12 +144,25 @@ The Redpanda bootstrap Service is
 {% endif %}
 
 **Flow:** `Kafka topic -> KafkaSource -> Broker -> Trigger -> app Knative Service`
+{% endif %}
 
 ### Prerequisites
 
 1. The operator for `{{ kafka_managed_provider }}` is installed.
+{% if kafka_managed_tls %}
+2. **cert-manager** installed. The chart creates the CA chain itself, so no
+   pre-existing issuer is required. If you provide `kafka_managed_tls_issuer`,
+   it must be able to sign a CA certificate.
+3. **Knative Kafka Source controller** installed (Eventing core + Kafka source
+   data plane). A Kafka Broker is not required in TLS mode.
+{% if kafka_managed_provider == "strimzi" %}
+4. Strimzi 1.3.1 or newer with the `CertManagerCaType` feature gate enabled
+   (the chart renders `clusterCa.type: cert-manager`).
+{% endif %}
+{% else %}
 2. **Knative Kafka Broker/controller** installed (Eventing core + Kafka broker
    and source data planes).
+{% endif %}
 {% if kafka_managed_provider == "redpanda" %}
 3. **Kyverno exception** when Kyverno runs with a privileged-container policy.
    The Redpanda operator always injects a privileged `tuning` init container.
@@ -179,55 +224,82 @@ pods above before retrying. Non-managed projects keep Helm's default.
 
 ### Environment overlays
 
-- `deploy/overlays/dev`, `staging`, and `prod` keep the managed cluster/Broker
-  and do not patch an external `bootstrapServers`.
+- `deploy/overlays/dev`, `staging`, and `prod` keep the managed cluster and do
+  not patch an external `bootstrapServers`. In TLS mode the KafkaSource sinks
+  directly to the app; in plaintext mode it sinks to the Broker.
 - `deploy/dev/app-overlay` is the **Kind fallback**: Kind has no Redpanda/Strimzi
   operator or Kafka Broker, so it removes `kafka.cluster`, `kafka.broker`, and
-  `kafka.triggers`, restores the KafkaSource `bootstrapServers` to
+  `kafka.triggers`, removes the managed TLS source settings and CA mounts,
+  restores the KafkaSource `bootstrapServers` to
   `kafka.kafka.svc.cluster.local:9092`, sets `sink: app`, and appends the local
   `APP__KAFKA__BROKER_URL`. `make local-up` therefore uses the local Kafka
-  StatefulSet from `deploy/dev/infrastructure/kafka.yaml`.
+  StatefulSet from `deploy/dev/infrastructure/kafka.yaml`. Kind always uses the
+  local plaintext broker; external Kafka TLS/SASL settings are not applied by
+  `make local-up`.
 
 {% if feature_s3 and feature_bucket_notifications %}
 ### Bucket notifications
 
 The project was generated with `feature_bucket_notifications=true`, so Ceph RGW
-object events are routed through the managed Kafka cluster:
+object events are published through the managed Kafka cluster. Each enabled
+event gets its own queue (Kafka topic) and its own KafkaSource; there is no
+Broker/Trigger in the notification path.
 
 ```
 S3 object put -> CephBucketNotification -> <project>-app-data-put
-  -> KafkaSource s3-events -> Broker -> filtered Trigger -> app
+  -> KafkaSource s3-app-data-put -> app
 ```
 
-- The chart renders a `CephBucketTopic`, a `CephBucketNotification`, and the
-  Kafka topic `{{ project_name | replace: "_", "-" }}-app-data-put` for the
-  `{{ project_name | replace: "_", "-" }}-app-data` bucket.
-- The HelmRelease adds a second KafkaSource
-  (`{{ project_name | replace: "_", "-" }}-s3-events-kafka-source`) and a
-  Trigger (`{{ project_name | replace: "_", "-" }}-s3-events-trigger`).
-- The Trigger filters on the S3 KafkaSource's CloudEvent `source`, which Knative
-  sets to
-  `/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: "_", "-" }}-s3-events-kafka-source#{{ project_name | replace: "_", "-" }}-app-data-put`.
-  Without the filter, the broker would deliver the main `{{ kafka_topic }}`
-  events to the app twice.
-- The source DLQ sets `env: []` because Knative >= 1.23 rejects the chart's
-  default `POD_NAME`/`POD_NAMESPACE` `fieldRef` entries.
+The chart renders, per enabled event:
+
+- a `CephBucketTopic` and `CephBucketNotification`
+- a Kafka topic with the event's `partitions` count
+- a `KafkaSource` (`<project>-s3-app-data-<event>`) sinking directly to the
+  event's `sink` service
+
+Per-event settings:
+
+- `partitions` — topic partition count (default 3)
+- `prefix` / `suffix` — S3 key filters
+- `sink` — services key that receives the event (default `app`)
+- `topicNameTemplate` — `{release}`, `{bucket}`, `{event}`, `{namespace}`
+
+`put` and `delete` are enabled by default; `post`, `copy`, `multipart`, and
+`delete-marker` are opt-in:
+
+```yaml
+notifications:
+  enabled: true
+  events:
+    put:
+      enabled: true
+      partitions: 3
+      prefix: uploads/
+      sink: app
+    delete:
+      enabled: true
+      partitions: 1
+      suffix: .log
+      sink: app
+```
 
 Prerequisites: Rook's `CephBucketTopic`/`CephBucketNotification` CRDs and a
 `CephObjectStore` named `{{ ceph_object_store_name }}` in
-`{{ ceph_object_store_namespace }}`. The chart marks the feature Experimental;
-the managed cluster is plaintext/no-auth by design, and authenticated or TLS
-notifications are not supported yet.
+`{{ ceph_object_store_namespace }}`. When managed Kafka uses TLS, the chart sets
+`useSSL: true` and `disableVerifySSL: true` on the Ceph topic because Rook's
+Kafka endpoint has no CA field; the RGW connection is encrypted but does not
+verify the broker certificate.
 
-Kind does not run Rook/RGW or the Redpanda operator, so `make local-up` does not
-exercise this path. `deploy/dev/app-overlay` removes the bucket claims.
-{% endif %}
+Kind does not run Rook/RGW or the managed Kafka operator, so `make local-up`
+does not exercise this path. `deploy/dev/app-overlay` removes the bucket claims;
+the chart therefore renders no notification sources or topics.
 
 ### Chart support
 
 Managed Kafka requires the ksvc chart that ships the `kafka.cluster`,
 `kafka.broker`, and `kafka.triggers` values (`ksvc >= 0.10.0`; the template
-pins `1.2.1`). Bucket notifications require `ksvc >= 1.2.1`.
+pins `1.4.0`). Bucket notifications and managed Kafka TLS require `ksvc >= 1.4.0`.
+{% endif %}
 {% endif %}
 
 ---

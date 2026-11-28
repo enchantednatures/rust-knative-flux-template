@@ -5,7 +5,7 @@
 > `docs/SERVICE_TEMPLATE.md`; this file fixes the deploy-side contract that both
 > the first service and every added service must follow.
 
-The template consumes the pinned `ksvc` chart (`ksvc` **1.2.1**, OCI
+The template consumes the pinned `ksvc` chart (`ksvc` **1.4.0**, OCI
 `oci://ghcr.io/enchantednatures/charts`) through `deploy/chart`. Do not edit the
 chart repository and do not downgrade the pin.
 
@@ -18,7 +18,7 @@ deploy/
 ├── base/                       # first-service HelmRelease
 ├── overlays/{dev,staging,prod} # first-service per-env values/patches
 ├── components/                 # shared cluster-wide app infra (postgres, flagger)
-├── chart/                      # local wrapper chart -> ksvc 1.2.1
+├── chart/                      # local wrapper chart -> ksvc 1.4.0
 ├── dev/app-overlay/            # Kind-only adjustments
 └── flux/                       # Flux Kustomizations + image automation
 ```
@@ -73,7 +73,7 @@ Rules:
 ## 3. HelmRelease naming and values
 
 Each service is one HelmRelease rendering the same local `deploy/chart` (ksvc
-1.2.1). The release object and the rendered Knative/Deployment name are tied
+1.4.0). The release object and the rendered Knative/Deployment name are tied
 together:
 
 ```yaml
@@ -182,7 +182,7 @@ Marker contract (in each service HelmRelease):
   Flux track an image that may never exist when the repository name differs
   from the project slug.
 
-## 7. Chart 1.2.1 constraints that shape the contract
+## 7. Chart 1.4.0 constraints that shape the contract
 
 - `workload.type: Knative` renders a Knative Service; `workload.type: Deployment`
   renders `apps/v1 Deployment` + core `v1 Service` + optional
@@ -191,7 +191,7 @@ Marker contract (in each service HelmRelease):
 - `flagger.enabled` is Knative-only; the chart fails closed for a Deployment.
 - `kafka.sources.*.sink` must reference a Knative service; the chart fails
   closed for a Deployment sink.
-- The template does not use the 1.2.1 `pingsources` addition.
+- The template does not use the 1.4.0 `pingsources` addition.
 
 ## 8. Verification for a composed project
 
@@ -206,12 +206,12 @@ kubectl kustomize deploy/overlays/prod
 # First-service chart resolves the pin. Run this in the generated project:
 # in the template source, deploy/chart/Chart.yaml is still Liquid and cannot
 # be parsed by Helm before generation.
-helm dependency build deploy/chart          # resolves ksvc 1.2.1
+helm dependency build deploy/chart          # resolves ksvc 1.4.0
 
 # Kind overlay keeps working with a service that has no objectBuckets.
 kubectl kustomize deploy/dev/app-overlay
 ```
 
-The first service's dev/staging/prod renders are identical on ksvc 1.2.1 and
-0.8.0 apart from the whitespace the 1.2.1 loader inserts for the unused
+The first service's dev/staging/prod renders are identical on ksvc 1.4.0 and
+0.8.0 apart from the whitespace the 1.4.0 loader inserts for the unused
 PingSource block; no functional fields change.

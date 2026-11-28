@@ -48,6 +48,33 @@ export APP__KAFKA__TOPIC="events-prod"
 export APP__KAFKA__EVENT_NAME="com.mycompany.service.v1.event.published"
 ```
 
+### TLS and SASL
+
+The publisher supports the same TLS/SASL settings as the consumer:
+
+```bash
+# Server-authenticated TLS
+export APP__KAFKA__SECURITY_PROTOCOL="SSL"
+export APP__KAFKA__SSL_CA_LOCATION="/etc/secrets/kafka-ca/ca.crt"
+
+# mTLS (client certificate)
+export APP__KAFKA__SECURITY_PROTOCOL="SSL"
+export APP__KAFKA__SSL_CA_LOCATION="/etc/secrets/kafka-ca/ca.crt"
+export APP__KAFKA__SSL_CERTIFICATE_LOCATION="/etc/secrets/kafka-client/tls.crt"
+export APP__KAFKA__SSL_KEY_LOCATION="/etc/secrets/kafka-client/tls.key"
+
+# SASL_SSL
+export APP__KAFKA__SECURITY_PROTOCOL="SASL_SSL"
+export APP__KAFKA__SSL_CA_LOCATION="/etc/secrets/kafka-ca/ca.crt"
+export APP__KAFKA__SASL_MECHANISM="SCRAM-SHA-512"
+export APP__KAFKA__SASL_USERNAME="user"
+export APP__KAFKA__SASL_PASSWORD="password"
+```
+
+`security_protocol` accepts `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, and
+`SASL_SSL`. The generated managed-Kafka project sets `SSL` automatically and
+mounts the chart-created CA at `/etc/secrets/kafka-ca/ca.crt`.
+
 ## Publishing Events from Handlers
 
 ### Simple Example: Publishing from HTTP Handler

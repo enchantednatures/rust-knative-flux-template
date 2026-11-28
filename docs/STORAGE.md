@@ -327,43 +327,52 @@ The project was generated with `feature_bucket_notifications=true`, so the
 `{{ project_name | replace: "_", "-" }}-app-data` bucket publishes Ceph RGW
 object events to the managed Kafka cluster.
 
-The chart adds to the bucket entry:
+The chart adds per-event settings to the bucket entry:
 
 ```yaml
 objectStore:
   name: "{{ ceph_object_store_name }}"
   namespace: "{{ ceph_object_store_namespace }}"
 notifications:
-  put:
-    enabled: true
+  enabled: true
+  events:
+    put:
+      enabled: true
+      partitions: {{ bucket_notification_put_partitions }}
+      {% if bucket_notification_put_prefix != "" %}prefix: "{{ bucket_notification_put_prefix }}"
+      {% endif %}{% if bucket_notification_put_suffix != "" %}suffix: "{{ bucket_notification_put_suffix }}"
+      {% endif %}sink: "{{ bucket_notification_put_sink }}"
+    delete:
+      enabled: {{ bucket_notification_delete }}
+      {% if bucket_notification_delete %}partitions: {{ bucket_notification_delete_partitions }}
+      {% if bucket_notification_delete_prefix != "" %}prefix: "{{ bucket_notification_delete_prefix }}"
+      {% endif %}{% if bucket_notification_delete_suffix != "" %}suffix: "{{ bucket_notification_delete_suffix }}"
+      {% endif %}sink: "{{ bucket_notification_delete_sink }}"
+      {% endif %}
 ```
 
-That renders a `CephBucketTopic`, a `CephBucketNotification`, and a Kafka topic
-`{{ project_name | replace: "_", "-" }}-app-data-put`. The HelmRelease adds:
-
-- **KafkaSource** `{{ project_name | replace: "_", "-" }}-s3-events-kafka-source`
-  consuming `{{ project_name | replace: "_", "-" }}-app-data-put` and sinking
-  to the Broker.
-- **Trigger** `{{ project_name | replace: "_", "-" }}-s3-events-trigger` with a
-  filter on the KafkaSource's CloudEvent `source`
-  (`/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: "_", "-" }}-s3-events-kafka-source#{{ project_name | replace: "_", "-" }}-app-data-put`),
-  routing the notification to the app. The filter is required: an unfiltered
-  trigger would also deliver the main `{{ kafka_topic }}` events a second time.
+Each enabled event creates its own `CephBucketTopic`, `CephBucketNotification`,
+Kafka topic, and `KafkaSource`. The KafkaSource sinks directly to the event's
+`sink` service; no Broker/Trigger is involved. `put` and `delete` are on by
+default, the other events are opt-in.
 
 Prerequisites:
 
 - Rook's `CephBucketTopic` and `CephBucketNotification` CRDs.
 - A `CephObjectStore` named `{{ ceph_object_store_name }}` in
   `{{ ceph_object_store_namespace }}`.
-- The managed Kafka cluster (plaintext, no auth). The chart rejects bucket
-  notifications against external, authenticated, or TLS Kafka.
+- The managed Kafka cluster (`kafka.cluster.enabled=true`) with
+  `kafka.cluster.auth.type=none`.
 - `kafka.cluster.topics.create=true` (the generated managed cluster).
 
+With managed Kafka TLS, the Ceph topic uses `useSSL: true` and
+`disableVerifySSL: true` because Rook's Kafka endpoint has no CA field. The RGW
+connection is encrypted but does not verify the broker certificate.
+
 The app handler accepts the S3 notification JSON (`Records[]`) in addition to
-the normal ping payload. The chart marks the feature Experimental; authenticated
-or TLS Kafka notifications are not supported yet. Kind does not run Rook/RGW or
-the Redpanda operator, so `deploy/dev/app-overlay` removes the bucket claims and
-this path is not exercised by `make local-up`.
+the normal ping payload. Kind does not run Rook/RGW or the managed Kafka
+operator, so `deploy/dev/app-overlay` removes the bucket claims and this path is
+not exercised by `make local-up`.
 
 {% endif %}
 ### RustFS in Kubernetes

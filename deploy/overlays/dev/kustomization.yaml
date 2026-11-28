@@ -136,7 +136,48 @@ patches:
           {% endif %}
           {% if event_source_kafka and workload_type == "Knative" %}
           - name: APP__KAFKA__BROKER_URL
-            value: "{% if kafka_managed_cluster %}{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
+            value: "{% if kafka_managed_cluster %}{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:{% if kafka_managed_tls %}9093{% else %}9092{% endif %}{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}{% else %}kafka.kafka.svc.cluster.local:9092{% endif %}"
+          {% if feature_kafka and kafka_managed_cluster and kafka_managed_tls %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "SSL"
+          - name: APP__KAFKA__SSL_CA_LOCATION
+            value: "/etc/secrets/kafka-ca/ca.crt"
+          {% if kafka_managed_tls_client_auth %}
+          - name: APP__KAFKA__SSL_CERTIFICATE_LOCATION
+            value: "/etc/secrets/kafka-client/tls.crt"
+          - name: APP__KAFKA__SSL_KEY_LOCATION
+            value: "/etc/secrets/kafka-client/tls.key"
+          {% endif %}
+          {% endif %}
+          {% if feature_kafka and kafka_external_tls %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "{% if kafka_external_sasl %}SASL_SSL{% else %}SSL{% endif %}"
+          - name: APP__KAFKA__SSL_CA_LOCATION
+            value: "/etc/secrets/kafka-ca/{{ kafka_external_ca_key }}"
+          {% if kafka_external_client_cert_secret and kafka_external_client_key_secret %}
+          - name: APP__KAFKA__SSL_CERTIFICATE_LOCATION
+            value: "/etc/secrets/kafka-client-cert/{{ kafka_external_client_cert_key }}"
+          - name: APP__KAFKA__SSL_KEY_LOCATION
+            value: "/etc/secrets/kafka-client-key/{{ kafka_external_client_key_key }}"
+          {% endif %}
+          {% elsif feature_kafka and kafka_external_sasl %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "SASL_PLAINTEXT"
+          {% endif %}
+          {% if feature_kafka and kafka_external_sasl %}
+          - name: APP__KAFKA__SASL_MECHANISM
+            value: "{{ kafka_external_sasl_mechanism }}"
+          - name: APP__KAFKA__SASL_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: "{{ kafka_external_sasl_user_secret }}"
+                key: "{{ kafka_external_sasl_user_key }}"
+          - name: APP__KAFKA__SASL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ kafka_external_sasl_password_secret }}"
+                key: "{{ kafka_external_sasl_password_key }}"
+          {% endif %}
           {% endif %}
 
       {% if event_source_kafka and workload_type == "Knative" %}
@@ -181,9 +222,87 @@ patches:
               name: "{{ ceph_object_store_name }}"
               namespace: "{{ ceph_object_store_namespace }}"
             notifications:
-              put:
-                enabled: true
-            {%- endif %}
+              enabled: true
+              events:
+                put:
+                  enabled: {{ bucket_notification_put }}
+{% if bucket_notification_put %}
+                  partitions: {{ bucket_notification_put_partitions }}
+{% if bucket_notification_put_prefix != "" %}
+                  prefix: "{{ bucket_notification_put_prefix }}"
+{% endif %}
+{% if bucket_notification_put_suffix != "" %}
+                  suffix: "{{ bucket_notification_put_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_put_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                delete:
+                  enabled: {{ bucket_notification_delete }}
+{% if bucket_notification_delete %}
+                  partitions: {{ bucket_notification_delete_partitions }}
+{% if bucket_notification_delete_prefix != "" %}
+                  prefix: "{{ bucket_notification_delete_prefix }}"
+{% endif %}
+{% if bucket_notification_delete_suffix != "" %}
+                  suffix: "{{ bucket_notification_delete_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_delete_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                post:
+                  enabled: {{ bucket_notification_post }}
+{% if bucket_notification_post %}
+                  partitions: {{ bucket_notification_post_partitions }}
+{% if bucket_notification_post_prefix != "" %}
+                  prefix: "{{ bucket_notification_post_prefix }}"
+{% endif %}
+{% if bucket_notification_post_suffix != "" %}
+                  suffix: "{{ bucket_notification_post_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_post_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                copy:
+                  enabled: {{ bucket_notification_copy }}
+{% if bucket_notification_copy %}
+                  partitions: {{ bucket_notification_copy_partitions }}
+{% if bucket_notification_copy_prefix != "" %}
+                  prefix: "{{ bucket_notification_copy_prefix }}"
+{% endif %}
+{% if bucket_notification_copy_suffix != "" %}
+                  suffix: "{{ bucket_notification_copy_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_copy_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                multipart:
+                  enabled: {{ bucket_notification_multipart }}
+{% if bucket_notification_multipart %}
+                  partitions: {{ bucket_notification_multipart_partitions }}
+{% if bucket_notification_multipart_prefix != "" %}
+                  prefix: "{{ bucket_notification_multipart_prefix }}"
+{% endif %}
+{% if bucket_notification_multipart_suffix != "" %}
+                  suffix: "{{ bucket_notification_multipart_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_multipart_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+                delete-marker:
+                  enabled: {{ bucket_notification_delete_marker }}
+{% if bucket_notification_delete_marker %}
+                  partitions: {{ bucket_notification_delete_marker_partitions }}
+{% if bucket_notification_delete_marker_prefix != "" %}
+                  prefix: "{{ bucket_notification_delete_marker_prefix }}"
+{% endif %}
+{% if bucket_notification_delete_marker_suffix != "" %}
+                  suffix: "{{ bucket_notification_delete_marker_suffix }}"
+{% endif %}
+                  sink: "{{ bucket_notification_delete_marker_sink }}"
+                  topicNameTemplate: "{{ bucket_notification_topic_template }}"
+{% endif %}
+  {% endif %}
           {%- endif %}
   {% endif %}
 

@@ -52,8 +52,14 @@ patches:
         path: /spec/values/kafka/broker
       - op: remove
         path: /spec/values/kafka/cluster
+      {% if kafka_managed_tls == false %}
       - op: remove
         path: /spec/values/kafka/triggers
+      {% endif %}
+      {% if kafka_managed_tls %}
+      - op: remove
+        path: /spec/values/kafka/sources/{{ kafka_topic }}/net
+      {% endif %}
       - op: add
         path: /spec/values/kafka/sources/{{ kafka_topic }}/bootstrapServers
         value:
@@ -61,16 +67,47 @@ patches:
       - op: add
         path: /spec/values/kafka/sources/{{ kafka_topic }}/sink
         value: app
-      {% if feature_s3 and feature_bucket_notifications %}
-      # Kind has no Rook/RGW and no managed Broker, so the notification source
-      # cannot deliver. Clearing objectBuckets above also drops the topic.
+      {% if kafka_managed_tls %}
+      # The local broker is plaintext, so drop the managed-TLS CA mounts.
+      {% if feature_postgres %}
+      - op: replace
+        path: /spec/values/services/app/volumeMounts
+        value:
+          - name: postgres-ca
+            mountPath: /etc/secrets/pg-ca
+            readOnly: true
+      - op: replace
+        path: /spec/values/services/app/volumes
+        value:
+          - name: postgres-ca
+            secret:
+              secretName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+              items:
+                - key: ca.crt
+                  path: ca.crt
+      {% else %}
       - op: remove
-        path: /spec/values/kafka/sources/s3-events
+        path: /spec/values/services/app/volumeMounts
+      - op: remove
+        path: /spec/values/services/app/volumes
+      {% endif %}
       {% endif %}
 {% endif %}
 {% endif %}
 
 {% if event_source_kafka and kafka_managed_cluster and workload_type == "Knative" %}
+{% if kafka_managed_tls %}
+# Kind runs a plaintext Kafka StatefulSet. These values neutralise the
+# managed-TLS env entries inherited from the dev overlay without duplicating
+# the whole env list.
+configMapGenerator:
+  - name: kafka-kind-plaintext
+    literals:
+      - protocol=PLAINTEXT
+      - ca=
+generatorOptions:
+  disableNameSuffixHash: true
+{% endif %}
 # The dev overlay sets APP__KAFKA__BROKER_URL to the managed short name
 # (`<project>-kafka:9093`) inside its wholesale env replace. A JSON6902 `add`
 # would append a second entry with the same name, which the API server rejects
@@ -88,4 +125,48 @@ replacements:
           name: {{ project_name | replace: "_", "-" }}
         fieldPaths:
           - spec.values.services.app.env.[name=APP__KAFKA__BROKER_URL].value
+  {% if kafka_managed_tls %}
+  - source:
+      kind: ConfigMap
+      name: kafka-kind-plaintext
+      fieldPath: data.protocol
+    targets:
+      - select:
+          kind: HelmRelease
+          name: {{ project_name | replace: "_", "-" }}
+        fieldPaths:
+          - spec.values.services.app.env.[name=APP__KAFKA__SECURITY_PROTOCOL].value
+  - source:
+      kind: ConfigMap
+      name: kafka-kind-plaintext
+      fieldPath: data.ca
+    targets:
+      - select:
+          kind: HelmRelease
+          name: {{ project_name | replace: "_", "-" }}
+        fieldPaths:
+          - spec.values.services.app.env.[name=APP__KAFKA__SSL_CA_LOCATION].value
+  {% if kafka_managed_tls_client_auth %}
+  - source:
+      kind: ConfigMap
+      name: kafka-kind-plaintext
+      fieldPath: data.ca
+    targets:
+      - select:
+          kind: HelmRelease
+          name: {{ project_name | replace: "_", "-" }}
+        fieldPaths:
+          - spec.values.services.app.env.[name=APP__KAFKA__SSL_CERTIFICATE_LOCATION].value
+  - source:
+      kind: ConfigMap
+      name: kafka-kind-plaintext
+      fieldPath: data.ca
+    targets:
+      - select:
+          kind: HelmRelease
+          name: {{ project_name | replace: "_", "-" }}
+        fieldPaths:
+          - spec.values.services.app.env.[name=APP__KAFKA__SSL_KEY_LOCATION].value
+  {% endif %}
+  {% endif %}
 {% endif %}

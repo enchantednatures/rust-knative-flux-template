@@ -65,7 +65,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Optional infrastructure (enabled by feature)
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "chrono", "json"], optional = true }
 opendal = { version = "0.55", default-features = false, features = ["services-s3", "services-memory"], optional = true }
-rdkafka = { version = "0.40", features = ["cmake-build", "tracing"], optional = true }
+rdkafka = { version = "0.40", features = ["cmake-build", "tracing", "ssl", "sasl"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -20,7 +20,7 @@ A production-ready Rust microservice for {% if workload_type == "Deployment" %}l
 - 🔁 **Topic-Per-Source Pattern**: One KafkaSource per topic for independent scaling
 - ⚰️ **Dead Letter Queue**: Automatic DLQ handling for failed events
 {%- if kafka_managed_cluster %}
-- 🐉 **Managed Kafka**: Chart-rendered Redpanda cluster, Knative Kafka Broker, and Trigger
+- 🐉 **Managed Kafka**: Chart-rendered Redpanda/Strimzi cluster with cert-manager TLS and KafkaSource delivery
 {%- endif %}
 {%- if feature_s3 and feature_bucket_notifications %}
 - 🪣 **Bucket Notifications**: Ceph RGW object events published to Kafka and routed to the app
@@ -197,9 +197,30 @@ See `docs/STORAGE.md` for the full contract and the external-S3 escape hatch.
 This project was generated with `kafka_managed_cluster=true` and
 `kafka_managed_provider={{ kafka_managed_provider }}`, so the app chart deploys
 Kafka itself: a **{{ kafka_managed_provider }} cluster**
-(`{{ project_name | replace: "_", "-" }}-kafka`), a **Knative Kafka Broker**
-(`{{ project_name | replace: "_", "-" }}-kafka-broker`), a **Trigger** routing
-`{{ kafka_topic }}` to the app, and the **KafkaSource**.
+(`{{ project_name | replace: "_", "-" }}-kafka`) plus the **KafkaSource**.
+
+{% if kafka_managed_tls %}
+TLS is enabled by default. The chart creates a cert-manager self-signed Issuer,
+a CA Certificate (`{{ project_name | replace: "_", "-" }}-kafka-ca`), and a CA
+Issuer, then wires the provider to that issuer. The app and KafkaSource trust
+the CA; the app receives `APP__KAFKA__SECURITY_PROTOCOL=SSL`.
+
+{% if kafka_managed_provider == "strimzi" %}
+The Strimzi bootstrap Service is
+`{{ project_name | replace: "_", "-" }}-kafka-kafka-bootstrap:9093`, and the app's
+`APP__KAFKA__BROKER_URL` uses the same short name.
+{% else %}
+The Redpanda bootstrap Service is
+`{{ project_name | replace: "_", "-" }}-kafka:9093`, and the app's
+`APP__KAFKA__BROKER_URL` uses the same short name.
+{% endif %}
+In TLS mode the chart does not render a Knative Broker: the KafkaSource sinks
+directly to the app. Set `kafka_managed_tls=false` to keep the plaintext
+Broker + Trigger path.
+{% else %}
+The chart also renders a **Knative Kafka Broker**
+(`{{ project_name | replace: "_", "-" }}-kafka-broker`) and a **Trigger** routing
+`{{ kafka_topic }}` to the app.
 
 {% if kafka_managed_provider == "strimzi" %}
 The Strimzi bootstrap Service is
@@ -213,11 +234,15 @@ The Redpanda bootstrap Service is
 The chart derives the bootstrap address from the cluster name and namespace, so
 no overlay sets `bootstrapServers`; with the Broker enabled the KafkaSource
 sinks to the Broker instead of the app.
+{% endif %}
 
 Prerequisites on a real cluster:
 
 {% if kafka_managed_provider == "strimzi" %}
-- The [Strimzi operator](https://strimzi.io/documentation/) is installed.
+- The [Strimzi operator](https://strimzi.io/documentation/) is installed.{% if kafka_managed_tls %} TLS mode requires Strimzi 1.3.1+ with the `CertManagerCaType` feature gate.{% endif %}
+{% if kafka_managed_tls %}
+- **cert-manager** is installed. The chart creates the CA chain itself.
+{% endif %}
 {% else %}
 - The [Redpanda operator](https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/kubernetes-deploy/)
   (Redpanda CRDs) is installed.
@@ -225,37 +250,44 @@ Prerequisites on a real cluster:
   `deploy/kyverno/policyexception.yaml` in Kyverno's exception namespace
   (`kyverno-system` in the reference cluster), not in the app namespace.
 {% endif %}
+{% if kafka_managed_tls %}
+- The Knative Kafka Source controller is installed (no Broker required).
+{% else %}
 - The Knative Kafka Broker/controller is installed.
+{% endif %}
 
 {% if feature_s3 and feature_bucket_notifications %}
 ### Bucket notifications
 
-The `<project>-app-data` bucket publishes `put` events to the managed Kafka
-cluster. The chart creates a `CephBucketTopic`, a `CephBucketNotification`, and
-the Kafka topic `<project>-app-data-put`. The HelmRelease adds an `s3-events`
-KafkaSource that sinks to the Broker, plus an `s3-events` Trigger filtered on
-the KafkaSource's CloudEvent `source`
-(`/apis/v1/namespaces/<namespace>/kafkasources/<project>-s3-events-kafka-source#<project>-app-data-put`)
-that routes the notification to the app.
+The `<project>-app-data` bucket publishes Ceph RGW object events through the
+managed Kafka cluster. Each enabled event gets its own Kafka topic and
+KafkaSource, sinking directly to its configured service.
+
+Per-event settings: `partitions`, `prefix`/`suffix` filters, `sink`, and
+`topicNameTemplate` (`{release}`, `{bucket}`, `{event}`, `{namespace}`). `put`
+and `delete` are on by default; `post`, `copy`, `multipart`, and `delete-marker`
+are opt-in.
 
 Prerequisites:
 
 - Rook's `CephBucketTopic` / `CephBucketNotification` CRDs.
 - A `CephObjectStore` named `{{ ceph_object_store_name }}` in
   `{{ ceph_object_store_namespace }}`.
-- The managed Kafka cluster (plaintext/no-auth listeners), which this project
-  generates.
+- The managed Kafka cluster (`kafka.cluster.enabled=true`,
+  `kafka.cluster.auth.type=none`).
 
-The chart marks bucket notifications Experimental. Authenticated or TLS Kafka
-notifications are not supported yet.
+When managed Kafka uses TLS, the Ceph topic sets `useSSL: true` and
+`disableVerifySSL: true` because Rook's Kafka endpoint has no CA field. The
+connection is encrypted but does not verify the broker certificate.
 
-Kind does not run Rook/RGW or the Redpanda operator, so `make local-up` does not
-exercise this path; `deploy/dev/app-overlay` removes the bucket claims.
+Kind does not run Rook/RGW or the managed Kafka operator, so `make local-up` does
+not exercise this path; `deploy/dev/app-overlay` removes the bucket claims.
 {% endif %}
 
 Kind has no Redpanda operator, so `deploy/dev/app-overlay` reverts managed mode
 to the local Kafka StatefulSet (`kafka.kafka.svc.cluster.local:9092`) for
-`make local-up`.
+`make local-up`; it also removes the managed TLS CA mount and switches the
+publisher to `PLAINTEXT`.
 {% else %}
 The KafkaSource and DLQ handler are deployed with the application. Topic,
 consumer group, and bootstrap servers are generation-time values; per-environment

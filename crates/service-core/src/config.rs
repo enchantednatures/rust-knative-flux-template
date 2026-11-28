@@ -40,6 +40,27 @@ pub struct KafkaConfig {
     /// Request timeout in milliseconds
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u32,
+    /// Kafka security protocol: "PLAINTEXT", "SSL", "SASL_PLAINTEXT", or "SASL_SSL"
+    #[serde(default = "default_security_protocol")]
+    pub security_protocol: String,
+    /// Path to the CA certificate used to verify the broker (SSL/SASL_SSL)
+    #[serde(default)]
+    pub ssl_ca_location: Option<String>,
+    /// Path to the client certificate for mTLS (requires ssl_key_location)
+    #[serde(default)]
+    pub ssl_certificate_location: Option<String>,
+    /// Path to the client private key for mTLS (requires ssl_certificate_location)
+    #[serde(default)]
+    pub ssl_key_location: Option<String>,
+    /// SASL mechanism: "PLAIN", "SCRAM-SHA-256", or "SCRAM-SHA-512"
+    #[serde(default)]
+    pub sasl_mechanism: Option<String>,
+    /// SASL username (SASL_PLAINTEXT/SASL_SSL)
+    #[serde(default)]
+    pub sasl_username: Option<String>,
+    /// SASL password (SASL_PLAINTEXT/SASL_SSL)
+    #[serde(default)]
+    pub sasl_password: Option<String>,
 }
 
 #[cfg(feature = "kafka")]
@@ -60,6 +81,11 @@ fn default_retries() -> u32 {
 #[cfg(feature = "kafka")]
 fn default_timeout_ms() -> u32 {
     10000
+}
+
+#[cfg(feature = "kafka")]
+fn default_security_protocol() -> String {
+    "PLAINTEXT".into()
 }
 
 #[cfg(feature = "postgres")]
@@ -314,6 +340,66 @@ impl KafkaConfig {
         {
             return Err(figment::Error::from(
                 "kafka.event_name must contain only alphanumeric characters and dots (e.g., 'com.example.service.event')",
+            ));
+        }
+
+        // Validate the security protocol and its dependent TLS/SASL settings.
+        match self.security_protocol.as_str() {
+            "PLAINTEXT" | "SSL" | "SASL_PLAINTEXT" | "SASL_SSL" => {}
+            _ => {
+                return Err(figment::Error::from(
+                    "kafka.security_protocol must be one of: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
+                ));
+            }
+        }
+
+        let uses_tls = self.security_protocol == "SSL" || self.security_protocol == "SASL_SSL";
+        let uses_sasl =
+            self.security_protocol == "SASL_PLAINTEXT" || self.security_protocol == "SASL_SSL";
+        let ssl_ca = self.ssl_ca_location.as_deref().filter(|v| !v.is_empty());
+        let ssl_cert = self
+            .ssl_certificate_location
+            .as_deref()
+            .filter(|v| !v.is_empty());
+        let ssl_key = self.ssl_key_location.as_deref().filter(|v| !v.is_empty());
+        let sasl_mechanism = self.sasl_mechanism.as_deref().filter(|v| !v.is_empty());
+        let sasl_username = self.sasl_username.as_deref().filter(|v| !v.is_empty());
+        let sasl_password = self.sasl_password.as_deref().filter(|v| !v.is_empty());
+
+        if !uses_tls && (ssl_ca.is_some() || ssl_cert.is_some() || ssl_key.is_some()) {
+            return Err(figment::Error::from(
+                "kafka.ssl_* locations require kafka.security_protocol to be SSL or SASL_SSL",
+            ));
+        }
+
+        if ssl_cert.is_some() != ssl_key.is_some() {
+            return Err(figment::Error::from(
+                "kafka.ssl_certificate_location and kafka.ssl_key_location must be set together for mTLS",
+            ));
+        }
+
+        if uses_sasl {
+            if sasl_mechanism.is_none() {
+                return Err(figment::Error::from(
+                    "kafka.sasl_mechanism is required when kafka.security_protocol uses SASL",
+                ));
+            }
+            if sasl_username.is_none() || sasl_password.is_none() {
+                return Err(figment::Error::from(
+                    "kafka.sasl_username and kafka.sasl_password are required when kafka.security_protocol uses SASL",
+                ));
+            }
+            match sasl_mechanism.unwrap_or_default() {
+                "PLAIN" | "SCRAM-SHA-256" | "SCRAM-SHA-512" => {}
+                _ => {
+                    return Err(figment::Error::from(
+                        "kafka.sasl_mechanism must be one of: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512",
+                    ));
+                }
+            }
+        } else if sasl_mechanism.is_some() || sasl_username.is_some() || sasl_password.is_some() {
+            return Err(figment::Error::from(
+                "kafka.sasl_* settings require kafka.security_protocol to be SASL_PLAINTEXT or SASL_SSL",
             ));
         }
 

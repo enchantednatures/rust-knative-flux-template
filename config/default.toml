@@ -29,6 +29,13 @@ compression = "snappy"
 linger_ms = 5
 retries = 3
 timeout_ms = 10000
+security_protocol = "PLAINTEXT"
+# ssl_ca_location = "/etc/secrets/kafka-ca/ca.crt"
+# ssl_certificate_location = "/etc/secrets/kafka-client/tls.crt"
+# ssl_key_location = "/etc/secrets/kafka-client/tls.key"
+# sasl_mechanism = "SCRAM-SHA-512"
+# sasl_username = "user"
+# sasl_password = "password"
 {% endif %}
 
 {% if feature_postgres %}

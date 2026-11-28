@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Managed Kafka now defaults to cert-manager TLS (`kafka_managed_tls`,
+  `kafka_managed_tls_client_auth`). The chart creates a self-signed Issuer, CA
+  Certificate, and CA Issuer, then wires Strimzi (`clusterCa.type:
+  cert-manager`) or Redpanda (`tls.certs.default.issuerRef`) to it. The app and
+  KafkaSource trust `<project>-kafka-ca`; TLS mode uses direct KafkaSource sinks
+  instead of the Broker. Set `kafka_managed_tls=false` to keep the plaintext
+  Broker + Trigger path.
+- External Kafka TLS/SASL prompts (`kafka_external_tls`,
+  `kafka_external_sasl`, CA/client/SASL Secret names) plus Rust publisher
+  support for `APP__KAFKA__SECURITY_PROTOCOL`, `APP__KAFKA__SSL_*`, and
+  `APP__KAFKA__SASL_*`.
+- Bucket notifications now default to `put` + `delete`, support per-event
+  `partitions`, `prefix`/`suffix` filters, `sink` service, and
+  `topicNameTemplate`, and render one KafkaSource per enabled event. TLS to the
+  managed Kafka cluster sets `useSSL: true` and `disableVerifySSL: true` on the
+  Rook topic.
 - `make ci-secrets` (via `scripts/bootstrap-ci-secrets.sh`) sets the
   `KELLNR_TOKEN` GitHub Actions secret from the local Cargo/Kellnr token with
   `gh secret set`, without printing the value. `make deploy` runs the helper

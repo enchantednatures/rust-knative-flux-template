@@ -203,28 +203,146 @@ spec:
           - name: APP__POSTGRES__HOST
             value: "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
           {% endif %}
-          {% if feature_kafka and kafka_managed_cluster and workload_type == "Knative" %}
+          {% if feature_kafka %}
+          {% if event_source_kafka and kafka_managed_cluster %}
           # Chart-managed Kafka: Redpanda exposes a same-namespace Service
           # named "<project>-kafka" on 9093; Strimzi exposes the bootstrap
-          # Service "<project>-kafka-kafka-bootstrap" on the plaintext 9092.
+          # Service "<project>-kafka-kafka-bootstrap" on 9092 (plaintext) or
+          # 9093 (TLS).
           - name: APP__KAFKA__BROKER_URL
-            value: "{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:9092{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}"
+            value: "{% if kafka_managed_provider == 'strimzi' %}{{ project_name | replace: '_', '-' }}-kafka-kafka-bootstrap:{% if kafka_managed_tls %}9093{% else %}9092{% endif %}{% else %}{{ project_name | replace: '_', '-' }}-kafka:9093{% endif %}"
+          {% if kafka_managed_tls %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "SSL"
+          - name: APP__KAFKA__SSL_CA_LOCATION
+            value: "/etc/secrets/kafka-ca/ca.crt"
+          {% if kafka_managed_tls_client_auth %}
+          - name: APP__KAFKA__SSL_CERTIFICATE_LOCATION
+            value: "/etc/secrets/kafka-client/tls.crt"
+          - name: APP__KAFKA__SSL_KEY_LOCATION
+            value: "/etc/secrets/kafka-client/tls.key"
           {% endif %}
-        {% if feature_postgres %}
-        # PostgreSQL server CA certificate. Generated and rotated automatically
-        # by the CloudNativePG operator (secret <cluster>-ca, key ca.crt);
-        # mounted at the path config/*.toml expects (ssl_root_cert_path).
+          {% endif %}
+          {% else %}
+          {% if kafka_external_tls %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "{% if kafka_external_sasl %}SASL_SSL{% else %}SSL{% endif %}"
+          - name: APP__KAFKA__SSL_CA_LOCATION
+            value: "/etc/secrets/kafka-ca/{{ kafka_external_ca_key }}"
+          {% if kafka_external_client_cert_secret and kafka_external_client_key_secret %}
+          - name: APP__KAFKA__SSL_CERTIFICATE_LOCATION
+            value: "/etc/secrets/kafka-client-cert/{{ kafka_external_client_cert_key }}"
+          - name: APP__KAFKA__SSL_KEY_LOCATION
+            value: "/etc/secrets/kafka-client-key/{{ kafka_external_client_key_key }}"
+          {% endif %}
+          {% elsif kafka_external_sasl %}
+          - name: APP__KAFKA__SECURITY_PROTOCOL
+            value: "SASL_PLAINTEXT"
+          {% endif %}
+          {% if kafka_external_sasl %}
+          - name: APP__KAFKA__SASL_MECHANISM
+            value: "{{ kafka_external_sasl_mechanism }}"
+          - name: APP__KAFKA__SASL_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: "{{ kafka_external_sasl_user_secret }}"
+                key: "{{ kafka_external_sasl_user_key }}"
+          - name: APP__KAFKA__SASL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ kafka_external_sasl_password_secret }}"
+                key: "{{ kafka_external_sasl_password_key }}"
+          {% endif %}
+          {% endif %}
+          {% endif %}
+        {% assign kafka_tls_mounts = false %}
+        {% if feature_kafka %}
+          {% if event_source_kafka and kafka_managed_cluster and kafka_managed_tls %}{% assign kafka_tls_mounts = true %}{% endif %}
+          {% if kafka_external_tls %}{% assign kafka_tls_mounts = true %}{% endif %}
+        {% endif %}
+        {% if feature_postgres or kafka_tls_mounts %}
         volumeMounts:
+          {% if feature_postgres %}
+          # PostgreSQL server CA certificate. Generated and rotated automatically
+          # by the CloudNativePG operator (secret <cluster>-ca, key ca.crt);
+          # mounted at the path config/*.toml expects (ssl_root_cert_path).
           - name: postgres-ca
             mountPath: /etc/secrets/pg-ca
             readOnly: true
+          {% endif %}
+          {% if feature_kafka and event_source_kafka and kafka_managed_cluster and kafka_managed_tls %}
+          # Chart-managed Kafka CA (cert-manager chain) used by the publisher.
+          - name: kafka-ca
+            mountPath: /etc/secrets/kafka-ca
+            readOnly: true
+          {% if kafka_managed_tls_client_auth %}
+          - name: kafka-client
+            mountPath: /etc/secrets/kafka-client
+            readOnly: true
+          {% endif %}
+          {% endif %}
+          {% if feature_kafka and kafka_external_tls %}
+          - name: kafka-ca
+            mountPath: /etc/secrets/kafka-ca
+            readOnly: true
+          {% if kafka_external_client_cert_secret and kafka_external_client_key_secret %}
+          - name: kafka-client-cert
+            mountPath: /etc/secrets/kafka-client-cert
+            readOnly: true
+          - name: kafka-client-key
+            mountPath: /etc/secrets/kafka-client-key
+            readOnly: true
+          {% endif %}
+          {% endif %}
         volumes:
+          {% if feature_postgres %}
           - name: postgres-ca
             secret:
               secretName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
               items:
                 - key: ca.crt
                   path: ca.crt
+          {% endif %}
+          {% if feature_kafka and event_source_kafka and kafka_managed_cluster and kafka_managed_tls %}
+          - name: kafka-ca
+            secret:
+              secretName: "{{ project_name | replace: '_', '-' }}-kafka-ca"
+              items:
+                - key: ca.crt
+                  path: ca.crt
+          {% if kafka_managed_tls_client_auth %}
+          - name: kafka-client
+            secret:
+              secretName: "{{ project_name | replace: '_', '-' }}-kafka-client-tls"
+              items:
+                - key: tls.crt
+                  path: tls.crt
+                - key: tls.key
+                  path: tls.key
+          {% endif %}
+          {% endif %}
+          {% if feature_kafka and kafka_external_tls %}
+          - name: kafka-ca
+            secret:
+              secretName: "{{ kafka_external_ca_secret }}"
+              items:
+                - key: "{{ kafka_external_ca_key }}"
+                  path: "{{ kafka_external_ca_key }}"
+          {% if kafka_external_client_cert_secret and kafka_external_client_key_secret %}
+          - name: kafka-client-cert
+            secret:
+              secretName: "{{ kafka_external_client_cert_secret }}"
+              items:
+                - key: "{{ kafka_external_client_cert_key }}"
+                  path: "{{ kafka_external_client_cert_key }}"
+          - name: kafka-client-key
+            secret:
+              secretName: "{{ kafka_external_client_key_secret }}"
+              items:
+                - key: "{{ kafka_external_client_key_key }}"
+                  path: "{{ kafka_external_client_key_key }}"
+          {% endif %}
+          {% endif %}
         {% endif %}
 
     {% if workload_type == "Deployment" and ingress_enabled %}
@@ -286,7 +404,15 @@ spec:
             cpu: "2"
             memory: "2.5Gi"
         tls:
-          enabled: false
+          enabled: {{ kafka_managed_tls }}
+          {% if kafka_managed_tls %}
+          certManager:
+            enabled: true
+            issuerRef:
+              name: "{{ kafka_managed_tls_issuer }}"
+              kind: "{{ kafka_managed_tls_issuer_kind }}"
+            clientAuth: {{ kafka_managed_tls_client_auth }}
+          {% endif %}
         auth:
           type: none
         topics:
@@ -361,13 +487,14 @@ spec:
                   memory: "128Mi"
         {% endif %}
       broker:
-        enabled: true
+        enabled: {% if kafka_managed_tls %}false{% else %}true{% endif %}
         config:
           topicPartitions: 3
         delivery:
           retry: 5
           backoffPolicy: exponential
           backoffDelay: "PT1S"
+      {% if kafka_managed_tls == false %}
       triggers:
         {{ kafka_topic }}:
           subscriber: "app"
@@ -375,21 +502,7 @@ spec:
             retry: 5
             backoffPolicy: exponential
             backoffDelay: "PT1S"
-        {% if feature_s3 and feature_bucket_notifications %}
-        # Ceph RGW object events are published to their own Kafka topic. Filter
-        # on the S3 KafkaSource so the main trigger above is not duplicated and
-        # this trigger does not receive application events.
-        s3-events:
-          subscriber: "app"
-          filter:
-            # KafkaSource sets the CloudEvent source to
-            # /apis/v1/namespaces/<ns>/kafkasources/<name>#<topic>.
-            source: "/apis/v1/namespaces/{{ target_namespace }}/kafkasources/{{ project_name | replace: '_', '-' }}-s3-events-kafka-source#{{ project_name | replace: '_', '-' }}-app-data-put"
-          delivery:
-            retry: 5
-            backoffPolicy: exponential
-            backoffDelay: "PT1S"
-        {% endif %}
+      {% endif %}
       {% endif %}
       sources:
         {{ kafka_topic }}:
@@ -401,8 +514,43 @@ spec:
           {% endif %}
           consumers: 3
           initialOffset: latest
-          {% if kafka_managed_cluster == false %}
+          {% if kafka_managed_cluster == false or kafka_managed_tls %}
           sink: "app"
+          {% endif %}
+          {% if kafka_managed_tls %}
+          net:
+            tls:
+              enabled: true
+          {% elsif kafka_managed_cluster == false and kafka_external_tls %}
+          net:
+            tls:
+              enabled: true
+              caCertSecret: "{{ kafka_external_ca_secret }}"
+              caCertKey: "{{ kafka_external_ca_key }}"
+              {% if kafka_external_client_cert_secret and kafka_external_client_key_secret %}
+              certSecret: "{{ kafka_external_client_cert_secret }}"
+              certKey: "{{ kafka_external_client_cert_key }}"
+              keySecret: "{{ kafka_external_client_key_secret }}"
+              keyKey: "{{ kafka_external_client_key_key }}"
+              {% endif %}
+            {% if kafka_external_sasl %}
+            sasl:
+              enabled: true
+              mechanism: "{{ kafka_external_sasl_mechanism }}"
+              userSecret: "{{ kafka_external_sasl_user_secret }}"
+              userKey: "{{ kafka_external_sasl_user_key }}"
+              passwordSecret: "{{ kafka_external_sasl_password_secret }}"
+              passwordKey: "{{ kafka_external_sasl_password_key }}"
+            {% endif %}
+          {% elsif kafka_managed_cluster == false and kafka_external_sasl %}
+          net:
+            sasl:
+              enabled: true
+              mechanism: "{{ kafka_external_sasl_mechanism }}"
+              userSecret: "{{ kafka_external_sasl_user_secret }}"
+              userKey: "{{ kafka_external_sasl_user_key }}"
+              passwordSecret: "{{ kafka_external_sasl_password_secret }}"
+              passwordKey: "{{ kafka_external_sasl_password_key }}"
           {% endif %}
           delivery:
             retry: 5
@@ -423,38 +571,6 @@ spec:
               limits:
                 cpu: "200m"
                 memory: "128Mi"
-        {% if feature_s3 and feature_bucket_notifications %}
-        # Ceph RGW bucket notifications are published by Rook to this topic
-        # (the chart default for the app-data bucket's `put` event). The
-        # KafkaSource sinks to the Broker; the filtered `s3-events` Trigger
-        # routes it to the app. `dlq.env: []` opts out of the chart's
-        # POD_NAME/POD_NAMESPACE fieldRef env, which Knative >= 1.23 rejects.
-        s3-events:
-          topic: "{{ project_name | replace: '_', '-' }}-app-data-put"
-          consumerGroup: "{{ project_name | replace: '_', '-' }}-s3-events"
-          consumers: 1
-          initialOffset: latest
-          delivery:
-            retry: 5
-            backoffPolicy: exponential
-            backoffDelay: "PT1S"
-          dlq:
-            enabled: true
-            env: []
-            image:
-              repository: "gcr.io/knative-releases/knative.dev/eventing/cmd/event_display"
-              tag: "v1.23.0"
-            scaling:
-              minScale: 0
-              maxScale: 2
-            resources:
-              requests:
-                cpu: "50m"
-                memory: "32Mi"
-              limits:
-                cpu: "200m"
-                memory: "128Mi"
-        {% endif %}
     {% endif %}
 
     {% if feature_cron and workload_type == "Knative" %}
