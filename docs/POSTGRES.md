@@ -72,6 +72,7 @@ kubectl exec -it {{ project_name }}-postgres-1 -- psql -U app -d app
 - Kubernetes cluster (Kind, EKS, GKE, etc.)
 - kubectl configured to access cluster
 - StorageClass with PVCs support
+- cert-manager (the Cluster certificates are cert-manager-managed; `make local-up` installs it if the CRDs are absent)
 - (Optional) Prometheus Operator for monitoring
 
 ### Environment Configurations
@@ -583,7 +584,7 @@ Readiness probes the DB: `/health/ready` runs `SELECT 1` (2s timeout), returning
 | `postgres.run_migrations` | TOML | `true` (advisory-locked, safe for concurrent replicas) |
 | `postgres.max_connections` | TOML | 5 |
 
-**TLS/cert story**: the operator generates a self-signed CA (secret `<cluster>-ca`, key `ca.crt`), signs server certs per node and mounts them server-side. TLS is *enforced* by the shipped pg_hba rule (`hostssl all all all scram-sha-256`). The CA cert is mounted into the Knative pod via the ksvc chart `volumes`/`volumeMounts` wiring, so sqlx connects with `sslmode=verify-full`; the operator rotates certs automatically (7d before expiry).
+**TLS/cert story**: the component ships a cert-manager chain (self-signed Issuer -> CA Certificate `<cluster>-ca` -> CA Issuer -> server/client Certificates). The CA Secret is mounted into the Knative pod via the HelmRelease `volumes`/`volumeMounts` wiring, so sqlx connects with `sslmode=verify-full`; cert-manager rotates the certificates. The Cluster's `spec.certificates` points `serverTLSSecret`/`replicationTLSSecret` at the cert-manager Secrets and uses the CA Secret for `serverCASecret`/`clientCASecret`. TLS is *enforced* by the shipped pg_hba rule (`hostssl all all all scram-sha-256`).
 
 **Known limitations**:
 - Repository issue #136 (resolved): the HelmRelease now uses a named services.app key instead of the empty-string services."" patch.

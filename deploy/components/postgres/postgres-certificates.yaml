@@ -1,0 +1,107 @@
+# cert-manager-backed TLS for the CloudNativePG cluster.
+#
+# The operator's default certificates are replaced with a chart-independent
+# cert-manager chain:
+#   self-signed Issuer -> CA Certificate -> CA Issuer
+#   -> server Certificate (serverTLSSecret)
+#   -> client Certificate (replicationTLSSecret)
+#
+# The CA Certificate writes the existing `<project>-postgres-ca` Secret, which
+# the app already mounts at /etc/secrets/pg-ca/ca.crt and CNPG uses as
+# serverCASecret/clientCASecret.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-selfsigned"
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+spec:
+  secretName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+  isCA: true
+  commonName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+  usages:
+    - cert sign
+    - crl sign
+  privateKey:
+    algorithm: ECDSA
+    encoding: PKCS8
+    size: 256
+  issuerRef:
+    name: "{{ project_name | replace: '_', '-' }}-postgres-selfsigned"
+    kind: Issuer
+    group: cert-manager.io
+  secretTemplate:
+    annotations:
+      cnpg.io/reload: ""
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-ca-issuer"
+spec:
+  ca:
+    secretName: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-server-cert"
+spec:
+  secretName: "{{ project_name | replace: '_', '-' }}-postgres-server-tls"
+  commonName: "{{ project_name | replace: '_', '-' }}-postgres-rw"
+  usages:
+    - server auth
+  dnsNames:
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw.{{ target_namespace }}"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw.{{ target_namespace }}.svc"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw.{{ target_namespace }}.svc.cluster.local"
+    - "{{ project_name | replace: '_', '-' }}-postgres-r"
+    - "{{ project_name | replace: '_', '-' }}-postgres-r.{{ target_namespace }}"
+    - "{{ project_name | replace: '_', '-' }}-postgres-r.{{ target_namespace }}.svc"
+    - "{{ project_name | replace: '_', '-' }}-postgres-r.{{ target_namespace }}.svc.cluster.local"
+    - "{{ project_name | replace: '_', '-' }}-postgres-ro"
+    - "{{ project_name | replace: '_', '-' }}-postgres-ro.{{ target_namespace }}"
+    - "{{ project_name | replace: '_', '-' }}-postgres-ro.{{ target_namespace }}.svc"
+    - "{{ project_name | replace: '_', '-' }}-postgres-ro.{{ target_namespace }}.svc.cluster.local"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler.{{ target_namespace }}"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler.{{ target_namespace }}.svc"
+    - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler.{{ target_namespace }}.svc.cluster.local"
+  privateKey:
+    algorithm: ECDSA
+    encoding: PKCS8
+    size: 256
+  issuerRef:
+    name: "{{ project_name | replace: '_', '-' }}-postgres-ca-issuer"
+    kind: Issuer
+    group: cert-manager.io
+  secretTemplate:
+    annotations:
+      cnpg.io/reload: ""
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ project_name | replace: '_', '-' }}-postgres-client-cert"
+spec:
+  secretName: "{{ project_name | replace: '_', '-' }}-postgres-client-tls"
+  commonName: streaming_replica
+  usages:
+    - client auth
+  privateKey:
+    algorithm: ECDSA
+    encoding: PKCS8
+    size: 256
+  issuerRef:
+    name: "{{ project_name | replace: '_', '-' }}-postgres-ca-issuer"
+    kind: Issuer
+    group: cert-manager.io
+  secretTemplate:
+    annotations:
+      cnpg.io/reload: ""

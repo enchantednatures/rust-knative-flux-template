@@ -3,6 +3,7 @@ kind: Component
 
 resources:
   - postgres-cluster.yaml
+  - postgres-certificates.yaml
   - postgres-backup.yaml
 
 # CloudNativePG PostgreSQL component: Cluster + ObjectStore + ScheduledBackup.

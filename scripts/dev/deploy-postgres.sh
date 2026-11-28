@@ -116,7 +116,26 @@ fi
 success "✓ Prerequisites satisfied"
 
 # ============================================================================
-# Step 2: Create namespace if needed
+# Step 2: Ensure cert-manager for the Cluster certificates
+# ============================================================================
+
+if ! kubectl get crd certificates.cert-manager.io &> /dev/null; then
+    info "cert-manager CRDs not found; installing cert-manager..."
+    if [[ "$DRY_RUN" == "false" ]]; then
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+        kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=300s
+        kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=300s
+        kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=300s
+        success "✓ cert-manager installed"
+    else
+        info "(dry-run) Would install cert-manager"
+    fi
+else
+    info "cert-manager already installed"
+fi
+
+# ============================================================================
+# Step 3: Create namespace if needed
 # ============================================================================
 
 if kubectl get namespace "$NAMESPACE" &> /dev/null; then
@@ -132,7 +151,7 @@ else
 fi
 
 # ============================================================================
-# Step 3: Deploy with kustomize
+# Step 4: Deploy with kustomize
 # ============================================================================
 
 info "Building manifest from kustomization..."
@@ -161,7 +180,7 @@ kubectl apply -n "$NAMESPACE" -f /tmp/postgres-manifest.yaml
 success "✓ Manifest applied"
 
 # ============================================================================
-# Step 4: Wait for resources to be ready
+# Step 5: Wait for resources to be ready
 # ============================================================================
 
 if [[ $WAIT_TIME -gt 0 ]]; then
@@ -184,7 +203,7 @@ if [[ $WAIT_TIME -gt 0 ]]; then
 fi
 
 # ============================================================================
-# Step 5: Verify deployment
+# Step 6: Verify deployment
 # ============================================================================
 
 info "Verifying deployment..."
@@ -220,7 +239,7 @@ if kubectl get service "${POSTGRES_CLUSTER_NAME}-ro" -n "$NAMESPACE" &> /dev/nul
 fi
 
 # ============================================================================
-# Step 6: Print next steps
+# Step 7: Print next steps
 # ============================================================================
 
 info "Deployment complete!"

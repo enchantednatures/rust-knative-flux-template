@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `topicNameTemplate`, and render one KafkaSource per enabled event. TLS to the
   managed Kafka cluster sets `useSSL: true` and `disableVerifySSL: true` on the
   Rook topic.
+- PostgreSQL TLS now uses a cert-manager chain in the generated project:
+  self-signed Issuer -> CA Certificate `<project>-postgres-ca` -> CA Issuer ->
+  server/client Certificates. `spec.certificates` points CNPG at the
+  cert-manager Secrets, and the app keeps mounting `<project>-postgres-ca`.
+  `make local-up` installs cert-manager when the CRDs are absent.
 - `make ci-secrets` (via `scripts/bootstrap-ci-secrets.sh`) sets the
   `KELLNR_TOKEN` GitHub Actions secret from the local Cargo/Kellnr token with
   `gh secret set`, without printing the value. `make deploy` runs the helper

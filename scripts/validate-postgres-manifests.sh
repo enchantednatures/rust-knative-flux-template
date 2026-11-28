@@ -105,6 +105,7 @@ echo "==> Checking component files"
 for f in \
   deploy/components/postgres/kustomization.yaml \
   deploy/components/postgres/postgres-cluster.yaml \
+  deploy/components/postgres/postgres-certificates.yaml \
   deploy/components/postgres/postgres-backup.yaml; do
   if [ -f "$f" ]; then pass "$f"; else fail "$f (missing)"; fi
 done
@@ -134,6 +135,8 @@ if ! kubectl kustomize deploy/components/postgres > /tmp/postgres-render.yaml 2>
 else
   pass "kubectl kustomize deploy/components/postgres"
   grep -q 'kind: Cluster' /tmp/postgres-render.yaml && pass "Cluster CR present" || fail "Cluster CR missing"
+  grep -q 'kind: Certificate' /tmp/postgres-render.yaml && pass "cert-manager Certificate present" || fail "cert-manager Certificate missing"
+  grep -q 'kind: Issuer' /tmp/postgres-render.yaml && pass "cert-manager Issuer present" || fail "cert-manager Issuer missing"
   grep -q 'kind: ObjectStore' /tmp/postgres-render.yaml && pass "ObjectStore CR present" || fail "ObjectStore CR missing"
   grep -q 'kind: ScheduledBackup' /tmp/postgres-render.yaml && pass "ScheduledBackup CR present" || fail "ScheduledBackup CR missing"
 fi

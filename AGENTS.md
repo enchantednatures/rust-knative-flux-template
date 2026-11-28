@@ -1085,6 +1085,13 @@ deploy/
 ```
 
 ## Recent Changes
+- postgres-cert-manager: PostgreSQL TLS now uses a cert-manager chain in
+  `deploy/components/postgres/postgres-certificates.yaml`: self-signed Issuer,
+  CA Certificate `<project>-postgres-ca`, CA Issuer, server Certificate
+  (`<project>-postgres-server-tls`), and client Certificate
+  (`<project>-postgres-client-tls`). The Cluster points
+  `serverTLSSecret`/`serverCASecret`/`clientCASecret`/`replicationTLSSecret` at
+  those Secrets. `make local-up` installs cert-manager if its CRDs are absent.
 - managed-kafka-tls: Managed Kafka now defaults to cert-manager TLS
   (`kafka_managed_tls=true`). The ksvc chart creates a self-signed Issuer, CA
   Certificate, and CA Issuer, wires Strimzi (`clusterCa.type: cert-manager`) or

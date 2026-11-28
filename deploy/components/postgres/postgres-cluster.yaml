@@ -71,14 +71,16 @@ spec:
       # Floor at TLSv1.2; clients negotiate 1.2+ only.
       ssl_min_protocol_version: "TLSv1.2"
 
-  # No spec.certificates CA/secret keys: certificates are operator-managed
-  # (default). The operator generates a CA plus server TLS certificate and
-  # rotates them. serverAltDNSNames exists ONLY to make the pgBouncer Pooler
-  # work with `verify-full`: the pooler fronting this cluster reuses the
-  # cluster's server certificate, whose SANs otherwise cover only the
-  # -rw/-ro/-r service names, and whose pooler service therefore needs its
-  # own name registered here. Harmless when the pooler is disabled.
+  # cert-manager-backed certificates (postgres-certificates.yaml). The CA
+  # Secret is `<project>-postgres-ca`, which the app already mounts at
+  # /etc/secrets/pg-ca/ca.crt. serverAltDNSNames makes the pgBouncer Pooler
+  # work with `verify-full`: the pooler reuses the cluster's server
+  # certificate, whose SANs otherwise cover only -rw/-ro/-r.
   certificates:
+    serverTLSSecret: "{{ project_name | replace: '_', '-' }}-postgres-server-tls"
+    serverCASecret: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+    clientCASecret: "{{ project_name | replace: '_', '-' }}-postgres-ca"
+    replicationTLSSecret: "{{ project_name | replace: '_', '-' }}-postgres-client-tls"
     serverAltDNSNames:
       - "{{ project_name | replace: '_', '-' }}-postgres-rw-pooler"
 
